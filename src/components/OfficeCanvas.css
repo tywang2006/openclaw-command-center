@@ -1,0 +1,92 @@
+.office-canvas-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.office-canvas-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.zoom-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  backdrop-filter: blur(4px);
+}
+
+.zoom-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #a0a0b0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.zoom-btn:hover:not(:disabled) {
+  background: rgba(0, 212, 170, 0.2);
+  color: #00d4aa;
+  border-color: rgba(0, 212, 170, 0.4);
+}
+
+.zoom-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.zoom-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00d4aa;
+  border: 2px solid rgba(10, 10, 20, 0.8);
+  cursor: pointer;
+}
+
+.zoom-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #00d4aa;
+  border: 2px solid rgba(10, 10, 20, 0.8);
+  cursor: pointer;
+}
+
+.zoom-label {
+  font-size: 11px;
+  color: #a0a0b0;
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: center;
+}

@@ -1,0 +1,49 @@
+.requests-tab {
+  width: 100%;
+}
+
+.requests-tab.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.request-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.request-card:hover {
+  border-color: var(--accent-color);
+}
+
+.request-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.request-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.request-filename {
+  font-weight: bold;
+  color: var(--accent-color);
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.request-content {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

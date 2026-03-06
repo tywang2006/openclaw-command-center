@@ -1,0 +1,354 @@
+# 超哥办公室 — 辅助系统开发笔记
+
+> 最后更新: 2026-03-06
+> 状态: 进行中
+
+---
+
+## 核心定位
+
+**这是 OpenClaw 的辅助办公系统**，不是独立的 AI 系统。
+- OpenClaw 是武器库，command-center 是它的可视化面板
+- 不要自己调 LLM API 做 agent，要通过 OpenClaw Gateway
+- OpenClaw 有完整功能：定时提醒、技能调用、子代理、记忆管理等
+- command-center 负责：可视化展示、用户交互界面、像素办公室动画
+
+---
+
+## 当前架构
+
+```
+浏览器 (React + Vite + Canvas 2D)
+  ├── 像素办公室 (7个像素小人 + zoom 滑块)
+  ├── 右侧面板 (对话/公告/记忆/活动 tabs)
+  └── 底部状态栏 (7个部门指示器)
+       │
+       │ WebSocket (ws://host/cmd/ws)
+       ▼
+Express + ws (port 5100)
+  ├── chokidar 监听文件变化 → WS 推送
+  ├── REST API (/api/*)
+  ├── Telegram 双向通信 (polling + sendMessage)
+  └── gateway.js → WebSocket → OpenClaw Gateway (ws://127.0.0.1:18789) ✅
+```
+
+---
+
+## 待改造: 接入 OpenClaw Gateway
+
+### Gateway 连接信息
+
+- **WebSocket URL**: `ws://127.0.0.1:18789`
+- **认证 Token**: `231f8798242b198b234e1b384c370d234db76ffc1d7bc043`
+- **Agent ID**: `main`
+- **协议**: JSON-RPC 2.0 over WebSocket
+
+### Gateway 通信协议
+
+#### 1. 连接握手
+
+```json
+{
+  "type": "req",
+  "id": "connect",
+  "method": "connect",
+  "params": {
+    "minProtocol": 1,
+    "maxProtocol": 1,
+    "client": {
+      "id": "command-center",
+      "version": "1.0.0",
+      "platform": "linux",
+      "mode": "operator",
+      "displayName": "超哥办公室"
+    },
+    "role": "operator",
+    "scopes": ["operator.admin"],
+    "caps": ["tool-events"],
+    "auth": {
+      "token": "231f8798242b198b234e1b384c370d234db76ffc1d7bc043"
+    }
+  }
+}
+```
+
+#### 2. 发送消息
+
+```json
+{
+  "type": "req",
+  "id": "req_唯一ID",
+  "method": "agent",
+  "params": {
+    "agentId": "main",
+    "sessionKey": "agent:main:main",
+    "message": "消息内容",
+    "attachments": [],
+    "deliver": false,
+    "idempotencyKey": "唯一键_时间戳"
+  }
+}
+```
+
+#### 3. 接收响应 (流式)
+
+```json
+{
+  "type": "event",
+  "event": "agent",
+  "payload": {
+    "sessionKey": "agent:main:main",
+    "requestId": "req_xxx",
+    "stream": "assistant",  // assistant | thinking | tool_call | tool_result
+    "chunk": {
+      "type": "text",
+      "text": "回复内容..."
+    }
+  }
+}
+```
+
+#### 4. 获取历史
+
+```json
+{
+  "type": "req",
+  "id": "history_req",
+  "method": "chat.history",
+  "params": {
+    "sessionKey": "agent:main:main",
+    "limit": 50
+  }
+}
+```
+
+#### 5. 取消请求
+
+```json
+{
+  "type": "req",
+  "id": "cancel_req",
+  "method": "agent.cancel",
+  "params": {
+    "sessionKey": "agent:main:main",
+    "requestId": "要取消的请求ID"
+  }
+}
+```
+
+#### 6. 心跳
+
+- 发送 `"ping"` 文本, 收到 `"pong"`
+- 或用 WebSocket 原生 ping/pong
+
+### 改造计划
+
+**agent.js 改造**:
+1. 删除直接调用 Kimi API 的 `callLLM()` 函数
+2. 新增 `OpenClawGateway` 类，维护到 gateway 的 WebSocket 连接
+3. `chat()` → 通过 gateway 发送消息到对应部门 session
+4. `broadcastCommand()` → 通过 gateway 向所有部门发送命令
+5. 子代理创建 → 通过 gateway 创建 OpenClaw 原生子代理
+
+**好处**:
+- 利用 OpenClaw 原生的记忆管理、定时提醒、技能系统
+- 不需要自己管理 API key 和额度
+- 和 Telegram/WhatsApp 通道统一
+
+---
+
+## 已完成功能
+
+### 后端 (server/)
+
+| 文件 | 功能 |
+|------|------|
+| `server/index.js` | Express + WebSocket 服务器, port 5100 |
+| `server/watcher.js` | chokidar 监听文件变化 → WS 推送 |
+| `server/routes/api.js` | REST API (部门/记忆/日志/公告/广播/子代理) |
+| `server/parsers/jsonl.js` | JSONL session 文件解析 |
+| `server/telegram.js` | Telegram 双向通信 (polling + 自动回复) |
+| `server/agent.js` | AI agent 对话 (当前: Kimi API, 待改: Gateway) |
+
+### 前端 (src/)
+
+| 文件 | 功能 |
+|------|------|
+| `src/App.tsx` | 主布局, 4个右侧 Tab (对话/公告/记忆/活动) |
+| `src/components/OfficeCanvas.tsx` | 像素办公室 Canvas 渲染 |
+| `src/components/ChatPanel.tsx` | 部门对话 + 子代理管理 |
+| `src/components/BulletinTab.tsx` | 全公司广播命令 + 部门回复 |
+| `src/components/MemoryTab.tsx` | 部门记忆查看 |
+| `src/components/ActivityTab.tsx` | 实时活动日志 |
+| `src/components/StatusBar.tsx` | 底部7个部门状态指示器 |
+| `src/components/Icons.tsx` | SVG 图标组件 |
+| `src/hooks/useAgentState.ts` | WebSocket 状态管理 |
+| `src/office/furnitureAssets.ts` | 32种办公家具程序化精灵 |
+| `src/office/` | 像素办公室游戏引擎 (来自 pixel-agents) |
+
+### API 端点
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/departments` | GET | 获取7个部门列表+状态 |
+| `/api/departments/:id/chat` | POST | 与部门 AI 对话 |
+| `/api/departments/:id/memory` | GET | 获取部门记忆 |
+| `/api/departments/:id/daily/:date?` | GET | 获取部门日志 |
+| `/api/departments/:id/message` | POST | 发送消息到 Telegram |
+| `/api/departments/:id/photo` | POST | 发送图片到 Telegram |
+| `/api/departments/:id/subagents` | GET/POST | 列出/创建子代理 |
+| `/api/departments/:id/subagents/:subId/chat` | POST | 与子代理对话 |
+| `/api/departments/:id/subagents/:subId` | DELETE | 删除子代理 |
+| `/api/bulletin` | GET/POST | 获取/更新公告板 |
+| `/api/broadcast` | POST | 全公司广播命令 |
+| `/api/requests` | GET | 获取跨部门请求 |
+| `/api/activity/:topicId?` | GET | 获取活动记录 |
+
+### Telegram 集成
+
+- **Bot Token**: `8102890327:AAGMn9Ft2GA2T2ODOuZWDFqs1kI2BN6HWwc`
+- **Group ID**: `-1003570960670`
+- **Topic 映射**: config.json 中 key = topic ID, dept.id = 部门ID
+- **双向通信**: 用户发消息 → AI 自动回复 → 回复发回 Telegram
+- **失败提示**: API 失败时发中文错误说明到 Telegram
+
+### 对话持久化
+
+- 每次对话自动保存到 `departments/{deptId}/daily/{YYYY-MM-DD}.md`
+- 包含时间戳、来源 (chat/broadcast/telegram)、用户消息和回复
+
+---
+
+## 部门配置
+
+| Topic ID | 部门 ID | 名称 | Agent | 精灵 |
+|----------|---------|------|-------|------|
+| 1 | coo | 总指挥部 | COO | char_0 品红 |
+| 1430 | engineering | 技术开发部 | CTO | char_1 青色 |
+| 1431 | operations | 运维监控部 | SRE | char_2 黄色 |
+| 1432 | research | 市场研究部 | 研究员 | char_3 绿色 |
+| 1433 | product | 产品设计部 | 产品经理 | char_4 紫色 |
+| 1434 | admin | 行政后勤部 | 管家 | char_5 橙色 |
+| 1435 | blockchain | 区块链合约部 | 链上工程师 | char_0+hue 蓝色 |
+
+---
+
+## OpenClaw 配置位置
+
+| 文件 | 内容 |
+|------|------|
+| `/root/.openclaw/openclaw.json` | 主配置 (API key, gateway, plugins, channels) |
+| `/root/.openclaw/agents/main/agent/models.json` | 模型配置 |
+| `/root/.openclaw/agents/main/agent/auth-profiles.json` | 认证配置 |
+| `/root/.openclaw/workspace/departments/config.json` | 部门配置 |
+| `/root/.openclaw/workspace/departments/personas/*.md` | 部门人设 |
+| `/root/.openclaw/workspace/departments/*/memory/MEMORY.md` | 部门记忆 |
+| `/root/.openclaw/workspace/departments/bulletin/board.md` | 公告板 |
+
+---
+
+## Kimi API 配置 (当前临时使用)
+
+- **Provider**: Moonshot
+- **Base URL**: `https://api.moonshot.ai/v1`
+- **API Key**: `sk-dWw5MdEUz6D2bkhOpOeqtraC69xfIm5xDb1Kq8M7bY6mFS5g`
+- **Model**: `kimi-k2.5` (256K context, 8192 max tokens)
+- **注意**: temperature 只能为 1 (不能设其他值)
+
+---
+
+## 部署
+
+```bash
+# 项目路径
+cd /root/.openclaw/workspace/command-center
+
+# 构建
+npm run build  # = tsc -b && vite build
+
+# PM2
+pm2 restart openclaw-cmd
+
+# Nginx
+# /cmd/ → 127.0.0.1:5100 (含 basic auth)
+# /cmd/ws → WebSocket 升级
+# /cmd/api/ → API 代理 (120s timeout)
+```
+
+---
+
+## 已完成 (2026-03-06)
+
+### ✅ 改造 agent.js 接入 OpenClaw Gateway
+- 新增 `server/gateway.js` — GatewayClient 单例类
+  - WebSocket 连接到 `ws://127.0.0.1:18789`
+  - 握手参数: `clientId: "gateway-client"`, `clientMode: "backend"`, `protocol: 3`
+  - 自动重连（指数退避 1s-30s）、心跳 25s
+  - `sendAgentMessage(sessionKey, message)` → 等待 `res` 帧（跳过 `accepted`，解析 `completed`）
+- 重构 `server/agent.js` — 删除 Kimi API 直接调用
+  - 删除 `callLLM()`、`KIMI_API_KEY`/`KIMI_BASE_URL`/`KIMI_MODEL` 常量
+  - 删除 `conversations` Map（Gateway 通过 sessionKey 管理对话历史）
+  - `chat()` → `gateway.sendAgentMessage('agent:main:{deptId}', context + msg)`
+  - `broadcastCommand()` → 循环各部门发送
+  - `chatSubAgent()` → sessionKey `agent:main:{deptId}:sub:{subId}`
+  - 新增 `buildDepartmentContext()` — 将 persona/memory/bulletin 作为上下文前缀
+  - 所有导出函数签名不变，routes/api.js 和 telegram.js 无需改动
+- 修改 `server/index.js` — Gateway 生命周期管理
+  - 启动时连接 Gateway，关停时断开
+  - `/health` 端点增加 gateway 状态
+
+### ✅ 像素办公室 Zoom 滑块控件
+- `src/components/OfficeCanvas.tsx` — 右下角 zoom 控件（−/slider/+ 和倍率显示）
+- `src/components/OfficeCanvas.css` — 深色主题样式，accent #00d4aa
+
+### 关键发现: Gateway 协议细节
+- Gateway 返回**两个** `res` 帧: 第一个 `status: "accepted"`（确认收到），第二个 `status: "ok"` + `result.payloads[0].text`（完整回复）
+- 流式事件用 `runId`（= idempotencyKey）而非 `requestId`
+- 握手 `client.id`/`client.mode` 必须匹配 `~/.openclaw/devices/paired.json` 中已配对设备
+
+---
+
+### ✅ 子代理详情展示 + 像素办公室显示
+
+- `ChatPanel.tsx` — 点击子代理 chip 时，显示详情栏（名字、状态、任务描述）
+  - 导出 `SubAgent` 类型，新增 `onSubAgentsChange` 回调
+- `App.tsx` — 提升子代理状态到 App 级别
+  - `subAgentsByDept: Record<string, SubAgent[]>` 传递给 OfficeCanvas
+- `OfficeCanvas.tsx` — 子代理在像素办公室中显示为独立角色
+  - 通过 `OfficeState.addSubagent()` / `removeSubagent()` 同步
+  - 子代理标签用绿色背景区分（部门主代理用深蓝色）
+  - `subAgentNamesRef` 追踪 charId → 显示名映射
+- `App.css` — 左面板 60% → 70%，右面板 40% → 30%
+
+### ✅ 像素办公室 4×2 多房间布局 + 部门定位
+
+- `scripts/gen-layout.js` — 布局生成器重写
+  - 45×22 格子，4×2 办公室网格 + 走廊
+  - 每个部门独立房间：墙壁 + 2格门 + 彩色地板
+  - 家具稳定 UID：`dept-{name}-chair-main`、`dept-{name}-chair-sub{N}`
+  - 每间：主桌(ASSET_7) + 电脑(ASSET_90) + 主椅 + 书架 + 植物 + 3个子代理工位
+  - 大厅：自动贩卖机、饮水机、会议桌椅、植物
+  - 走廊两端植物装饰
+  - 87 个家具，30 个座位
+- `OfficeCanvas.tsx` — 新增 `DEPT_TO_SEAT` 映射
+  - 每个部门通过 `preferredSeatId` 分配到指定办公室的主椅
+  - 子代理自动分配到父部门附近的空椅子
+- 修复 `ASSET_26`（不存在）→ 使用 `ASSET_140-143`（有效植物资产）
+
+---
+
+## 下次继续的 TODO
+
+1. ~~**子代理显示自定义名字**~~ ✅ 已完成
+
+2. ~~**像素办公室美化 + 多房间布局**~~ ✅ 已完成
+
+3. **Telegram 消息在 app 实时显示** — 后端已实现，需验证前端
+
+4. **记忆管理** — 通过 OpenClaw 的原生记忆系统
+
+5. **去掉 department context 前缀** — 如果 OpenClaw agent 的 system prompt 已有部门感知，可以简化消息
+
+6. **像素办公室外观素材** — 用户提到 itch.io 办公室像素素材
+   - 参考: https://donarg.itch.io/officetileset
+   - 当前用程序化生成的精灵

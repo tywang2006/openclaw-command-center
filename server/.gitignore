@@ -1,0 +1,11 @@
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Test files
+test-output/

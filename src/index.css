@@ -1,0 +1,182 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-primary: #0a0a14;
+  --bg-panel: #1e1e2e;
+  --border-color: #2a2a4a;
+  --accent-color: #00d4aa;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0b0;
+  --shadow: 2px 2px 0px #0a0a14;
+  --status-active: #00ff88;
+  --status-idle: #ffaa00;
+  --status-offline: #666666;
+}
+
+body {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color);
+}
+
+/* Pixel art style - no rounded corners */
+button,
+.panel,
+.card,
+.tab,
+input,
+select,
+textarea {
+  border-radius: 0;
+}
+
+/* Common panel style */
+.panel {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  box-shadow: var(--shadow);
+}
+
+/* Button styles */
+button {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  transition: all 0.1s;
+}
+
+button:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+button:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+/* Link styles */
+a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Code blocks */
+code {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  font-family: inherit;
+  border: 1px solid var(--border-color);
+}
+
+pre {
+  background: var(--bg-primary);
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+pre code {
+  border: none;
+  padding: 0;
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  border: 1px solid;
+  margin: 0 4px;
+}
+
+.badge.active {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: var(--status-active);
+  color: var(--status-active);
+}
+
+.badge.idle {
+  background: rgba(255, 170, 0, 0.2);
+  border-color: var(--status-idle);
+  color: var(--status-idle);
+}
+
+.badge.offline {
+  background: rgba(102, 102, 102, 0.2);
+  border-color: var(--status-offline);
+  color: var(--status-offline);
+}
+
+/* Status dots */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid;
+  margin-right: 6px;
+}
+
+.status-dot.connected {
+  background: var(--status-active);
+  border-color: var(--status-active);
+}
+
+.status-dot.disconnected {
+  background: var(--status-offline);
+  border-color: var(--status-offline);
+}
+
+.status-dot.active {
+  background: var(--status-active);
+  border-color: var(--status-active);
+}
+
+.status-dot.idle {
+  background: var(--status-idle);
+  border-color: var(--status-idle);
+}
+
+.status-dot.offline {
+  background: var(--status-offline);
+  border-color: var(--status-offline);
+}

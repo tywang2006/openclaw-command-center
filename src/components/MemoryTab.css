@@ -1,0 +1,39 @@
+.memory-tab {
+  width: 100%;
+}
+
+.memory-tab.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.memory-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.dept-emoji {
+  font-size: 24px;
+}
+
+.memory-header h2 {
+  font-size: 20px;
+  color: var(--accent-color);
+  margin: 0;
+}

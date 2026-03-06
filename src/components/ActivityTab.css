@@ -1,0 +1,48 @@
+.activity-tab {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.activity-tab.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.activity-item {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.activity-item:hover {
+  border-color: var(--accent-color);
+}
+
+.activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.activity-emoji {
+  font-size: 16px;
+}
+
+.activity-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-text {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}

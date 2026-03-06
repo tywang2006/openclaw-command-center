@@ -1,0 +1,155 @@
+.command-panel {
+  border-top: 2px solid #2a2a4a;
+  padding: 8px;
+  background: #16162a;
+}
+
+.command-empty {
+  color: #666;
+  text-align: center;
+  padding: 12px;
+  font-size: 12px;
+}
+
+.command-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.target-emoji {
+  font-size: 14px;
+}
+
+.target-name {
+  color: #00d4aa;
+  font-weight: bold;
+}
+
+.target-status {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid #2a2a4a;
+}
+
+.target-status.active {
+  color: #00ff88;
+  border-color: #00ff88;
+}
+
+.target-status.idle {
+  color: #ffaa00;
+  border-color: #ffaa00;
+}
+
+.target-status.offline {
+  color: #666;
+  border-color: #444;
+}
+
+.image-preview {
+  position: relative;
+  margin-bottom: 6px;
+  max-height: 120px;
+  overflow: hidden;
+  border: 1px solid #2a2a4a;
+}
+
+.image-preview img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  display: block;
+}
+
+.image-preview .cancel-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: #c03030;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  padding: 0;
+}
+
+.command-input-row {
+  display: flex;
+  gap: 4px;
+}
+
+.command-input {
+  flex: 1;
+  background: #0a0a14;
+  border: 1px solid #2a2a4a;
+  color: #e0e0e0;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  resize: none;
+  outline: none;
+}
+
+.command-input:focus {
+  border-color: #00d4aa;
+}
+
+.command-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.action-btn {
+  width: 36px;
+  height: 100%;
+  border: 1px solid #2a2a4a;
+  background: #1e1e2e;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 0;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: #2a2a4a;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.send-btn {
+  background: #00443a;
+  border-color: #00d4aa;
+  color: #00d4aa;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: #006655;
+}
+
+.command-status {
+  font-size: 11px;
+  margin-top: 4px;
+  padding: 2px 6px;
+}
+
+.command-status.ok {
+  color: #00ff88;
+}
+
+.command-status.err {
+  color: #ff4444;
+}
