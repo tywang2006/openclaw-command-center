@@ -29,6 +29,17 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const [error, setError] = useState<string | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
 
+  // Inline timer creation
+  const [showTimerForm, setShowTimerForm] = useState(false)
+  const [timerForm, setTimerForm] = useState({
+    name: '',
+    scheduleKind: 'every' as 'every' | 'cron',
+    intervalMinutes: 10,
+    cronExpr: '*/15 * * * *',
+    message: '',
+  })
+  const [creatingTimer, setCreatingTimer] = useState(false)
+
   const dept = departments.find(d => d.id === selectedDeptId)
 
   // Filter activities for selected department
@@ -179,6 +190,52 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     }
   }
 
+  const handleCreateTimer = async () => {
+    if (!timerForm.name.trim() || !timerForm.message.trim() || !selectedDeptId) return
+    setCreatingTimer(true)
+    setError(null)
+    try {
+      const payload: Record<string, unknown> = {
+        name: timerForm.name.trim(),
+        schedule: timerForm.scheduleKind === 'every'
+          ? { kind: 'every', everyMs: timerForm.intervalMinutes * 60 * 1000 }
+          : { kind: 'cron', expr: timerForm.cronExpr },
+        message: timerForm.message.trim(),
+        deptId: selectedDeptId,
+      }
+      if (activeChat !== 'main') {
+        payload.subAgentId = activeChat
+      }
+      const res = await fetch('/cmd/api/cron/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const agentLabel = activeChat === 'main'
+          ? dept?.name || selectedDeptId
+          : subAgents.find(s => s.id === activeChat)?.name || activeChat
+        const scheduleLabel = timerForm.scheduleKind === 'every'
+          ? `每 ${timerForm.intervalMinutes} 分钟`
+          : timerForm.cronExpr
+        addActivity({
+          deptId: selectedDeptId,
+          role: 'assistant',
+          text: `[系统] 已创建定时任务「${timerForm.name}」→ ${agentLabel}，${scheduleLabel}\n指令: ${timerForm.message.substring(0, 80)}${timerForm.message.length > 80 ? '...' : ''}`,
+          timestamp: Date.now(),
+        })
+        setShowTimerForm(false)
+        setTimerForm({ name: '', scheduleKind: 'every', intervalMinutes: 10, cronExpr: '*/15 * * * *', message: '' })
+      } else {
+        setError(data.error || '创建定时任务失败')
+      }
+    } catch {
+      setError('网络错误，无法创建定时任务')
+    }
+    setCreatingTimer(false)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -320,6 +377,71 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         )}
       </div>
 
+      {/* Inline timer form */}
+      {showTimerForm && selectedDeptId && (
+        <div className="chat-timer-form">
+          <div className="timer-form-header">
+            <span className="timer-form-title">
+              创建定时任务 → {activeChat === 'main' ? (dept?.name || selectedDeptId) : (subAgents.find(s => s.id === activeChat)?.name || activeChat)}
+            </span>
+            <button className="timer-form-close" onClick={() => setShowTimerForm(false)}>×</button>
+          </div>
+          <div className="timer-form-row">
+            <input
+              value={timerForm.name}
+              onChange={e => setTimerForm({ ...timerForm, name: e.target.value })}
+              placeholder="任务名称"
+              className="timer-input"
+            />
+            <div className="timer-schedule-toggle">
+              <button
+                className={timerForm.scheduleKind === 'every' ? 'active' : ''}
+                onClick={() => setTimerForm({ ...timerForm, scheduleKind: 'every' })}
+              >间隔</button>
+              <button
+                className={timerForm.scheduleKind === 'cron' ? 'active' : ''}
+                onClick={() => setTimerForm({ ...timerForm, scheduleKind: 'cron' })}
+              >Cron</button>
+            </div>
+            {timerForm.scheduleKind === 'every' ? (
+              <div className="timer-interval">
+                <input
+                  type="number"
+                  value={timerForm.intervalMinutes}
+                  onChange={e => setTimerForm({ ...timerForm, intervalMinutes: parseInt(e.target.value) || 1 })}
+                  min="1"
+                  className="timer-input-num"
+                />
+                <span className="timer-unit">分钟</span>
+              </div>
+            ) : (
+              <input
+                value={timerForm.cronExpr}
+                onChange={e => setTimerForm({ ...timerForm, cronExpr: e.target.value })}
+                placeholder="*/15 * * * *"
+                className="timer-input timer-cron"
+              />
+            )}
+          </div>
+          <div className="timer-form-row">
+            <input
+              value={timerForm.message}
+              onChange={e => setTimerForm({ ...timerForm, message: e.target.value })}
+              placeholder="执行指令..."
+              className="timer-input timer-msg"
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateTimer() }}
+            />
+            <button
+              className="timer-create-btn"
+              onClick={handleCreateTimer}
+              disabled={creatingTimer || !timerForm.name.trim() || !timerForm.message.trim()}
+            >
+              {creatingTimer ? '...' : '创建'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input */}
       <div className="chat-input-row">
         <textarea
@@ -337,6 +459,17 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           rows={1}
           disabled={sending || !selectedDeptId}
         />
+        <button
+          className="chat-btn timer-btn"
+          onClick={() => setShowTimerForm(!showTimerForm)}
+          disabled={!selectedDeptId}
+          title="创建定时任务"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.5" stroke={showTimerForm ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" />
+            <path d="M8 4v4l3 2" stroke={showTimerForm ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
         <button
           className="chat-btn send-btn"
           onClick={sendMessage}

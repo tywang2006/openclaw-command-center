@@ -1,3 +1,8 @@
+/* ============================================
+   OpenClaw Command Center - Global Styles
+   Modern dark dashboard design system
+   ============================================ */
+
 * {
   margin: 0;
   padding: 0;
@@ -5,23 +10,66 @@
 }
 
 :root {
-  --bg-primary: #0a0a14;
-  --bg-panel: #1e1e2e;
-  --border-color: #2a2a4a;
+  /* Backgrounds */
+  --bg-primary: #0c0c1a;
+  --bg-panel: #14142a;
+  --bg-card: #1c1c36;
+  --bg-elevated: #222244;
+
+  /* Borders */
+  --border-color: #2a2a50;
+  --border-subtle: #1e1e3e;
+
+  /* Accent */
   --accent-color: #00d4aa;
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0b0;
-  --shadow: 2px 2px 0px #0a0a14;
-  --status-active: #00ff88;
-  --status-idle: #ffaa00;
-  --status-offline: #666666;
+  --accent-hover: #00f0c0;
+  --accent-muted: rgba(0, 212, 170, 0.12);
+  --accent-glow: rgba(0, 212, 170, 0.25);
+
+  /* Text */
+  --text-primary: #e8e8f0;
+  --text-secondary: #8888a8;
+  --text-muted: #5a5a78;
+
+  /* Status */
+  --status-active: #00cc88;
+  --status-idle: #ffaa33;
+  --status-offline: #666680;
+  --danger: #ff4466;
+  --warning: #ffaa33;
+  --success: #00cc88;
+
+  /* Shadows */
+  --shadow-panel: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 12px rgba(0, 212, 170, 0.15);
+
+  /* Radii */
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+
+  /* Fonts */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
 }
 
 body {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--font-ui);
   background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -29,154 +77,190 @@ body {
   height: 100vh;
 }
 
-/* Scrollbars */
+/* ---- Scrollbars ---- */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-color);
+  background: var(--text-muted);
 }
 
-/* Pixel art style - no rounded corners */
-button,
-.panel,
-.card,
-.tab,
-input,
-select,
-textarea {
-  border-radius: 0;
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-/* Common panel style */
+/* ---- Common panel style ---- */
 .panel {
   background: var(--bg-panel);
-  border: 2px solid var(--border-color);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
 }
 
-/* Button styles */
+/* ---- Button styles ---- */
 button {
-  background: var(--bg-panel);
-  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   color: var(--text-primary);
   padding: 8px 16px;
   cursor: pointer;
-  font-family: inherit;
-  font-size: 14px;
-  transition: all 0.1s;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  line-height: 1.4;
 }
 
 button:hover {
   border-color: var(--accent-color);
   color: var(--accent-color);
+  background: var(--accent-muted);
 }
 
 button:active {
-  transform: translate(2px, 2px);
-  box-shadow: none;
+  transform: scale(0.98);
 }
 
-/* Link styles */
+button:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ---- Link styles ---- */
 a {
   color: var(--accent-color);
   text-decoration: none;
+  transition: color var(--transition-fast);
 }
 
 a:hover {
+  color: var(--accent-hover);
   text-decoration: underline;
 }
 
-/* Code blocks */
+/* ---- Code blocks ---- */
 code {
   background: var(--bg-primary);
   padding: 2px 6px;
-  font-family: inherit;
-  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--accent-color);
 }
 
 pre {
   background: var(--bg-primary);
-  padding: 12px;
-  border: 1px solid var(--border-color);
+  padding: 12px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 pre code {
   border: none;
   padding: 0;
+  background: none;
+  color: var(--text-primary);
 }
 
-/* Status badges */
+/* ---- Input styles ---- */
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Status badges ---- */
 .badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 8px;
   font-size: 11px;
-  font-weight: bold;
+  font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.3px;
   border: 1px solid;
+  border-radius: var(--radius-xs);
   margin: 0 4px;
 }
 
 .badge.active {
-  background: rgba(0, 255, 136, 0.2);
-  border-color: var(--status-active);
+  background: rgba(0, 204, 136, 0.15);
+  border-color: rgba(0, 204, 136, 0.4);
   color: var(--status-active);
 }
 
 .badge.idle {
-  background: rgba(255, 170, 0, 0.2);
-  border-color: var(--status-idle);
+  background: rgba(255, 170, 51, 0.15);
+  border-color: rgba(255, 170, 51, 0.4);
   color: var(--status-idle);
 }
 
 .badge.offline {
-  background: rgba(102, 102, 102, 0.2);
-  border-color: var(--status-offline);
+  background: rgba(102, 102, 128, 0.15);
+  border-color: rgba(102, 102, 128, 0.4);
   color: var(--status-offline);
 }
 
-/* Status dots */
+/* ---- Status dots ---- */
 .status-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border: 1px solid;
+  border-radius: 50%;
   margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .status-dot.connected {
   background: var(--status-active);
-  border-color: var(--status-active);
+  box-shadow: 0 0 6px rgba(0, 204, 136, 0.6);
 }
 
 .status-dot.disconnected {
   background: var(--status-offline);
-  border-color: var(--status-offline);
 }
 
 .status-dot.active {
   background: var(--status-active);
-  border-color: var(--status-active);
+  box-shadow: 0 0 6px rgba(0, 204, 136, 0.6);
 }
 
 .status-dot.idle {
   background: var(--status-idle);
-  border-color: var(--status-idle);
+  box-shadow: 0 0 6px rgba(255, 170, 51, 0.5);
 }
 
 .status-dot.offline {
   background: var(--status-offline);
-  border-color: var(--status-offline);
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: rgba(0, 212, 170, 0.3);
+  color: var(--text-primary);
 }

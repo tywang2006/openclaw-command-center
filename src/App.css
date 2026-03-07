@@ -1,3 +1,7 @@
+/* ============================================
+   OpenClaw Command Center - App Layout
+   ============================================ */
+
 .app {
   display: flex;
   flex-direction: column;
@@ -6,73 +10,97 @@
   background: var(--bg-primary);
 }
 
+/* ---- Header ---- */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 60px;
+  height: 48px;
   padding: 0 20px;
-  background: var(--bg-panel);
-  border-bottom: 2px solid var(--border-color);
-  box-shadow: var(--shadow);
+  background: linear-gradient(
+    180deg,
+    rgba(20, 20, 42, 0.95) 0%,
+    rgba(20, 20, 42, 0.85) 100%
+  );
+  border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  flex-shrink: 0;
+  z-index: 10;
 }
 
 .header-title h1 {
-  font-size: 24px;
-  font-weight: bold;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--accent-color);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
 .header-status {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
 }
 
 .connection-status {
   display: flex;
   align-items: center;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .current-time {
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-primary);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
 }
 
+/* ---- Main content ---- */
 .main-content {
   display: flex;
   flex: 1;
   overflow: hidden;
   gap: 12px;
   padding: 12px;
+  background: var(--bg-primary);
 }
 
+/* ---- Left panel (Pixel Office) ---- */
 .left-panel {
-  flex: 0 0 80%;
-  min-width: 0;
+  flex: 3;
+  min-width: 300px;
   display: flex;
-}
-
-.right-panel {
-  flex: 0 0 calc(20% - 12px);
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-panel);
-  border: 2px solid var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
 }
 
-/* Right panel tabs */
+/* ---- Right panel (Tabs + Content) ---- */
+.right-panel {
+  flex: 2;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* ---- Right panel tabs ---- */
 .right-tab-header {
   display: flex;
-  border-bottom: 2px solid var(--border-color);
-  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  padding: 0 4px;
 }
 
 .right-tab {
@@ -80,21 +108,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 8px 4px;
+  gap: 5px;
+  padding: 10px 4px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  font-family: inherit;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  margin-bottom: -2px;
+  margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .right-tab:hover {
   color: var(--text-primary);
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: transparent;
 }
 
 .right-tab.active {

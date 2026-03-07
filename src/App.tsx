@@ -5,11 +5,13 @@ import ChatPanel, { type SubAgent } from './components/ChatPanel'
 import BulletinTab from './components/BulletinTab'
 import MemoryTab from './components/MemoryTab'
 import ActivityTab from './components/ActivityTab'
+import CronTab from './components/CronTab'
+import SkillsTab from './components/SkillsTab'
 import StatusBar from './components/StatusBar'
 import { BulletinIcon, MemoryIcon, ActivityIcon } from './components/Icons'
 import './App.css'
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'cron' | 'skills'
 
 const RIGHT_TABS: { id: RightTab; label: string; Icon: React.FC<{ size?: number; color?: string }> }[] = [
   { id: 'chat', label: '对话', Icon: ({ size = 14, color = '#a0a0b0' }) => (
@@ -20,6 +22,17 @@ const RIGHT_TABS: { id: RightTab; label: string; Icon: React.FC<{ size?: number;
   { id: 'bulletin', label: '公告', Icon: BulletinIcon },
   { id: 'memory', label: '记忆', Icon: MemoryIcon },
   { id: 'activity', label: '活动', Icon: ActivityIcon },
+  { id: 'cron', label: '定时', Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.5" />
+      <path d="M8 4v4l3 2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )},
+  { id: 'skills', label: '技能', Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z" stroke={color} strokeWidth="1.3" fill="none" />
+    </svg>
+  )},
 ]
 
 export default function App() {
@@ -106,6 +119,8 @@ export default function App() {
                 departments={agentState.departments}
               />
             )}
+            {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
+            {rightTab === 'skills' && <SkillsTab />}
           </div>
         </div>
       </div>

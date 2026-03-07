@@ -6,6 +6,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createWatcher, getInitialState } from './watcher.js';
 import apiRoutes from './routes/api.js';
+import skillsRoutes from './routes/skills.js';
+import cronRoutes from './routes/cron.js';
 import { startPolling, stopPolling } from './telegram.js';
 import { getGateway } from './gateway.js';
 
@@ -36,6 +38,8 @@ app.use((req, res, next) => {
 
 // API routes
 app.use('/api', apiRoutes);
+app.use('/api', skillsRoutes);
+app.use('/api/cron', cronRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

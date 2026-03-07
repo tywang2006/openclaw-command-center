@@ -275,7 +275,10 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     }
   }, [panX, panY, zoom, departments, selectedDeptId])
 
-  // Click to select character
+  // Track whether a left-click drag moved enough to be a pan (vs a click)
+  const dragDistRef = useRef(0)
+
+  // Click to select character / drag to pan
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas || !officeStateRef.current) return
@@ -284,27 +287,12 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     const mouseX = e.clientX - rect.left
     const mouseY = e.clientY - rect.top
 
-    // Middle mouse or right mouse for panning
-    if (e.button === 1 || e.button === 2) {
+    // Any mouse button starts panning
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
       e.preventDefault()
       setIsPanning(true)
+      dragDistRef.current = 0
       panStartRef.current = { x: mouseX, y: mouseY, panX, panY }
-      return
-    }
-
-    // Left click - check for character hit
-    if (e.button === 0) {
-      const { offsetX, offsetY } = lastOffsetsRef.current
-      const worldX = (mouseX - offsetX) / zoom
-      const worldY = (mouseY - offsetY) / zoom
-
-      const clickedId = officeStateRef.current.getCharacterAt(worldX, worldY)
-      if (clickedId !== null) {
-        const dept = departments[clickedId]
-        if (dept) {
-          onSelectDept(selectedDeptId === dept.id ? null : dept.id)
-        }
-      }
     }
   }
 
@@ -317,13 +305,37 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     const mouseX = e.clientX - rect.left
     const mouseY = e.clientY - rect.top
 
-    setPanX(panStartRef.current.panX + (mouseX - panStartRef.current.x))
-    setPanY(panStartRef.current.panY + (mouseY - panStartRef.current.y))
+    const dx = mouseX - panStartRef.current.x
+    const dy = mouseY - panStartRef.current.y
+    dragDistRef.current = Math.max(dragDistRef.current, Math.abs(dx) + Math.abs(dy))
+
+    setPanX(panStartRef.current.panX + dx)
+    setPanY(panStartRef.current.panY + dy)
   }
 
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button === 1 || e.button === 2) {
-      setIsPanning(false)
+    const wasPanning = isPanning
+    setIsPanning(false)
+
+    // Left click: if drag distance was small, treat as a click to select
+    if (e.button === 0 && wasPanning && dragDistRef.current < 5) {
+      const canvas = canvasRef.current
+      if (!canvas || !officeStateRef.current) return
+
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const { offsetX, offsetY } = lastOffsetsRef.current
+      const worldX = (mouseX - offsetX) / zoom
+      const worldY = (mouseY - offsetY) / zoom
+
+      const clickedId = officeStateRef.current.getCharacterAt(worldX, worldY)
+      if (clickedId !== null) {
+        const dept = departments[clickedId]
+        if (dept) {
+          onSelectDept(selectedDeptId === dept.id ? null : dept.id)
+        }
+      }
     }
   }
 
