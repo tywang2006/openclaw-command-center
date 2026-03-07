@@ -19,9 +19,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--border-color);
   background: var(--bg-card);
+  flex-shrink: 0;
 }
 
 .cron-header h2 {
@@ -36,7 +37,7 @@
   color: var(--bg-primary);
   border: none;
   padding: 6px 14px;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -61,12 +62,12 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: 10px 12px;
   background: rgba(255, 68, 102, 0.12);
-  border: 1px solid rgba(255, 68, 102, 0.3);
+  border: 2px solid rgba(255, 68, 102, 0.3);
   color: var(--danger);
-  margin: 12px 16px;
-  border-radius: var(--radius-md);
+  margin: 12px;
+  border-radius: 0;
   font-size: 12px;
   font-weight: 500;
 }
@@ -94,9 +95,10 @@
 /* ---- Create form ---- */
 .create-form {
   background: var(--bg-card);
-  padding: 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 12px;
+  border-bottom: 2px solid var(--border-color);
   animation: slideDown 0.2s ease-out;
+  flex-shrink: 0;
 }
 
 @keyframes slideDown {
@@ -105,7 +107,7 @@
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .form-group label {
@@ -124,8 +126,8 @@
   width: 100%;
   padding: 8px 12px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
   color: var(--text-primary);
   font-size: 13px;
   font-family: var(--font-ui);
@@ -138,7 +140,7 @@
 .form-group textarea:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.1);
+  box-shadow: 0 0 2px var(--accent-color);
 }
 
 .form-group textarea {
@@ -163,8 +165,8 @@
   flex: 1;
   padding: 8px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
@@ -190,7 +192,7 @@
   background: var(--accent-color);
   color: var(--bg-primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -213,18 +215,19 @@
   display: flex;
   gap: 6px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   overflow-x: auto;
   flex-shrink: 0;
   background: rgba(20, 20, 42, 0.5);
+  align-items: center;
 }
 
 .filter-chip {
   background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  border: 2px solid var(--border-color);
   color: var(--text-muted);
   padding: 4px 10px;
-  border-radius: 14px;
+  border-radius: 0;
   cursor: pointer;
   font-size: 11px;
   font-weight: 500;
@@ -279,11 +282,15 @@
 /* ---- Job item ---- */
 .job-item {
   background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  margin-bottom: 10px;
-  padding: 12px 14px;
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  margin-bottom: 8px;
+  padding: 10px 12px;
   transition: all var(--transition-normal);
+}
+
+.job-item:last-child {
+  margin-bottom: 0;
 }
 
 .job-item:hover {
@@ -311,7 +318,7 @@
 .cron-tab .status-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 0;
   flex-shrink: 0;
 }
 
@@ -372,7 +379,7 @@
   height: 18px;
   background: var(--text-muted);
   border: none;
-  border-radius: 9px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background var(--transition-normal);
   padding: 0;
@@ -389,9 +396,9 @@
   width: 14px;
   height: 14px;
   background: white;
-  border-radius: 50%;
+  border-radius: 0;
   transition: transform var(--transition-normal);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .toggle-switch.enabled .toggle-slider {
@@ -697,8 +704,8 @@
   width: 100%;
   padding: 8px 12px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
   color: var(--text-primary);
   font-size: 13px;
   font-family: var(--font-ui);
@@ -709,7 +716,7 @@
 .dept-select:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.1);
+  box-shadow: 0 0 2px var(--accent-color);
 }
 
 /* ---- Run Now button ---- */
@@ -760,4 +767,29 @@
   font-weight: 600;
   margin-right: 6px;
   vertical-align: middle;
+}
+
+/* ---- Execution History Chart ---- */
+.cron-history-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+  margin-top: 4px;
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.cron-history-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 12px;
+  background: #00d4aa;
+  border-radius: 1px 1px 0 0;
+  transition: height 0.2s;
+}
+
+.cron-history-bar.error {
+  background: #ff4444;
 }

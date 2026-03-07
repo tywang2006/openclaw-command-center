@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Department, Activity } from '../hooks/useAgentState'
 import { DeptIcon, SendIcon } from './Icons'
+import { useToast } from './Toast'
+import { useLocale } from '../i18n/index'
+import { authedFetch } from '../utils/api'
 import './ChatPanel.css'
 
 export interface SubAgent {
@@ -16,9 +19,10 @@ interface ChatPanelProps {
   activities: Activity[]
   addActivity: (a: Activity) => void
   onSubAgentsChange?: (deptId: string, subs: SubAgent[]) => void
+  streamingTexts?: Map<string, string>
 }
 
-export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange }: ChatPanelProps) {
+export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange, streamingTexts }: ChatPanelProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [subAgents, setSubAgents] = useState<SubAgent[]>([])
@@ -26,8 +30,21 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const [showNewSub, setShowNewSub] = useState(false)
   const [newSubName, setNewSubName] = useState('')
   const [newSubTask, setNewSubTask] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const { showToast } = useToast()
   const messagesRef = useRef<HTMLDivElement>(null)
+  const { t, locale } = useLocale()
+
+  // Persona preview states
+  const [showPersona, setShowPersona] = useState(false)
+  const [personaContent, setPersonaContent] = useState<string | null>(null)
+  const [personaLoading, setPersonaLoading] = useState(false)
+
+  // Daily log states
+  const [showDailyLog, setShowDailyLog] = useState(false)
+  const [dailyDates, setDailyDates] = useState<string[]>([])
+  const [selectedDate, setSelectedDate] = useState('')
+  const [dailyContent, setDailyContent] = useState<string | null>(null)
+  const [dailyLoading, setDailyLoading] = useState(false)
 
   // Inline timer creation
   const [showTimerForm, setShowTimerForm] = useState(false)
@@ -40,12 +57,85 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   })
   const [creatingTimer, setCreatingTimer] = useState(false)
 
+  // Chat history from OpenClaw Gateway (loaded per department)
+  const [historyByDept, setHistoryByDept] = useState<Record<string, Activity[]>>({})
+
+  // Image attachments
+  const [pendingImages, setPendingImages] = useState<{ data: string; name: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const addImageFromFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return
+    if (file.size > 4 * 1024 * 1024) {
+      showToast(t('chat.image.size.limit'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPendingImages(prev => [...prev, { data: reader.result as string, name: file.name }])
+    }
+    reader.readAsDataURL(file)
+  }, [showToast, t])
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) addImageFromFile(file)
+        return
+      }
+    }
+  }, [addImageFromFile])
+
   const dept = departments.find(d => d.id === selectedDeptId)
 
-  // Filter activities for selected department
-  const deptActivities = selectedDeptId
+  // Fetch department persona
+  const fetchPersona = async () => {
+    if (!selectedDeptId) return
+    setPersonaLoading(true)
+    try {
+      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/persona`)
+      const data = await res.json()
+      setPersonaContent(data.content || '')
+    } catch { setPersonaContent('') }
+    setPersonaLoading(false)
+  }
+
+  // Load chat history from OpenClaw Gateway when department changes
+  useEffect(() => {
+    if (!selectedDeptId || selectedDeptId in historyByDept) return
+    // Mark immediately to prevent duplicate fetches
+    setHistoryByDept(prev => ({ ...prev, [selectedDeptId]: [] }))
+    authedFetch(`/cmd/api/departments/${selectedDeptId}/history?limit=50`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data.messages)) {
+          const msgs: Activity[] = data.messages.map((msg: { role: string; text: string; timestamp: string | null }) => ({
+            deptId: selectedDeptId,
+            role: (msg.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+            text: msg.text,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : 0,
+            source: 'history',
+          }))
+          setHistoryByDept(prev => ({ ...prev, [selectedDeptId!]: msgs }))
+        }
+      })
+      .catch(() => {})
+  }, [selectedDeptId])
+
+  // Filter real-time activities for selected department
+  const realtimeActivities = selectedDeptId
     ? activities.filter(a => a.deptId === selectedDeptId)
     : activities
+
+  // Merge history + real-time, dedup by text+role (avoid filtering "好的" etc.)
+  const historyMsgs = selectedDeptId ? (historyByDept[selectedDeptId] || []) : []
+  const realtimeKeys = new Set(realtimeActivities.map(a => `${a.role}:${a.text.substring(0, 100)}`))
+  const uniqueHistory = historyMsgs.filter(m => !realtimeKeys.has(`${m.role}:${m.text.substring(0, 100)}`))
+  const deptActivities = [...uniqueHistory, ...realtimeActivities]
 
   // Smart auto-scroll: only scroll if user is near bottom
   useEffect(() => {
@@ -65,7 +155,15 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       setActiveChat('main')
       return
     }
-    fetch(`/cmd/api/departments/${selectedDeptId}/subagents`)
+    // Reset persona and daily log states
+    setShowPersona(false)
+    setPersonaContent(null)
+    setShowDailyLog(false)
+    setDailyDates([])
+    setDailyContent(null)
+    setSelectedDate('')
+
+    authedFetch(`/cmd/api/departments/${selectedDeptId}/subagents`)
       .then(res => res.json())
       .then(data => {
         const agents = data.agents || []
@@ -79,17 +177,23 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   }, [selectedDeptId])
 
   const sendMessage = async () => {
-    if (!text.trim() || sending || !selectedDeptId) return
+    if ((!text.trim() && pendingImages.length === 0) || sending || !selectedDeptId) return
     const msg = text.trim()
+    const images = [...pendingImages]
     setText('')
+    setPendingImages([])
     setSending(true)
 
-    // Add user message immediately
+    // Add user message immediately (with image indicators)
+    const subName = subAgents.find(s => s.id === activeChat)?.name || ''
+    const displayText = (activeChat === 'main' ? msg : `[${subName}] ${msg}`)
+      + (images.length ? t('chat.message.images', { count: images.length }) : '')
     addActivity({
       deptId: selectedDeptId,
       role: 'user',
-      text: activeChat === 'main' ? msg : `[${subAgents.find(s => s.id === activeChat)?.name || '子代理'}] ${msg}`,
+      text: displayText,
       timestamp: Date.now(),
+      images: images.map(img => img.data),
     })
 
     try {
@@ -97,14 +201,19 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         ? `/cmd/api/departments/${selectedDeptId}/chat`
         : `/cmd/api/departments/${selectedDeptId}/subagents/${activeChat}/chat`
 
-      const res = await fetch(url, {
+      const body: Record<string, unknown> = { message: msg }
+      if (images.length > 0) {
+        body.images = images.map(img => img.data)
+      }
+
+      const res = await authedFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify(body)
       })
       const data = await res.json()
       if (data.success && data.reply) {
-        const prefix = activeChat === 'main' ? '' : `[${subAgents.find(s => s.id === activeChat)?.name || '子代理'}] `
+        const prefix = activeChat === 'main' ? '' : `[${subAgents.find(s => s.id === activeChat)?.name || ''}] `
         addActivity({
           deptId: selectedDeptId,
           role: 'assistant',
@@ -115,7 +224,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         addActivity({
           deptId: selectedDeptId,
           role: 'assistant',
-          text: `[Error] ${data.error || 'Agent not responding'}`,
+          text: t('chat.message.error', { error: data.error || t('chat.message.error.agent') }),
           timestamp: Date.now(),
         })
       }
@@ -123,7 +232,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       addActivity({
         deptId: selectedDeptId,
         role: 'assistant',
-        text: '[Error] Network error',
+        text: t('chat.message.error.network'),
         timestamp: Date.now(),
       })
     }
@@ -133,9 +242,8 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const createSubAgent = async () => {
     if (!newSubTask.trim() || !selectedDeptId) return
     const agentName = newSubName.trim() || undefined
-    setError(null)
     try {
-      const res = await fetch(`/cmd/api/departments/${selectedDeptId}/subagents`, {
+      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/subagents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task: newSubTask.trim(), name: agentName })
@@ -152,16 +260,16 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         addActivity({
           deptId: selectedDeptId,
           role: 'assistant',
-          text: `[系统] 创建子代理「${data.name}」，任务: ${newSubTask.trim()}`,
+          text: t('chat.subagent.created', { name: data.name, task: newSubTask.trim() }),
           timestamp: Date.now(),
         })
       } else {
         console.error('[SubAgent] Failed to create sub-agent:', data.error)
-        setError(`创建子代理失败: ${data.error || '未知错误'}`)
+        showToast(t('chat.subagent.create.failed') + ': ' + (data.error || ''))
       }
     } catch (err) {
       console.error('[SubAgent] Network error creating sub-agent:', err)
-      setError('网络错误，无法创建子代理')
+      showToast(t('chat.subagent.create.error'))
     }
     setNewSubName('')
     setNewSubTask('')
@@ -170,12 +278,11 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
 
   const removeSubAgentHandler = async (subId: string) => {
     if (!selectedDeptId) return
-    setError(null)
     try {
-      const res = await fetch(`/cmd/api/departments/${selectedDeptId}/subagents/${subId}`, { method: 'DELETE' })
+      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/subagents/${subId}`, { method: 'DELETE' })
       if (!res.ok) {
         console.error('[SubAgent] Failed to delete sub-agent:', res.status)
-        setError('删除子代理失败')
+        showToast(t('chat.subagent.delete.failed'))
         return
       }
       setSubAgents(prev => {
@@ -186,14 +293,13 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       if (activeChat === subId) setActiveChat('main')
     } catch (err) {
       console.error('[SubAgent] Network error deleting sub-agent:', err)
-      setError('网络错误，无法删除子代理')
+      showToast(t('chat.subagent.delete.error'))
     }
   }
 
   const handleCreateTimer = async () => {
     if (!timerForm.name.trim() || !timerForm.message.trim() || !selectedDeptId) return
     setCreatingTimer(true)
-    setError(null)
     try {
       const payload: Record<string, unknown> = {
         name: timerForm.name.trim(),
@@ -206,7 +312,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       if (activeChat !== 'main') {
         payload.subAgentId = activeChat
       }
-      const res = await fetch('/cmd/api/cron/jobs', {
+      const res = await authedFetch('/cmd/api/cron/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -217,21 +323,26 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           ? dept?.name || selectedDeptId
           : subAgents.find(s => s.id === activeChat)?.name || activeChat
         const scheduleLabel = timerForm.scheduleKind === 'every'
-          ? `每 ${timerForm.intervalMinutes} 分钟`
+          ? t('chat.timer.schedule.every', { minutes: timerForm.intervalMinutes })
           : timerForm.cronExpr
         addActivity({
           deptId: selectedDeptId,
           role: 'assistant',
-          text: `[系统] 已创建定时任务「${timerForm.name}」→ ${agentLabel}，${scheduleLabel}\n指令: ${timerForm.message.substring(0, 80)}${timerForm.message.length > 80 ? '...' : ''}`,
+          text: t('chat.timer.created', {
+            name: timerForm.name,
+            agent: agentLabel,
+            schedule: scheduleLabel,
+            message: timerForm.message.substring(0, 80) + (timerForm.message.length > 80 ? '...' : '')
+          }),
           timestamp: Date.now(),
         })
         setShowTimerForm(false)
         setTimerForm({ name: '', scheduleKind: 'every', intervalMinutes: 10, cronExpr: '*/15 * * * *', message: '' })
       } else {
-        setError(data.error || '创建定时任务失败')
+        showToast(data.error || t('chat.timer.create.failed'))
       }
     } catch {
-      setError('网络错误，无法创建定时任务')
+      showToast(t('chat.timer.create.error'))
     }
     setCreatingTimer(false)
   }
@@ -244,7 +355,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   }
 
   const formatTime = (ts: number) => {
-    return new Date(ts).toLocaleTimeString('zh-CN', {
+    return new Date(ts).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', {
       hour: '2-digit', minute: '2-digit', hour12: false
     })
   }
@@ -258,20 +369,38 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             <DeptIcon deptId={dept.id} size={18} />
             <span className="chat-dept-name">{dept.name}</span>
             <span className={`chat-status ${dept.status}`}>{dept.status}</span>
+            <button
+              className="chat-btn persona-btn"
+              onClick={() => { setShowPersona(!showPersona); if (!showPersona && personaContent === null) fetchPersona() }}
+              title={t('chat.persona.show')}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6.5" stroke={showPersona ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" />
+                <path d="M8 7v5M8 4.5v1" stroke={showPersona ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
           </>
         ) : (
           <span className="chat-no-dept">
             {departments.length > 0
-              ? '选择一个部门开始对话'
-              : 'Loading...'}
+              ? t('chat.header.select')
+              : t('chat.header.loading')}
           </span>
         )}
       </div>
 
-      {/* Error display */}
-      {error && (
-        <div style={{ padding: '8px 12px', background: '#ff4444', color: 'white', fontSize: '12px' }}>
-          {error}
+      {/* Persona popover */}
+      {showPersona && selectedDeptId && (
+        <div className="persona-popover">
+          <div className="persona-popover-header">
+            <span>{t('chat.persona.show')}</span>
+            <button onClick={() => setShowPersona(false)}>×</button>
+          </div>
+          <div className="persona-popover-content">
+            {personaLoading ? <p>{t('chat.persona.loading')}</p>
+             : personaContent ? <pre>{personaContent}</pre>
+             : <p>{t('chat.persona.empty')}</p>}
+          </div>
         </div>
       )}
 
@@ -282,7 +411,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             className={`agent-chip ${activeChat === 'main' ? 'active' : ''}`}
             onClick={() => setActiveChat('main')}
           >
-            主代理
+            {t('chat.agent.main')}
           </button>
           {subAgents.map(sub => (
             <button
@@ -309,15 +438,15 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             className="sub-name-input"
             value={newSubName}
             onChange={e => setNewSubName(e.target.value)}
-            placeholder="名字 (如: 小王)"
+            placeholder={t('chat.subagent.name.placeholder')}
           />
           <input
             value={newSubTask}
             onChange={e => setNewSubTask(e.target.value)}
-            placeholder="任务描述..."
+            placeholder={t('chat.subagent.task.placeholder')}
             onKeyDown={e => { if (e.key === 'Enter') createSubAgent() }}
           />
-          <button onClick={createSubAgent} disabled={!newSubTask.trim()}>创建</button>
+          <button onClick={createSubAgent} disabled={!newSubTask.trim()}>{t('chat.subagent.create')}</button>
         </div>
       )}
 
@@ -331,7 +460,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
               <span className="sub-detail-name">{sub.name}</span>
               <span className={`sub-detail-status ${sub.status}`}>{sub.status}</span>
             </div>
-            <div className="sub-detail-task">任务: {sub.task}</div>
+            <div className="sub-detail-task">{t('chat.subagent.task.label')}: {sub.task}</div>
           </div>
         )
       })()}
@@ -341,40 +470,71 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         {deptActivities.length === 0 ? (
           <div className="chat-empty">
             {selectedDeptId
-              ? `发送消息到 ${dept?.name || selectedDeptId}`
-              : '点击底部部门开始对话'}
+              ? t('chat.message.send', { name: dept?.name || selectedDeptId })
+              : t('chat.message.click')}
           </div>
         ) : (
           deptActivities.map((msg, i) => (
             <div key={i} className={`chat-msg ${msg.role}`}>
               <div className="chat-msg-meta">
                 {msg.role === 'user' ? (
-                  <span className="chat-msg-sender you">YOU</span>
+                  <>
+                    <span className="chat-msg-sender you">
+                      {msg.fromName || 'YOU'}
+                    </span>
+                    {msg.source && msg.source !== 'app' && (
+                      <span className={`chat-msg-source ${msg.source}`}>
+                        {msg.source === 'telegram' ? 'TG' : msg.source === 'gateway' ? 'TG' : msg.source}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <>
                     <DeptIcon deptId={msg.deptId} size={12} />
                     <span className="chat-msg-sender bot">
                       {departments.find(d => d.id === msg.deptId)?.name || msg.deptId}
                     </span>
+                    {msg.source && msg.source !== 'app' && (
+                      <span className={`chat-msg-source ${msg.source}`}>
+                        {msg.source === 'telegram' ? 'TG' : msg.source === 'gateway' ? 'TG' : msg.source}
+                      </span>
+                    )}
                   </>
                 )}
                 <span className="chat-msg-time">{formatTime(msg.timestamp)}</span>
               </div>
               <div className="chat-msg-text">{msg.text}</div>
+              {msg.images && msg.images.length > 0 && (
+                <div className="chat-msg-images">
+                  {msg.images.map((src, j) => (
+                    <img key={j} src={src} className="chat-msg-img" alt="" />
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}
-        {sending && (
-          <div className="chat-msg assistant">
-            <div className="chat-msg-meta">
-              <DeptIcon deptId={selectedDeptId || ''} size={12} />
-              <span className="chat-msg-sender bot">Thinking...</span>
+        {sending && activeChat === 'main' && (() => {
+          const streamText = streamingTexts?.get(selectedDeptId || '')
+          return (
+            <div className="chat-msg assistant">
+              <div className="chat-msg-meta">
+                <DeptIcon deptId={selectedDeptId || ''} size={12} />
+                <span className="chat-msg-sender bot">{t('chat.message.thinking')}</span>
+              </div>
+              {streamText ? (
+                <div className="chat-stream-text">
+                  {streamText}
+                  <span className="chat-stream-cursor">▊</span>
+                </div>
+              ) : (
+                <div className="chat-typing">
+                  <span></span><span></span><span></span>
+                </div>
+              )}
             </div>
-            <div className="chat-typing">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Inline timer form */}
@@ -382,7 +542,9 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         <div className="chat-timer-form">
           <div className="timer-form-header">
             <span className="timer-form-title">
-              创建定时任务 → {activeChat === 'main' ? (dept?.name || selectedDeptId) : (subAgents.find(s => s.id === activeChat)?.name || activeChat)}
+              {t('chat.timer.title', {
+                target: activeChat === 'main' ? (dept?.name || selectedDeptId) : (subAgents.find(s => s.id === activeChat)?.name || activeChat)
+              })}
             </span>
             <button className="timer-form-close" onClick={() => setShowTimerForm(false)}>×</button>
           </div>
@@ -390,14 +552,14 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             <input
               value={timerForm.name}
               onChange={e => setTimerForm({ ...timerForm, name: e.target.value })}
-              placeholder="任务名称"
+              placeholder={t('chat.timer.name')}
               className="timer-input"
             />
             <div className="timer-schedule-toggle">
               <button
                 className={timerForm.scheduleKind === 'every' ? 'active' : ''}
                 onClick={() => setTimerForm({ ...timerForm, scheduleKind: 'every' })}
-              >间隔</button>
+              >{t('chat.timer.schedule.interval')}</button>
               <button
                 className={timerForm.scheduleKind === 'cron' ? 'active' : ''}
                 onClick={() => setTimerForm({ ...timerForm, scheduleKind: 'cron' })}
@@ -412,7 +574,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
                   min="1"
                   className="timer-input-num"
                 />
-                <span className="timer-unit">分钟</span>
+                <span className="timer-unit">{t('chat.timer.interval.unit')}</span>
               </div>
             ) : (
               <input
@@ -427,7 +589,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             <input
               value={timerForm.message}
               onChange={e => setTimerForm({ ...timerForm, message: e.target.value })}
-              placeholder="执行指令..."
+              placeholder={t('chat.timer.message.placeholder')}
               className="timer-input timer-msg"
               onKeyDown={e => { if (e.key === 'Enter') handleCreateTimer() }}
             />
@@ -436,9 +598,54 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
               onClick={handleCreateTimer}
               disabled={creatingTimer || !timerForm.name.trim() || !timerForm.message.trim()}
             >
-              {creatingTimer ? '...' : '创建'}
+              {creatingTimer ? t('chat.timer.creating') : t('chat.timer.create.button')}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Daily log panel */}
+      {showDailyLog && selectedDeptId && (
+        <div className="chat-daily-panel">
+          <div className="daily-panel-header">
+            <span className="daily-panel-title">{t('chat.daily.show')}</span>
+            <button className="daily-panel-close" onClick={() => setShowDailyLog(false)}>×</button>
+          </div>
+          <div className="daily-panel-row">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => {
+                setSelectedDate(e.target.value)
+                // Fetch the daily log
+                setDailyLoading(true)
+                authedFetch(`/cmd/api/departments/${selectedDeptId}/daily/${e.target.value}`)
+                  .then(r => r.json())
+                  .then(d => setDailyContent(d.content || ''))
+                  .catch(() => setDailyContent(''))
+                  .finally(() => setDailyLoading(false))
+              }}
+              className="daily-date-input"
+            />
+          </div>
+          <div className="daily-panel-content">
+            {dailyLoading ? <p>{t('chat.daily.loading')}</p>
+             : dailyContent ? <pre>{dailyContent}</pre>
+             : selectedDate ? <p>{t('chat.daily.empty')}</p>
+             : <p>{t('chat.daily.no.dates')}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Image preview */}
+      {pendingImages.length > 0 && (
+        <div className="chat-image-preview">
+          {pendingImages.map((img, i) => (
+            <div key={i} className="preview-thumb">
+              <img src={img.data} alt="" />
+              <button className="preview-remove" onClick={() => setPendingImages(prev => prev.filter((_, j) => j !== i))}>x</button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -449,21 +656,70 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={
             !selectedDeptId
-              ? '选择一个部门...'
+              ? t('chat.message.select')
               : activeChat === 'main'
-                ? `消息到 ${dept?.name || ''}...`
-                : `消息到 ${subAgents.find(s => s.id === activeChat)?.name || '子代理'}...`
+                ? t('chat.message.to', { name: dept?.name || '' })
+                : t('chat.message.subagent.to', { name: subAgents.find(s => s.id === activeChat)?.name || '' })
           }
           rows={1}
           disabled={sending || !selectedDeptId}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={e => {
+            if (e.target.files) {
+              Array.from(e.target.files).forEach(addImageFromFile)
+            }
+            e.target.value = ''
+          }}
+        />
+        <button
+          className="chat-btn img-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!selectedDeptId}
+          title={t('chat.image.upload')}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="#a0a0b0" strokeWidth="1.3" />
+            <circle cx="5.5" cy="6.5" r="1.5" stroke="#a0a0b0" strokeWidth="1.2" />
+            <path d="M1.5 11l3.5-4 3 3 2-1.5 4.5 3" stroke="#a0a0b0" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          className="chat-btn daily-btn"
+          onClick={() => {
+            setShowDailyLog(!showDailyLog)
+            if (!showDailyLog && dailyDates.length === 0 && selectedDeptId) {
+              authedFetch(`/cmd/api/departments/${selectedDeptId}/daily-dates`)
+                .then(r => r.json())
+                .then(d => {
+                  setDailyDates(d.dates || [])
+                  if (d.dates?.[0]) setSelectedDate(d.dates[0])
+                })
+                .catch(() => {})
+            }
+          }}
+          disabled={!selectedDeptId}
+          title={t('chat.daily.show')}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="2.5" width="13" height="12" stroke={showDailyLog ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" />
+            <path d="M1.5 6.5h13" stroke={showDailyLog ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" />
+            <path d="M5 1v3M11 1v3" stroke={showDailyLog ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+        </button>
         <button
           className="chat-btn timer-btn"
           onClick={() => setShowTimerForm(!showTimerForm)}
           disabled={!selectedDeptId}
-          title="创建定时任务"
+          title={t('chat.timer.create')}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6.5" stroke={showTimerForm ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" />
@@ -473,7 +729,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         <button
           className="chat-btn send-btn"
           onClick={sendMessage}
-          disabled={sending || !selectedDeptId || !text.trim()}
+          disabled={sending || !selectedDeptId || (!text.trim() && pendingImages.length === 0)}
           title="Send"
         >
           {sending ? '...' : <SendIcon size={16} color="#00d4aa" />}

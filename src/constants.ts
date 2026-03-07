@@ -111,3 +111,21 @@ export const CHARACTER_HIT_HALF_WIDTH = 8
 export const CHARACTER_HIT_HEIGHT = 24
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32
 export const PULSE_ANIMATION_DURATION_SEC = 1.5
+
+// ── Emotion Effects (F6) ────────────────────────────────────
+export const ERROR_FLASH_DURATION_SEC = 0.5
+export const THINKING_DOT_CYCLE_SEC = 1.5
+export const THINKING_DOT_COLOR = '#00d4aa'
+export const THINKING_DOT_RADIUS_FACTOR = 0.6
+export const ERROR_FLASH_ALPHA = 0.35
+
+// ── Tool Visualization (F7) ─────────────────────────────────
+export const TOOL_LABEL_COLOR = '#00d4aa'
+export const TOOL_LABEL_BG = 'rgba(0, 40, 35, 0.85)'
+export const TOOL_LABEL_BORDER = '#004d3a'
+
+// ── Collaboration Arrows (F11) ──────────────────────────────
+export const COLLAB_ARROW_COLOR = 'rgba(0, 212, 170, 0.3)'
+export const COLLAB_ARROW_DASH: [number, number] = [6, 4]
+export const COLLAB_ARROW_ANIM_SPEED = 30
+export const COLLAB_ARROW_HEAD_SIZE = 6

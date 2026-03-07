@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AgentState, Activity } from '../hooks/useAgentState'
+import { useLocale } from '../i18n/index'
 import { BulletinIcon, MemoryIcon, RequestIcon, ActivityIcon } from './Icons'
 import BulletinTab from './BulletinTab'
 import MemoryTab from './MemoryTab'
@@ -17,15 +18,16 @@ interface SidePanelProps {
 
 type TabId = 'bulletin' | 'memory' | 'requests' | 'activity'
 
-const TABS: { id: TabId; label: string; Icon: React.FC<{ size?: number; color?: string }> }[] = [
-  { id: 'bulletin', label: '公告板', Icon: BulletinIcon },
-  { id: 'memory', label: '记忆', Icon: MemoryIcon },
-  { id: 'requests', label: '请求', Icon: RequestIcon },
-  { id: 'activity', label: '活动', Icon: ActivityIcon },
-]
-
 export default function SidePanel({ agentState }: SidePanelProps) {
+  const { t } = useLocale()
   const [activeTab, setActiveTab] = useState<TabId>('bulletin')
+
+  const TABS: { id: TabId; label: string; Icon: React.FC<{ size?: number; color?: string }> }[] = [
+    { id: 'bulletin', label: t('app.tab.bulletin'), Icon: BulletinIcon },
+    { id: 'memory', label: t('app.tab.memory'), Icon: MemoryIcon },
+    { id: 'requests', label: t('app.tab.requests'), Icon: RequestIcon },
+    { id: 'activity', label: t('app.tab.activity'), Icon: ActivityIcon },
+  ]
 
   return (
     <div className="side-panel panel">

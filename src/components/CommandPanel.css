@@ -1,7 +1,7 @@
 .command-panel {
-  border-top: 2px solid #2a2a4a;
+  border-top: 2px solid #3a3a42;
   padding: 8px;
-  background: #16162a;
+  background: #161619;
 }
 
 .command-empty {
@@ -31,7 +31,7 @@
 .target-status {
   font-size: 10px;
   padding: 1px 6px;
-  border: 1px solid #2a2a4a;
+  border: 2px solid #3a3a42;
 }
 
 .target-status.active {
@@ -54,7 +54,7 @@
   margin-bottom: 6px;
   max-height: 120px;
   overflow: hidden;
-  border: 1px solid #2a2a4a;
+  border: 2px solid #3a3a42;
 }
 
 .image-preview img {
@@ -83,18 +83,23 @@
 .command-input-row {
   display: flex;
   gap: 4px;
+  align-items: flex-end;
 }
 
 .command-input {
   flex: 1;
-  background: #0a0a14;
-  border: 1px solid #2a2a4a;
+  background: #0e0e12;
+  border: 2px solid #3a3a42;
   color: #e0e0e0;
   padding: 6px 8px;
   font-family: inherit;
   font-size: 12px;
   resize: none;
   outline: none;
+  min-height: 60px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.4;
 }
 
 .command-input:focus {
@@ -109,18 +114,19 @@
 
 .action-btn {
   width: 36px;
-  height: 100%;
-  border: 1px solid #2a2a4a;
-  background: #1e1e2e;
+  height: 32px;
+  border: 2px solid #3a3a42;
+  background: #1e1e23;
   color: #e0e0e0;
   cursor: pointer;
   font-size: 11px;
   font-family: inherit;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .action-btn:hover:not(:disabled) {
-  background: #2a2a4a;
+  background: #3a3a42;
 }
 
 .action-btn:disabled {

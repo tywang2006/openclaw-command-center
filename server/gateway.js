@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { randomUUID } from 'crypto';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
-const AUTH_TOKEN = process.env.OPENCLAW_AUTH_TOKEN || '231f8798242b198b234e1b384c370d234db76ffc1d7bc043';
+const AUTH_TOKEN = process.env.OPENCLAW_AUTH_TOKEN || '';
 const HEARTBEAT_INTERVAL_MS = 25000;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -30,6 +30,15 @@ class GatewayClient {
 
     // Callbacks waiting for ready state
     this._readyCallbacks = [];
+
+    // Event listeners for Gateway events (agent streaming, channel messages, etc.)
+    this._eventListeners = [];
+
+    // Accumulate streaming text per runId: Map<runId, { sessionKey, chunks, userMessage }>
+    this._streamBuffers = new Map();
+
+    // Track connection time for uptime
+    this._connectedAt = null;
   }
 
   connect() {
@@ -128,11 +137,11 @@ class GatewayClient {
           version: '1.0.0',
           platform: 'linux',
           mode: 'backend',
-          displayName: '超哥办公室',
+          displayName: 'Command Center',
         },
         role: 'operator',
         scopes: ['operator.admin'],
-        caps: ['tool-events'],
+        caps: ['tool-events', 'agent-events', 'channel-events'],
         auth: { token: AUTH_TOKEN },
       },
     });
@@ -155,6 +164,25 @@ class GatewayClient {
 
     if (frame.type === 'res') {
       this._handleResponse(frame);
+    } else if (frame.type === 'event') {
+      // Log agent events only on start/completion, all other events always
+      if (frame.event === 'agent') {
+        const status = frame.payload?.status;
+        if (status === 'started' || status === 'completed' || status === 'done' || status === 'finished') {
+          const preview = JSON.stringify(frame).substring(0, 300);
+          console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+        } else if (process.env.GATEWAY_DEBUG) {
+          const preview = JSON.stringify(frame).substring(0, 300);
+          console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+        }
+      } else {
+        const preview = JSON.stringify(frame).substring(0, 300);
+        console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+      }
+      this._handleEvent(frame);
+    } else {
+      // Log unknown frame types
+      console.log(`[Gateway Frame] type=${frame.type}: ${JSON.stringify(frame).substring(0, 200)}`);
     }
   }
 
@@ -173,6 +201,7 @@ class GatewayClient {
       }
 
       this.authenticated = true;
+      this._connectedAt = Date.now();
       console.log('[Gateway] Authenticated successfully');
       this._startHeartbeat();
 
@@ -199,6 +228,14 @@ class GatewayClient {
       return;
     }
 
+    // Raw requests — resolve with full payload immediately
+    if (req.raw) {
+      clearTimeout(req.timer);
+      this.pendingRequests.delete(frame.id);
+      req.resolve(frame.payload || {});
+      return;
+    }
+
     // Skip the "accepted" acknowledgment — wait for the final "ok"/"completed" response
     const status = frame.payload?.status;
     if (status === 'accepted') {
@@ -206,7 +243,7 @@ class GatewayClient {
       return;
     }
 
-    // Final response — extract text
+    // Final response — extract text and usage data
     clearTimeout(req.timer);
     this.pendingRequests.delete(frame.id);
 
@@ -216,8 +253,141 @@ class GatewayClient {
       text = payloads.map(p => p.text || '').join('');
     }
 
+    const usage = frame.payload?.result?.usage || null;
+
     console.log(`[Gateway] Request ${frame.id} completed, ${text.length} chars`);
-    req.resolve({ text });
+    req.resolve({ text, usage });
+  }
+
+  _handleEvent(frame) {
+    const { event, payload } = frame;
+
+    // Agent streaming events — accumulate text and notify on completion
+    if (event === 'agent') {
+      this._handleAgentEvent(payload);
+      return;
+    }
+
+    // Forward all other events to listeners
+    for (const listener of this._eventListeners) {
+      try { listener(frame); } catch {}
+    }
+  }
+
+  _handleAgentEvent(payload) {
+    if (!payload) return;
+
+    const { sessionKey, runId, requestId, stream, chunk, status } = payload;
+    const bufferId = runId || requestId;
+    if (!bufferId) return;
+
+    // Skip events from our OWN requests (already handled in _handleResponse)
+    if (requestId && this.pendingRequests.has(requestId)) return;
+
+    // Stream start — initialize buffer
+    if (status === 'started' || (stream && !this._streamBuffers.has(bufferId))) {
+      if (!this._streamBuffers.has(bufferId)) {
+        this._streamBuffers.set(bufferId, {
+          sessionKey: sessionKey || '',
+          userMessage: payload.userMessage || '',
+          assistantChunks: [],
+          startedAt: Date.now(),
+        });
+      }
+    }
+
+    const buffer = this._streamBuffers.get(bufferId);
+    if (!buffer) return;
+
+    // Capture user message if provided
+    if (payload.userMessage) {
+      buffer.userMessage = payload.userMessage;
+    }
+
+    // Accumulate assistant text chunks
+    if (stream === 'assistant' && chunk?.type === 'text' && chunk.text) {
+      buffer.assistantChunks.push(chunk.text);
+
+      // Emit streaming chunk event (F14)
+      const streamChunkEvent = {
+        type: 'agent:stream',
+        sessionKey: buffer.sessionKey || sessionKey,
+        chunk: chunk.text,
+      };
+      for (const listener of this._eventListeners) {
+        try { listener(streamChunkEvent); } catch {}
+      }
+    }
+
+    // Detect tool events and emit tool:update to listeners
+    if (stream === 'tool' || (chunk && chunk.toolName)) {
+      const toolName = chunk?.toolName || payload.toolName || 'unknown';
+      const toolStatus = chunk?.status || payload.data?.status || 'running';
+      const done = toolStatus === 'completed' || toolStatus === 'done' || toolStatus === 'error';
+      const toolEvent = {
+        type: 'tool:update',
+        sessionKey: buffer.sessionKey || sessionKey,
+        toolName,
+        toolStatus,
+        done,
+      };
+      for (const listener of this._eventListeners) {
+        try { listener(toolEvent); } catch {}
+      }
+
+      // Detect permission wait events (F15)
+      if (toolStatus === 'permission' || toolStatus === 'waiting_permission' || chunk?.permissionWait) {
+        const permEvent = {
+          type: 'permission:event',
+          sessionKey: buffer.sessionKey || sessionKey,
+          toolName,
+          timestamp: Date.now(),
+        };
+        for (const listener of this._eventListeners) {
+          try { listener(permEvent); } catch {}
+        }
+      }
+    }
+
+    // Stream completed — emit full message to listeners
+    // Check both payload.status and lifecycle phase end
+    if (status === 'completed' || status === 'done' || status === 'finished' ||
+        (stream === 'lifecycle' && payload.data?.phase === 'end')) {
+      const fullText = buffer.assistantChunks.join('');
+      this._streamBuffers.delete(bufferId);
+
+      if (fullText || buffer.userMessage) {
+        const event = {
+          type: 'agent:message',
+          sessionKey: buffer.sessionKey || sessionKey,
+          userMessage: buffer.userMessage,
+          assistantMessage: fullText,
+          timestamp: Date.now(),
+        };
+
+        for (const listener of this._eventListeners) {
+          try { listener(event); } catch {}
+        }
+      }
+    }
+
+    // Clean up stale buffers (older than 5 minutes)
+    if (this._streamBuffers.size > 0) {
+      const staleThreshold = Date.now() - 300000;
+      for (const [id, buf] of this._streamBuffers) {
+        if (buf.startedAt < staleThreshold) {
+          this._streamBuffers.delete(id);
+        }
+      }
+    }
+  }
+
+  /**
+   * Register a listener for Gateway events.
+   * Listeners receive: { type, sessionKey, userMessage, assistantMessage, timestamp }
+   */
+  onEvent(callback) {
+    this._eventListeners.push(callback);
   }
 
   _handleClose(code, reason) {
@@ -293,15 +463,15 @@ class GatewayClient {
         this._stopHeartbeat();
         if (this.ws) {
           try {
-            this.ws.close(1006, 'Heartbeat timeout');
+            this.ws.terminate();
           } catch (err) {
-            console.error('[Gateway] Error closing stale connection:', err.message);
+            console.error('[Gateway] Error terminating stale connection:', err.message);
           }
         }
         return;
       }
 
-      try { this.ws.send('ping'); } catch {}
+      try { this.ws.ping(); } catch {}
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -315,10 +485,53 @@ class GatewayClient {
   // --- Public API ---
 
   /**
+   * Send a raw request to the Gateway and resolve with the full payload.
+   * Used for methods like chat.history, sessions.list, etc.
+   */
+  _sendRawRequest(method, params, timeoutMs = 15000) {
+    return new Promise((resolve, reject) => {
+      if (!this.connected || !this.authenticated) {
+        return reject(new Error('Gateway not connected'));
+      }
+      const requestId = `raw_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Request ${method} timeout`));
+      }, timeoutMs);
+
+      this.pendingRequests.set(requestId, { resolve, reject, timer, raw: true });
+
+      try {
+        this._send({ type: 'req', id: requestId, method, params });
+      } catch (err) {
+        clearTimeout(timer);
+        this.pendingRequests.delete(requestId);
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Get chat history for a session.
+   */
+  async getChatHistory(sessionKey, limit = 20) {
+    const payload = await this._sendRawRequest('chat.history', { sessionKey, limit });
+    return payload.messages || [];
+  }
+
+  /**
+   * List all sessions on the gateway.
+   */
+  async listSessions() {
+    const payload = await this._sendRawRequest('sessions.list', {});
+    return payload.sessions || [];
+  }
+
+  /**
    * Send a message to an agent session and collect the full response.
    * Waits for the gateway "res" frame which contains the complete reply text.
    */
-  sendAgentMessage(sessionKey, message) {
+  sendAgentMessage(sessionKey, message, attachments = []) {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.authenticated) {
         return reject(new Error('Gateway not connected'));
@@ -345,7 +558,7 @@ class GatewayClient {
             agentId: 'main',
             sessionKey,
             message,
-            attachments: [],
+            attachments: attachments.length > 0 ? attachments : [],
             deliver: false,
             idempotencyKey,
           },
@@ -405,11 +618,14 @@ class GatewayClient {
   }
 
   get stats() {
+    const uptime = this._connectedAt ? Date.now() - this._connectedAt : 0;
     return {
       connected: this.connected,
       authenticated: this.authenticated,
       pendingRequests: this.pendingRequests.size,
       reconnectAttempt: this.reconnectAttempt,
+      uptime,
+      streamBuffers: this._streamBuffers.size,
     };
   }
 

@@ -406,8 +406,27 @@ router.post('/jobs/:id/run', async (req, res) => {
 
     console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
 
+    const startMs = Date.now();
     try {
       const result = await gateway.sendAgentMessage(sessionKey, message);
+      const durationMs = Date.now() - startMs;
+
+      // Record execution history (F8)
+      if (!job.state) job.state = {};
+      if (!job.state.executionHistory) job.state.executionHistory = [];
+      job.state.executionHistory.push({
+        timestamp: Date.now(),
+        durationMs,
+        success: !!result.text,
+        responseLength: result.text ? result.text.length : 0,
+      });
+      if (job.state.executionHistory.length > 20) {
+        job.state.executionHistory = job.state.executionHistory.slice(-20);
+      }
+      job.state.lastRunAtMs = Date.now();
+      job.state.lastDurationMs = durationMs;
+      job.state.lastStatus = result.text ? 'ok' : 'error';
+      writeCronJobs(data);
 
       if (result.text) {
         console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
@@ -432,6 +451,26 @@ router.post('/jobs/:id/run', async (req, res) => {
         });
       }
     } catch (err) {
+      const durationMs = Date.now() - startMs;
+      // Record failed execution history
+      if (!job.state) job.state = {};
+      if (!job.state.executionHistory) job.state.executionHistory = [];
+      job.state.executionHistory.push({
+        timestamp: Date.now(),
+        durationMs,
+        success: false,
+        responseLength: 0,
+      });
+      if (job.state.executionHistory.length > 20) {
+        job.state.executionHistory = job.state.executionHistory.slice(-20);
+      }
+      job.state.lastRunAtMs = Date.now();
+      job.state.lastDurationMs = durationMs;
+      job.state.lastStatus = 'error';
+      job.state.lastError = err.message;
+      job.state.consecutiveErrors = (job.state.consecutiveErrors || 0) + 1;
+      writeCronJobs(data);
+
       console.error(`[Cron] Manual run failed for job ${id}:`, err.message);
       res.status(502).json({
         error: 'Failed to execute cron job via gateway',

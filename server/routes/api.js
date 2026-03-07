@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
-import { chat, loadMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
+import { chat, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
 
 const router = express.Router();
 
@@ -115,6 +115,29 @@ router.get('/departments/:id/memory', (req, res) => {
   } catch (error) {
     console.error(`Error in /api/departments/${req.params.id}/memory:`, error);
     res.status(500).json({ error: 'Failed to fetch department memory' });
+  }
+});
+
+/**
+ * PUT /api/departments/:id/memory
+ * Update department's MEMORY.md content
+ * Body: { content: "markdown content" }
+ */
+router.put('/departments/:id/memory', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    const { content } = req.body;
+    if (content === undefined) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+    const success = saveMemory(id, content);
+    res.json({ success, departmentId: id });
+  } catch (error) {
+    console.error(`Error in PUT /api/departments/${req.params.id}/memory:`, error);
+    res.status(500).json({ error: 'Failed to save department memory' });
   }
 });
 
@@ -265,12 +288,159 @@ router.get('/activity/:topicId?', (req, res) => {
   }
 });
 
+/**
+ * GET /api/departments/:id/persona
+ * Return department's persona markdown
+ */
+router.get('/departments/:id/persona', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    const personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
+    const content = readTextFile(personaPath);
+    res.json({ departmentId: id, content, exists: fs.existsSync(personaPath) });
+  } catch (error) {
+    console.error(`Error in /api/departments/${req.params.id}/persona:`, error);
+    res.status(500).json({ error: 'Failed to fetch persona' });
+  }
+});
+
+/**
+ * GET /api/departments/:id/daily-dates
+ * List available daily log dates for a department
+ */
+router.get('/departments/:id/daily-dates', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    const dailyDir = path.join(BASE_PATH, 'departments', id, 'daily');
+    if (!fs.existsSync(dailyDir)) {
+      return res.json({ dates: [] });
+    }
+    const dates = fs.readdirSync(dailyDir)
+      .filter(f => f.endsWith('.md') && VALID_DATE.test(f.replace('.md', '')))
+      .map(f => f.replace('.md', ''))
+      .sort()
+      .reverse();
+    res.json({ dates, departmentId: id });
+  } catch (error) {
+    console.error(`Error in /api/departments/${req.params.id}/daily-dates:`, error);
+    res.status(500).json({ error: 'Failed to fetch daily dates' });
+  }
+});
+
+/**
+ * GET /api/departments/:id/memory/history
+ * List memory backup versions (last 20)
+ */
+router.get('/departments/:id/memory/history', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    const memDir = path.join(BASE_PATH, 'departments', id, 'memory');
+    if (!fs.existsSync(memDir)) {
+      return res.json({ versions: [] });
+    }
+    const versions = fs.readdirSync(memDir)
+      .filter(f => f.endsWith('.md.bak'))
+      .map(f => {
+        const filePath = path.join(memDir, f);
+        const stats = fs.statSync(filePath);
+        return {
+          filename: f,
+          timestamp: stats.mtime.toISOString(),
+          size: stats.size,
+        };
+      })
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, 20);
+    res.json({ versions, departmentId: id });
+  } catch (error) {
+    console.error(`Error in /api/departments/${req.params.id}/memory/history:`, error);
+    res.status(500).json({ error: 'Failed to fetch memory history' });
+  }
+});
+
+/**
+ * GET /api/departments/:id/memory/history/:filename
+ * Get content of a specific memory backup version
+ */
+router.get('/departments/:id/memory/history/:filename', (req, res) => {
+  try {
+    const { id, filename } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    if (!filename.endsWith('.md.bak') || filename.includes('..') || filename.includes('/')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filePath = path.join(BASE_PATH, 'departments', id, 'memory', filename);
+    const content = readTextFile(filePath);
+    res.json({ content, filename, exists: fs.existsSync(filePath) });
+  } catch (error) {
+    console.error(`Error in /api/departments/${req.params.id}/memory/history:`, error);
+    res.status(500).json({ error: 'Failed to fetch memory version' });
+  }
+});
+
+/**
+ * GET /api/collaboration
+ * Parse bulletin/requests for inter-department references
+ * Returns: { links: [{ from: deptId, to: deptId, label: string }] }
+ */
+router.get('/collaboration', (req, res) => {
+  try {
+    const requestsDir = path.join(BASE_PATH, 'departments', 'bulletin', 'requests');
+    const links = [];
+
+    if (!fs.existsSync(requestsDir)) {
+      return res.json({ links });
+    }
+
+    // Get known department IDs
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = readJsonFile(configPath) || { departments: {} };
+    const deptIds = new Set(Object.values(config.departments || {}).map(d => d.id));
+
+    const files = fs.readdirSync(requestsDir)
+      .filter(f => f.endsWith('.md') && !f.startsWith('.'));
+
+    for (const file of files) {
+      const content = readTextFile(path.join(requestsDir, file));
+      // Filename pattern: from-dept_to-dept_*.md or content mentioning dept IDs
+      for (const fromId of deptIds) {
+        if (!content.toLowerCase().includes(fromId)) continue;
+        for (const toId of deptIds) {
+          if (fromId === toId) continue;
+          if (content.toLowerCase().includes(toId)) {
+            // Check for duplicates
+            if (!links.some(l => l.from === fromId && l.to === toId)) {
+              links.push({ from: fromId, to: toId, label: file.replace('.md', '') });
+            }
+          }
+        }
+      }
+    }
+
+    res.json({ links });
+  } catch (error) {
+    console.error('Error in /api/collaboration:', error);
+    res.status(500).json({ error: 'Failed to fetch collaboration data' });
+  }
+});
+
 // ============================================================
 // Telegram Bot API Integration
 // ============================================================
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8102890327:AAGMn9Ft2GA2T2ODOuZWDFqs1kI2BN6HWwc';
-const GROUP_ID = process.env.TELEGRAM_GROUP_ID || '-1003570960670';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 /**
@@ -396,6 +566,25 @@ router.post('/departments/:id/photo', async (req, res) => {
 // ============================================================
 
 /**
+ * GET /api/departments/:id/history
+ * Get chat history from OpenClaw Gateway (Telegram + app messages)
+ */
+router.get('/departments/:id/history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+    const messages = await getChatHistory(id, limit);
+    res.json({ success: true, messages, deptId: id });
+  } catch (error) {
+    console.error(`Error in GET /api/departments/${req.params.id}/history:`, error);
+    res.status(500).json({ error: 'Failed to fetch chat history' });
+  }
+});
+
+/**
  * POST /api/departments/:id/chat
  * Chat with a department's AI agent
  * Body: { message: "your message" }
@@ -407,29 +596,30 @@ router.post('/departments/:id/chat', async (req, res) => {
     if (!validateDeptId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
-    const { message } = req.body;
+    const { message, images } = req.body;
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: 'Message is required' });
+    if ((!message || !message.trim()) && (!images || images.length === 0)) {
+      return res.status(400).json({ error: 'Message or image is required' });
     }
-    if (message.length > MAX_MESSAGE_LENGTH) {
+    if (message && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
     }
 
-    console.log(`[Chat] ${id} <- ${message.trim().substring(0, 60)}`);
+    const msgText = (message || '').trim();
+    const imgCount = Array.isArray(images) ? images.length : 0;
+    console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}`);
 
-    const result = await chat(id, message.trim());
+    const result = await chat(id, msgText, images);
 
     if (result.success) {
       console.log(`[Chat] ${id} -> ${result.reply.substring(0, 60)}`);
       res.json({ success: true, reply: result.reply, deptId: id });
     } else {
-      // Translate API errors to user-friendly Chinese messages
       let errMsg = result.error || 'Agent failed to respond';
-      if (errMsg.includes('quota') || errMsg.includes('429') || errMsg.includes('rate')) {
-        errMsg = 'AI 服务每日免费额度已用完。请稍后重试或升级 API 计划。';
-      } else if (errMsg.includes('timeout') || errMsg.includes('TIMEOUT')) {
-        errMsg = 'AI 服务响应超时，请重试。';
+      if (errMsg.includes('timeout') || errMsg.includes('TIMEOUT')) {
+        errMsg = 'Gateway response timeout, please try again.';
+      } else if (errMsg.includes('not connected') || errMsg.includes('DISCONNECTED')) {
+        errMsg = 'Gateway not connected, please check OpenClaw service.';
       }
       res.status(502).json({ error: errMsg });
     }

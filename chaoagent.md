@@ -1,6 +1,6 @@
 # 超哥办公室 — 辅助系统开发笔记
 
-> 最后更新: 2026-03-06
+> 最后更新: 2026-03-07
 > 状态: 进行中
 
 ---
@@ -28,8 +28,11 @@
 Express + ws (port 5100)
   ├── chokidar 监听文件变化 → WS 推送
   ├── REST API (/api/*)
-  ├── Telegram 双向通信 (polling + sendMessage)
   └── gateway.js → WebSocket → OpenClaw Gateway (ws://127.0.0.1:18789) ✅
+       ├── 聊天: gateway.sendAgentMessage(sessionKey, msg)
+       ├── 历史: gateway.getChatHistory(sessionKey, limit)
+       ├── 事件: agent streaming → 实时广播到前端
+       └── Session Key = Telegram topic key (统一对话)
 ```
 
 ---
@@ -167,8 +170,8 @@ Express + ws (port 5100)
 | `server/watcher.js` | chokidar 监听文件变化 → WS 推送 |
 | `server/routes/api.js` | REST API (部门/记忆/日志/公告/广播/子代理) |
 | `server/parsers/jsonl.js` | JSONL session 文件解析 |
-| `server/telegram.js` | Telegram 双向通信 (polling + 自动回复) |
-| `server/agent.js` | AI agent 对话 (当前: Kimi API, 待改: Gateway) |
+| `server/telegram.js` | Telegram 双向通信 (已弃用，由 OpenClaw 原生处理) |
+| `server/agent.js` | AI agent 对话 (通过 OpenClaw Gateway，session key = Telegram topic) |
 
 ### 前端 (src/)
 
@@ -192,7 +195,8 @@ Express + ws (port 5100)
 |------|------|------|
 | `/api/departments` | GET | 获取7个部门列表+状态 |
 | `/api/departments/:id/chat` | POST | 与部门 AI 对话 |
-| `/api/departments/:id/memory` | GET | 获取部门记忆 |
+| `/api/departments/:id/history` | GET | 获取部门对话历史 (from OpenClaw Gateway) |
+| `/api/departments/:id/memory` | GET/PUT | 获取/保存部门记忆 |
 | `/api/departments/:id/daily/:date?` | GET | 获取部门日志 |
 | `/api/departments/:id/message` | POST | 发送消息到 Telegram |
 | `/api/departments/:id/photo` | POST | 发送图片到 Telegram |
@@ -337,18 +341,84 @@ pm2 restart openclaw-cmd
 
 ---
 
+## 已完成 (2026-03-07)
+
+### ✅ Telegram 消息在 app 实时显示
+- **发现**: OpenClaw Telegram 插件 `configured: true` 但 `running: false`，不存在双重处理冲突
+- command-center 的 `telegram.js` 是唯一的 Telegram 处理器
+- 前端 Activity 类型新增 `source` 和 `fromName` 字段
+- ChatPanel 显示来源标签 (TG 蓝色 badge) 和发送者名字
+- useAgentState 支持两种 `activity:new` 格式：单消息 (telegram) 和多消息 (watcher)
+
+### ✅ Gateway 事件监听
+- `gateway.js` 新增 `_handleEvent()`、`_handleAgentEvent()`、`onEvent()`
+- 处理 `event` 类型帧：agent 流式事件、health、tick、connect.challenge
+- 流式文本按 `runId` 累积，完成后通过 listeners 派发
+- `index.js` 注册 Gateway 事件监听，自动将 agent 对话广播到前端 WebSocket
+- 握手 caps 新增 `agent-events`、`channel-events`
+
+### ✅ StatusBar 部门卡片高度一致
+- `StatusBar.css` — `.status-bar` 从 `align-items: center` 改为 `align-items: stretch`
+- 所有部门卡片高度保持一致，无论是否有 currentTask
+
+### ✅ SubAgent 页面刷新后保持显示
+- `App.tsx` — 新增 useEffect，在 departments 加载后立即获取所有部门的 subagents
+- 不再需要手动选中部门才能在像素办公室看到 subagents
+
+### ✅ Token 安全验证
+- 确认所有 OpenClaw cron jobs 已禁用 (`enabled: false`)
+- Idle 状态的 agent/subagent 不消耗 token
+- 只有用户主动对话、Telegram 消息、定时任务（需手动启用）才触发 AI 调用
+
+### ✅ StatusBar 底部卡片显示修复
+- `StatusBar.css` — `.status-bar` 移除 `height: 56px` 固定高度，改为自动高度
+- 减小 padding: `8px 12px` → `6px 10px`，gap: `8px` → `6px`
+- `.dept-card` 移除 `overflow: hidden`，`border-radius: 20px` → `8px`，padding 缩小
+- 解决了底部卡片内容被截断的问题
+
+### ✅ MemoryTab 记忆编辑功能
+- `MemoryTab.tsx` — 新增编辑模式：点击编辑按钮 → textarea 编辑器 → 保存/取消
+- 保存调用 `PUT /cmd/api/departments/:id/memory`
+- `MemoryTab.css` — 新增 `.memory-actions`、`.mem-btn`、`.memory-editor` 样式
+- `routes/api.js` — 新增 PUT `/departments/:id/memory` 路由 + `saveMemory` 导入
+
+### ✅ 像素办公室精灵品质提升
+- `furnitureAssets.ts` — 扩展 COLORS 调色板（+30 新色调：木材、金属、屏幕、LED、面料等）
+- 重写 8 个核心精灵生成器：
+  - `generateCounterWhiteSmall` — 3D 桌面 + 抽屉 + 桌腿
+  - `generateFullWoodenBookshelfSmall` — 多色书籍 + 高度/宽度变化 + 暗边
+  - `generateChairCushionedRight/Left` — 靠背 + 座垫高光 + 轮子
+  - `generateWhitePlant2` — 锥形花盆 + 有机叶片
+  - `generateVendingMachine` — 玻璃反光 + 产品行 + 投币口 + LED + 出货口
+  - `generateServer` — LED 状态灯 + 硬盘仓 + 散热孔
+  - `generateFullComputerCoffeeOff` — 屏幕窗口/任务栏 + 键盘按键 + 鼠标 + 咖啡杯蒸汽
+
+### ✅ OpenClaw Telegram 插件启用
+- 修复 `openclaw.json` 配置错误：
+  - Google provider: 添加 `baseUrl`，`"api": "google-ai"` → `"google-generative-ai"`
+  - Telegram: `"streamMode": "partial"` → `"streaming": "partial"`
+- 执行 `openclaw doctor --fix` 应用额外自动修复
+- Gateway 重启后 `openclaw channels status --probe` 确认 Telegram running (mode: polling)
+- 注意: Gateway health 广播仍报 `running: false`，但 CLI probe 确认正常运行
+
+---
+
 ## 下次继续的 TODO
 
 1. ~~**子代理显示自定义名字**~~ ✅ 已完成
 
 2. ~~**像素办公室美化 + 多房间布局**~~ ✅ 已完成
 
-3. **Telegram 消息在 app 实时显示** — 后端已实现，需验证前端
+3. ~~**Telegram 消息在 app 实时显示**~~ ✅ 已完成
 
-4. **记忆管理** — 通过 OpenClaw 的原生记忆系统
+4. ~~**记忆管理**~~ ✅ 已完成 — MemoryTab 支持编辑保存
 
 5. **去掉 department context 前缀** — 如果 OpenClaw agent 的 system prompt 已有部门感知，可以简化消息
 
-6. **像素办公室外观素材** — 用户提到 itch.io 办公室像素素材
-   - 参考: https://donarg.itch.io/officetileset
-   - 当前用程序化生成的精灵
+6. ~~**像素办公室外观素材**~~ ✅ 已完成 — 8个核心精灵重写 + 扩展调色板
+
+7. ~~**启用 OpenClaw Telegram 插件**~~ ✅ 已完成 — 修复 openclaw.json 配置错误，gateway 重启后确认运行
+
+8. **剩余精灵提升** — 仅改了 8/32 个精灵（电脑、桌子、书架、椅子、植物、自动贩卖机、服务器），其余可继续优化
+
+9. **Telegram health 事件不一致** — Gateway health 广播 `running: false`，但 `openclaw channels status --probe` 显示 running。需调查 health 事件报告逻辑

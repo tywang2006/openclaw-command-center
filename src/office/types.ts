@@ -195,4 +195,8 @@ export interface Character {
   matrixEffectSeeds: number[]
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string
+  /** Active emotion overlay: 'thinking' shows animated dots, 'error' shows red flash */
+  emotionState: 'thinking' | 'error' | null
+  /** Timer for emotion (thinking: animation cycle, error: flash countdown) */
+  emotionTimer: number
 }

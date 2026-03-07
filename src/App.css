@@ -1,5 +1,6 @@
 /* ============================================
    OpenClaw Command Center - App Layout
+   Pixel-art themed retro dashboard
    ============================================ */
 
 .app {
@@ -8,6 +9,26 @@
   width: 100vw;
   height: 100vh;
   background: var(--bg-primary);
+  position: relative;
+}
+
+/* Subtle CRT scanline overlay */
+.app::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.015) 3px,
+    rgba(0, 0, 0, 0.015) 4px
+  );
 }
 
 /* ---- Header ---- */
@@ -15,48 +36,116 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 48px;
-  padding: 0 20px;
-  background: linear-gradient(
-    180deg,
-    rgba(20, 20, 42, 0.95) 0%,
-    rgba(20, 20, 42, 0.85) 100%
-  );
-  border-bottom: 1px solid var(--border-color);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  height: 44px;
+  padding: 0 16px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--border-color);
   flex-shrink: 0;
   z-index: 10;
 }
 
 .header-title h1 {
-  font-size: 15px;
-  font-weight: 700;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-weight: 400;
   color: var(--accent-color);
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
 }
 
 .header-status {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.locale-toggle {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  font-size: 10px;
+  font-weight: bold;
+  font-family: var(--font-ui);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.locale-toggle:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--accent-muted);
+}
+
+.logout-btn {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.logout-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(255, 68, 102, 0.1);
+}
+
+.fullscreen-btn {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.fullscreen-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--accent-muted);
+}
+
+.gateway-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-ui);
+  cursor: default;
+  white-space: pre-line;
 }
 
 .connection-status {
   display: flex;
   align-items: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   font-weight: 500;
 }
 
 .current-time {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.5px;
 }
 
 /* ---- Main content ---- */
@@ -64,43 +153,84 @@
   display: flex;
   flex: 1;
   overflow: hidden;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  padding: 8px;
   background: var(--bg-primary);
 }
 
 /* ---- Left panel (Pixel Office) ---- */
 .left-panel {
-  flex: 3;
-  min-width: 300px;
+  flex: 7;
+  min-width: 400px;
   display: flex;
   background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-color);
+  border-radius: 2px;
   box-shadow: var(--shadow-panel);
   overflow: hidden;
 }
 
+/* ---- Panel toggle button ---- */
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.panel-toggle::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.panel-toggle:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-color);
+}
+
+.panel-toggle:hover svg path {
+  stroke: var(--accent-color);
+}
+
 /* ---- Right panel (Tabs + Content) ---- */
 .right-panel {
-  flex: 2;
-  min-width: 280px;
+  flex: 3;
+  min-width: 260px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-color);
+  border-radius: 2px;
   box-shadow: var(--shadow-panel);
   overflow: hidden;
+  transition: flex 100ms, min-width 100ms, max-width 100ms, opacity 100ms;
+}
+
+.right-panel.collapsed {
+  flex: 0;
+  min-width: 0;
+  max-width: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ---- Right panel tabs ---- */
 .right-tab-header {
   display: flex;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   background: var(--bg-card);
   flex-shrink: 0;
-  padding: 0 4px;
+  padding: 0;
 }
 
 .right-tab {
@@ -108,30 +238,37 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 10px 4px;
+  gap: 4px;
+  padding: 8px 2px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--text-muted);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  margin-bottom: -1px;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  margin-bottom: -2px;
+  box-shadow: none;
+  transition: none;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .right-tab:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
   border-color: transparent;
+  box-shadow: none;
+  transform: none;
 }
 
 .right-tab.active {
   color: var(--accent-color);
   border-bottom-color: var(--accent-color);
+  box-shadow: none;
+  transform: none;
 }
 
 .right-tab-content {
@@ -139,4 +276,80 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* ---- Notification bell ---- */
+.notify-wrapper {
+  position: relative;
+}
+
+.notify-btn {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.notify-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--accent-muted);
+}
+
+.notify-btn.active {
+  color: var(--accent-color);
+  border-color: rgba(0, 212, 170, 0.4);
+}
+
+.notify-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  padding: 6px 0;
+  min-width: 160px;
+  z-index: 100;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.notify-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.notify-option:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.notify-option.main {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.notify-option input[type="checkbox"] {
+  accent-color: var(--accent-color);
+  width: 12px;
+  height: 12px;
+}
+
+.notify-option input:disabled + span {
+  opacity: 0.4;
 }

@@ -8,8 +8,11 @@ import { createWatcher, getInitialState } from './watcher.js';
 import apiRoutes from './routes/api.js';
 import skillsRoutes from './routes/skills.js';
 import cronRoutes from './routes/cron.js';
-import { startPolling, stopPolling } from './telegram.js';
+import metricsRoutes, { recordPermission } from './routes/metrics.js';
+import workflowsRoutes from './routes/workflows.js';
+import replayRoutes, { isRecording, addReplayEvent } from './routes/replay.js';
 import { getGateway } from './gateway.js';
+import { authRouter, authMiddleware, validateToken } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,10 +39,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// Authentication routes (must be BEFORE authMiddleware)
+app.use('/api/auth', authRouter);
+
+// Apply authentication middleware to all API routes
+app.use('/api', authMiddleware);
+
 // API routes
 app.use('/api', apiRoutes);
 app.use('/api', skillsRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api', metricsRoutes);
+app.use('/api/workflows', workflowsRoutes);
+app.use('/api/replay', replayRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -82,15 +94,31 @@ const wss = new WebSocketServer({
 
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
+
+  // Extract token from URL query parameter
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get('token');
+
+  // Validate token for WebSocket connection
+  if (!validateToken(token)) {
+    console.log(`[WebSocket] Unauthorized connection attempt from ${clientIp}`);
+    ws.close(1008, 'Unauthorized'); // Policy Violation
+    return;
+  }
+
   console.log(`[WebSocket] Client connected from ${clientIp}`);
   console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
 
   // Send initial state immediately upon connection
   try {
     const initialState = getInitialState();
+    const gatewayStats = getGateway().stats;
     ws.send(JSON.stringify({
       event: 'connected',
-      data: initialState,
+      data: {
+        ...initialState,
+        gateway: gatewayStats,
+      },
       timestamp: new Date().toISOString()
     }));
     console.log(`[WebSocket] Sent initial state to ${clientIp}`);
@@ -135,9 +163,6 @@ wss.on('connection', (ws, req) => {
 // Create file watcher and attach to WebSocket server
 const watcher = createWatcher(wss);
 
-// Start Telegram polling for live messages
-startPolling(wss);
-
 // Connect to OpenClaw Gateway
 const gateway = getGateway();
 gateway.connect().then(() => {
@@ -146,10 +171,122 @@ gateway.connect().then(() => {
   console.error('[Gateway] Initial connection failed (will retry):', err.message);
 });
 
+// Load department config for session-key-to-department mapping
+const deptConfigPath = '/root/.openclaw/workspace/departments/config.json';
+function loadDeptMaps() {
+  try {
+    const config = JSON.parse(fs.readFileSync(deptConfigPath, 'utf8'));
+    const idToName = {};
+    const topicToId = {};
+    for (const [topicId, dept] of Object.entries(config.departments || {})) {
+      idToName[dept.id] = dept.name;
+      topicToId[topicId] = dept.id;
+    }
+    return { idToName, topicToId };
+  } catch { return { idToName: {}, topicToId: {} }; }
+}
+const { idToName: deptNames, topicToId: topicToDept } = loadDeptMaps();
+
+/**
+ * Parse a Gateway session key to extract the department ID.
+ * Handles:
+ *   agent:main:telegram:group:{groupId}:topic:{topicId} → topicId → deptId
+ *   agent:main:{deptId}                                 → deptId
+ *   agent:main:{deptId}:sub:{subId}                     → deptId
+ */
+function sessionKeyToDeptId(sessionKey) {
+  if (!sessionKey) return null;
+  // Telegram session: agent:main:telegram:group:-1003570960670:topic:1430
+  const tgMatch = sessionKey.match(/^agent:main:telegram:group:[^:]+:topic:(\d+)$/);
+  if (tgMatch) {
+    return topicToDept[tgMatch[1]] || null;
+  }
+  // Direct session: agent:main:{deptId} or agent:main:{deptId}:sub:{subId}
+  const parts = sessionKey.split(':');
+  if (parts.length >= 3 && parts[0] === 'agent' && parts[1] === 'main') {
+    const deptId = parts[2];
+    if (deptNames[deptId]) return deptId;
+  }
+  return null;
+}
+
+// Listen for Gateway events (Telegram messages, cron responses, etc.)
+gateway.onEvent((event) => {
+  if (event.type === 'agent:message') {
+    const deptId = sessionKeyToDeptId(event.sessionKey);
+    if (!deptId) {
+      console.log(`[Gateway Event] Unmatched session: ${event.sessionKey}`);
+      return;
+    }
+
+    const deptName = deptNames[deptId];
+    const timestamp = new Date().toISOString();
+
+    console.log(`[Gateway Event] ${deptId}: reply=${(event.assistantMessage || '').length}chars session=${event.sessionKey}`);
+
+    // Broadcast assistant response to frontend WebSocket clients
+    if (event.assistantMessage) {
+      const payload = JSON.stringify({
+        event: 'activity:new',
+        data: {
+          deptId,
+          role: 'assistant',
+          text: event.assistantMessage,
+          fromName: deptName,
+          source: 'gateway',
+        },
+        timestamp,
+      });
+      wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+      // Record for replay (F13)
+      if (isRecording()) addReplayEvent(JSON.parse(payload));
+    }
+  }
+
+  // Forward tool:update events to frontend
+  if (event.type === 'tool:update') {
+    const deptId = sessionKeyToDeptId(event.sessionKey);
+    if (!deptId) return;
+
+    const payload = JSON.stringify({
+      event: 'tool:update',
+      data: {
+        deptId,
+        toolName: event.toolName,
+        toolStatus: event.toolStatus,
+        done: event.done,
+      },
+      timestamp: new Date().toISOString(),
+    });
+    wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+    if (isRecording()) addReplayEvent(JSON.parse(payload));
+  }
+
+  // Forward streaming chunks to frontend (F14)
+  if (event.type === 'agent:stream') {
+    const deptId = sessionKeyToDeptId(event.sessionKey);
+    if (!deptId) return;
+
+    const payload = JSON.stringify({
+      event: 'chat:stream',
+      data: { deptId, chunk: event.chunk },
+      timestamp: new Date().toISOString(),
+    });
+    wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+    if (isRecording()) addReplayEvent(JSON.parse(payload));
+  }
+
+  // Record permission events (F15)
+  if (event.type === 'permission:event') {
+    const deptId = sessionKeyToDeptId(event.sessionKey);
+    if (!deptId) return;
+    recordPermission(deptId, event.toolName);
+  }
+});
+
 // Graceful shutdown
 function gracefulShutdown(signal) {
   console.log(`[Server] ${signal} received, shutting down gracefully...`);
-  stopPolling();
   getGateway().disconnect();
   watcher.close();
 

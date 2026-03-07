@@ -38,6 +38,10 @@ import {
   SELECTION_HIGHLIGHT_COLOR,
   DELETE_BUTTON_BG,
   ROTATE_BUTTON_BG,
+  THINKING_DOT_CYCLE_SEC,
+  THINKING_DOT_COLOR,
+  THINKING_DOT_RADIUS_FACTOR,
+  ERROR_FLASH_ALPHA,
 } from '../../constants.js'
 
 // ── Render functions ────────────────────────────────────────────
@@ -183,6 +187,54 @@ export function renderScene(
 
   for (const d of drawables) {
     d.draw(ctx)
+  }
+}
+
+// ── Emotion overlays ────────────────────────────────────────────
+
+export function renderEmotions(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  for (const ch of characters) {
+    if (!ch.emotionState || ch.matrixEffect) continue
+
+    const sittingOff = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0
+    const screenX = offsetX + ch.x * zoom
+    const screenY = offsetY + (ch.y + sittingOff) * zoom
+
+    if (ch.emotionState === 'thinking') {
+      // Animated "..." dots above head
+      const dotY = screenY - 26 * zoom
+      const t = (ch.emotionTimer % THINKING_DOT_CYCLE_SEC) / THINKING_DOT_CYCLE_SEC
+      const baseR = zoom * THINKING_DOT_RADIUS_FACTOR
+      ctx.save()
+      ctx.fillStyle = THINKING_DOT_COLOR
+      for (let i = 0; i < 3; i++) {
+        const phase = (t + i * 0.15) % 1
+        const bounce = Math.sin(phase * Math.PI)
+        const dotX = screenX + (i - 1) * 3 * zoom
+        const r = baseR * (0.5 + 0.5 * bounce)
+        ctx.globalAlpha = 0.5 + 0.5 * bounce
+        ctx.beginPath()
+        ctx.arc(dotX, dotY - bounce * 2 * zoom, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+    } else if (ch.emotionState === 'error') {
+      // Red flash overlay on character
+      ctx.save()
+      ctx.globalAlpha = ERROR_FLASH_ALPHA * (ch.emotionTimer / 0.5)
+      ctx.fillStyle = '#ff3333'
+      // Flash a small rect around the character
+      const w = 16 * zoom
+      const h = 24 * zoom
+      ctx.fillRect(screenX - w / 2, screenY - h, w, h)
+      ctx.restore()
+    }
   }
 }
 
@@ -578,6 +630,9 @@ export function renderFrame(
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)
+
+  // Emotion overlays (thinking dots, error flash)
+  renderEmotions(ctx, characters, offsetX, offsetY, zoom)
 
   // Editor overlays
   if (editor) {

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { DeptIcon, SendIcon } from './Icons'
+import { useToast } from './Toast'
+import { useLocale } from '../i18n/index'
+import { authedFetch } from '../utils/api'
 import './BulletinTab.css'
 
 interface BroadcastResponse {
@@ -16,7 +19,8 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
   const [command, setCommand] = useState('')
   const [broadcasting, setBroadcasting] = useState(false)
   const [responses, setResponses] = useState<BroadcastResponse[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const { showToast } = useToast()
+  const { t } = useLocale()
 
   const broadcast = async () => {
     if (!command.trim() || broadcasting) return
@@ -24,10 +28,9 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
     setCommand('')
     setBroadcasting(true)
     setResponses([])
-    setError(null)
 
     try {
-      const res = await fetch('/cmd/api/broadcast', {
+      const res = await authedFetch('/cmd/api/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: cmd })
@@ -36,14 +39,14 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
       if (data.success && data.responses) {
         const hasErrors = data.responses.some((r: BroadcastResponse) => r.reply.startsWith('[Error]'))
         if (hasErrors) {
-          setError('部分部门回复失败（API 限额可能已用完）')
+          showToast(t('bulletin.partial.error'))
         }
         setResponses(data.responses)
       } else {
-        setError(data.error || '广播失败')
+        showToast(data.error || t('bulletin.send.failed'))
       }
     } catch {
-      setError('网络错误，请检查服务器连接')
+      showToast(t('bulletin.network.error'))
     }
     setBroadcasting(false)
   }
@@ -64,7 +67,7 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
           value={command}
           onChange={e => setCommand(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="发布全公司命令..."
+          placeholder={t('bulletin.broadcast.placeholder')}
           rows={1}
           disabled={broadcasting}
         />
@@ -80,21 +83,14 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
       {/* Broadcasting indicator */}
       {broadcasting && (
         <div className="broadcast-status">
-          广播中... 等待所有部门逐一回复（约30秒）
-        </div>
-      )}
-
-      {/* Error display */}
-      {error && (
-        <div className="broadcast-error">
-          {error}
+          {t('bulletin.broadcasting')}
         </div>
       )}
 
       {/* Responses from all departments */}
       {responses.length > 0 && (
         <div className="broadcast-responses">
-          <div className="broadcast-responses-title">各部门回复 ({responses.length})</div>
+          <div className="broadcast-responses-title">{t('bulletin.responses.title', { count: responses.length })}</div>
           {responses.map((resp, i) => (
             <div key={i} className={`broadcast-response ${resp.reply.startsWith('[Error]') ? 'error' : ''}`}>
               <div className="broadcast-response-header">
@@ -114,8 +110,8 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
             <pre className="markdown-content" style={{ whiteSpace: 'pre-wrap' }}>{bulletin}</pre>
           ) : (
             <div className="bulletin-empty">
-              <p>发布命令到全公司广播</p>
-              <p className="bulletin-hint">所有部门将收到命令并回复执行计划</p>
+              <p>{t('bulletin.empty.title')}</p>
+              <p className="bulletin-hint">{t('bulletin.empty.hint')}</p>
             </div>
           )}
         </div>

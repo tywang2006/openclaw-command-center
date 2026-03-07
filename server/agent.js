@@ -1,10 +1,38 @@
 import fs from 'fs';
 import path from 'path';
 import { getGateway } from './gateway.js';
+import { recordChat, recordTokens } from './routes/metrics.js';
 
 const BASE_PATH = '/root/.openclaw/workspace';
+const GROUP_ID = '-1003570960670';
 
-// Sub-agent persistence helpers
+// ---- Config / mappings ----
+
+function loadConfig() {
+  try {
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch { return { departments: {} }; }
+}
+
+/**
+ * Build the Telegram session key for a department.
+ * Maps deptId -> topicId -> `agent:main:telegram:group:{groupId}:topic:{topicId}`
+ * Falls back to `agent:main:{deptId}` if no topic mapping exists.
+ */
+function getSessionKey(deptId) {
+  const config = loadConfig();
+  for (const [topicId, dept] of Object.entries(config.departments || {})) {
+    if (dept.id === deptId) {
+      const gid = config.groupId || GROUP_ID;
+      return `agent:main:telegram:group:${gid}:topic:${topicId}`;
+    }
+  }
+  return `agent:main:${deptId}`;
+}
+
+// ---- Sub-agent persistence ----
+
 function subAgentsPath(deptId) {
   return path.join(BASE_PATH, 'departments', deptId, 'subagents.json');
 }
@@ -34,361 +62,239 @@ function saveSubAgents(deptId, data) {
   }
 }
 
-/**
- * Append a chat exchange to daily log
- */
-function appendDailyLog(deptId, userMsg, agentReply, source = 'app') {
-  const today = new Date().toISOString().split('T')[0];
-  const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const dailyDir = path.join(BASE_PATH, 'departments', deptId, 'daily');
-  const dailyPath = path.join(dailyDir, `${today}.md`);
-
-  try {
-    if (!fs.existsSync(dailyDir)) {
-      fs.mkdirSync(dailyDir, { recursive: true });
-    }
-
-    let content = '';
-    if (!fs.existsSync(dailyPath)) {
-      content += `# ${deptId} 日志 - ${today}\n\n`;
-    }
-    content += `## ${time} [${source}]\n`;
-    content += `**用户**: ${userMsg}\n\n`;
-    content += `**回复**: ${agentReply}\n\n---\n\n`;
-
-    fs.appendFileSync(dailyPath, content, 'utf8');
-  } catch (err) {
-    console.error(`[Agent] Failed to write daily log for ${deptId}:`, err.message);
-  }
-}
+// ---- Chat via OpenClaw Gateway ----
 
 /**
- * Load department persona from file
+ * Chat with a department agent via OpenClaw Gateway.
+ * Uses the same session as the Telegram topic for unified conversation.
+ * No context wrapping — OpenClaw handles system prompts natively.
  */
-function loadPersona(deptId) {
-  const personaPath = path.join(BASE_PATH, 'departments', 'personas', `${deptId}.md`);
-  try {
-    if (fs.existsSync(personaPath)) {
-      return fs.readFileSync(personaPath, 'utf8');
-    }
-  } catch {}
-  return `你是 ${deptId} 部门的 AI 代理。`;
-}
-
-/**
- * Load department memory
- */
-function loadMemory(deptId) {
-  const memPath = path.join(BASE_PATH, 'departments', deptId, 'memory', 'MEMORY.md');
-  try {
-    if (fs.existsSync(memPath)) {
-      return fs.readFileSync(memPath, 'utf8');
-    }
-  } catch {}
-  return '';
-}
-
-/**
- * Load bulletin board
- */
-function loadBulletin() {
-  const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
-  try {
-    if (fs.existsSync(bPath)) {
-      return fs.readFileSync(bPath, 'utf8');
-    }
-  } catch {}
-  return '';
-}
-
-/**
- * Build department context to include in gateway messages.
- * This gives the OpenClaw agent awareness of which department it is acting as.
- */
-function buildDepartmentContext(deptId) {
-  const persona = loadPersona(deptId);
-  const memory = loadMemory(deptId);
-  const bulletin = loadBulletin();
-
-  const personaSnippet = persona.split('\n').slice(0, 20).join('\n');
-  const memorySnippet = memory ? memory.substring(0, 1000) : '(暂无记忆)';
-  const bulletinSnippet = bulletin ? bulletin.substring(0, 600) : '(暂无公告)';
-
-  return `[部门角色指令]
-${personaSnippet}
-
-[你的记忆]
-${memorySnippet}
-
-[公告板]
-${bulletinSnippet}
-
-[规则]
-- 你是一人公司 OpenClaw 的一个部门 AI 代理
-- 老板（用户）直接跟你对话，你要认真回复
-- 回复要简洁专业，符合你的部门角色
-- 用中文回复
-- 如果老板分配了任务，确认收到并说明计划`;
-}
-
-/**
- * Chat with a department agent via OpenClaw Gateway
- */
-async function chat(deptId, userMessage) {
+async function chat(deptId, userMessage, images) {
   const gateway = getGateway();
 
   if (!gateway.isReady) {
     try {
       await gateway.waitForReady(5000);
     } catch {
-      return { success: false, error: 'Gateway 未连接，请稍后重试' };
+      return { success: false, error: 'Gateway not connected, please try again later' };
     }
   }
 
-  const sessionKey = `agent:main:${deptId}`;
-  const context = buildDepartmentContext(deptId);
-  const fullMessage = `${context}\n---\n${userMessage}`;
+  const sessionKey = getSessionKey(deptId);
+
+  // Build attachments from base64 images
+  const attachments = [];
+  if (Array.isArray(images)) {
+    for (const dataUrl of images) {
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
+        const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (match) {
+          attachments.push({ mimeType: match[1], data: match[2] });
+        }
+      }
+    }
+  }
 
   try {
-    const result = await gateway.sendAgentMessage(sessionKey, fullMessage);
+    const startMs = Date.now();
+    const result = await gateway.sendAgentMessage(sessionKey, userMessage, attachments);
+    const durationMs = Date.now() - startMs;
 
+    // Record metrics
     if (result.text) {
-      appendDailyLog(deptId, userMessage, result.text, 'chat');
+      recordChat(deptId, durationMs, false);
+      if (result.usage) {
+        recordTokens(deptId, result.usage);
+      }
       return { success: true, reply: result.text };
     }
-    return { success: false, error: 'Gateway 返回空响应' };
+
+    recordChat(deptId, durationMs, true);
+    return { success: false, error: 'Gateway returned empty response' };
   } catch (err) {
     console.error(`[Agent] Chat ${deptId} error:`, err.message);
+    recordChat(deptId, 0, true);
     return { success: false, error: err.message };
   }
 }
 
 /**
- * Save bulletin content to file
+ * Get chat history for a department from OpenClaw Gateway.
  */
-function saveBulletin(content) {
-  const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
-  try {
-    fs.writeFileSync(bPath, content, 'utf8');
-    return true;
-  } catch (err) {
-    console.error('[Agent] Failed to save bulletin:', err.message);
-    return false;
-  }
-}
+async function getChatHistory(deptId, limit = 30) {
+  const gateway = getGateway();
+  if (!gateway.isReady) return [];
 
-/**
- * Broadcast a command to all departments via Gateway.
- * Each department agent reads the command and responds with their plan.
- * Uses parallel execution with Promise.allSettled for efficiency.
- */
-async function broadcastCommand(command) {
-  const configPath = path.join(BASE_PATH, 'departments', 'config.json');
-  let config;
+  const sessionKey = getSessionKey(deptId);
   try {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch {
+    const messages = await gateway.getChatHistory(sessionKey, limit);
+    return messages.map(m => {
+      let text = '';
+      if (typeof m.content === 'string') {
+        text = m.content;
+      } else if (Array.isArray(m.content)) {
+        text = m.content
+          .filter(c => c.type === 'text' && c.text)
+          .map(c => c.text)
+          .join('\n');
+      }
+      return {
+        role: m.role === 'user' ? 'user' : 'assistant',
+        text,
+        timestamp: m.timestamp || null,
+      };
+    }).filter(m => m.text && m.role !== 'toolResult' && m.role !== 'toolCall');
+  } catch (err) {
+    console.error(`[Agent] History ${deptId} error:`, err.message);
     return [];
   }
-
-  const gateway = getGateway();
-  if (!gateway.isReady) {
-    try {
-      await gateway.waitForReady(5000);
-    } catch {
-      return [];
-    }
-  }
-
-  const departments = Object.values(config.departments || {});
-
-  // Create parallel tasks for all departments
-  const broadcastTasks = departments.map(async (dept) => {
-    const deptId = dept.id;
-    const sessionKey = `agent:main:${deptId}`;
-    const context = buildDepartmentContext(deptId);
-
-    const broadcastMessage = `${context}
-
----
-# 全公司广播命令
-老板刚刚向全公司发布了以下命令。你必须：
-1. 确认收到
-2. 说明你的部门将如何执行
-3. 列出具体行动计划
-4. 预估完成时间
-
-这是军事化管理的公司，服从命令，高效执行。
----
-[全公司广播] ${command}`;
-
-    try {
-      const result = await gateway.sendAgentMessage(sessionKey, broadcastMessage);
-      const reply = result.text || '[Error] 空响应';
-      appendDailyLog(deptId, `[全公司广播] ${command}`, reply, 'broadcast');
-      return { deptId, name: dept.name, reply };
-    } catch (err) {
-      const errReply = `[Error] ${err.message}`;
-      appendDailyLog(deptId, `[全公司广播] ${command}`, errReply, 'broadcast');
-      return { deptId, name: dept.name, reply: errReply };
-    }
-  });
-
-  // Execute all broadcasts in parallel
-  const results = await Promise.allSettled(broadcastTasks);
-
-  // Extract responses from settled promises
-  const responses = results.map((result, idx) => {
-    if (result.status === 'fulfilled') {
-      return result.value;
-    } else {
-      // Handle unexpected promise rejection
-      const dept = departments[idx];
-      const errReply = `[Error] Promise rejected: ${result.reason?.message || 'Unknown error'}`;
-      return { deptId: dept.id, name: dept.name, reply: errReply };
-    }
-  });
-
-  return responses;
 }
 
-/**
- * Save memory for a department
- */
+// ---- Bulletin ----
+
+function loadBulletin() {
+  const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
+  try { return fs.existsSync(bPath) ? fs.readFileSync(bPath, 'utf8') : ''; } catch { return ''; }
+}
+
+function saveBulletin(content) {
+  const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
+  try { fs.writeFileSync(bPath, content, 'utf8'); return true; } catch { return false; }
+}
+
+// ---- Memory ----
+
+function loadMemory(deptId) {
+  const memPath = path.join(BASE_PATH, 'departments', deptId, 'memory', 'MEMORY.md');
+  try { return fs.existsSync(memPath) ? fs.readFileSync(memPath, 'utf8') : ''; } catch { return ''; }
+}
+
 function saveMemory(deptId, content) {
   const memPath = path.join(BASE_PATH, 'departments', deptId, 'memory', 'MEMORY.md');
   try {
+    // Create backup before overwriting
+    if (fs.existsSync(memPath)) {
+      const existing = fs.readFileSync(memPath, 'utf8');
+      if (existing.trim()) {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const bakPath = path.join(BASE_PATH, 'departments', deptId, 'memory', `MEMORY.${ts}.md.bak`);
+        fs.writeFileSync(bakPath, existing, 'utf8');
+      }
+    }
     fs.writeFileSync(memPath, content, 'utf8');
     return true;
-  } catch (err) {
-    console.error('[Agent] Failed to save memory:', err.message);
-    return false;
-  }
+  } catch { return false; }
 }
 
-/**
- * Clear conversation history for a department.
- * Conversation history is now managed by the gateway via session keys.
- */
 function clearHistory(deptId) {
   console.log(`[Agent] History clear requested for ${deptId} (managed by gateway)`);
 }
 
-/**
- * Create a sub-agent for a department to handle a specific task
- */
+// ---- Broadcast ----
+
+async function broadcastCommand(command) {
+  const config = loadConfig();
+  const gateway = getGateway();
+  if (!gateway.isReady) {
+    try { await gateway.waitForReady(5000); } catch { return []; }
+  }
+
+  const departments = Object.values(config.departments || {});
+  const tasks = departments.map(async (dept) => {
+    const sessionKey = getSessionKey(dept.id);
+    try {
+      const startMs = Date.now();
+      const result = await gateway.sendAgentMessage(sessionKey, `[Broadcast] ${command}`);
+      const durationMs = Date.now() - startMs;
+
+      recordChat(dept.id, durationMs, !result.text);
+      if (result.usage) {
+        recordTokens(dept.id, result.usage);
+      }
+
+      return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
+    } catch (err) {
+      recordChat(dept.id, 0, true);
+      return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
+    }
+  });
+
+  const results = await Promise.allSettled(tasks);
+  return results.map((r, i) =>
+    r.status === 'fulfilled' ? r.value : { deptId: departments[i].id, name: departments[i].name, reply: `[Error] ${r.reason?.message}` }
+  );
+}
+
+// ---- Sub-agents ----
+
 function createSubAgent(deptId, task, name) {
   const data = loadSubAgents(deptId);
   data.count++;
   const subId = `${deptId}-sub-${data.count}`;
-  const agentName = name || `子代理 #${data.count}`;
-
-  data.agents[subId] = {
-    name: agentName,
-    task,
-    status: 'active',
-    created: new Date().toISOString(),
-  };
-
+  const agentName = name || `Sub-agent #${data.count}`;
+  data.agents[subId] = { name: agentName, task, status: 'active', created: new Date().toISOString() };
   saveSubAgents(deptId, data);
   console.log(`[SubAgent] Created ${subId} "${agentName}" for "${task.substring(0, 50)}"`);
   return { subId, name: agentName };
 }
 
-/**
- * Chat with a specific sub-agent via Gateway
- */
 async function chatSubAgent(deptId, subId, userMessage) {
   const data = loadSubAgents(deptId);
   const agent = data.agents[subId];
   if (!agent) return { success: false, error: `Sub-agent ${subId} not found` };
 
   const gateway = getGateway();
-  if (!gateway.isReady) {
-    return { success: false, error: 'Gateway 未连接' };
-  }
+  if (!gateway.isReady) return { success: false, error: 'Gateway not connected' };
 
   const sessionKey = `agent:main:${deptId}:sub:${subId}`;
-  const persona = loadPersona(deptId);
-  const personaSnippet = persona.split('\n').slice(0, 8).join('\n');
-
-  const fullMessage = `[子代理模式]
-部门: ${deptId}
-子代理名称: ${agent.name}
-任务: ${agent.task}
-
-${personaSnippet}
-
-回复要简洁专业，围绕你的任务。用中文回复。
----
-${userMessage}`;
-
   try {
-    const result = await gateway.sendAgentMessage(sessionKey, fullMessage);
+    const startMs = Date.now();
+    const result = await gateway.sendAgentMessage(sessionKey, userMessage);
+    const durationMs = Date.now() - startMs;
+
     if (result.text) {
-      appendDailyLog(deptId, `[${agent.name}] ${userMessage}`, result.text, `sub:${subId}`);
+      recordChat(deptId, durationMs, false);
+      if (result.usage) {
+        recordTokens(deptId, result.usage);
+      }
       return { success: true, reply: result.text };
     }
-    return { success: false, error: '空响应' };
+
+    recordChat(deptId, durationMs, true);
+    return { success: false, error: 'Empty response' };
   } catch (err) {
+    recordChat(deptId, 0, true);
     return { success: false, error: err.message };
   }
 }
 
-/**
- * List sub-agents for a department
- */
 function listSubAgents(deptId) {
   const data = loadSubAgents(deptId);
   return Object.entries(data.agents).map(([id, agent]) => ({
-    id,
-    name: agent.name,
-    task: agent.task,
-    status: agent.status,
+    id, name: agent.name, task: agent.task, status: agent.status,
   }));
 }
 
-/**
- * Remove a sub-agent — archive its metadata before deleting
- */
 function removeSubAgent(deptId, subId) {
   const data = loadSubAgents(deptId);
   const agent = data.agents[subId];
   if (!agent) return false;
-
-  // Archive to subagent-archives.json
   const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
   let archives = [];
-  try {
-    if (fs.existsSync(archivePath)) {
-      archives = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
-    }
-  } catch {}
-
-  archives.push({
-    id: subId,
-    name: agent.name,
-    task: agent.task,
-    status: agent.status,
-    created: agent.created || null,
-    archived: new Date().toISOString(),
-  });
-
-  try {
-    fs.writeFileSync(archivePath, JSON.stringify(archives, null, 2), 'utf8');
-  } catch (err) {
-    console.error(`[SubAgent] Failed to archive ${subId}:`, err.message);
-  }
-
-  // Remove from active list
+  try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch {}
+  archives.push({ id: subId, ...agent, archived: new Date().toISOString() });
+  try { fs.writeFileSync(archivePath, JSON.stringify(archives, null, 2), 'utf8'); } catch {}
   delete data.agents[subId];
   saveSubAgents(deptId, data);
   console.log(`[SubAgent] Archived and removed ${subId} "${agent.name}"`);
   return true;
 }
 
+// ---- Exports ----
+
 export {
-  chat, saveBulletin, saveMemory, clearHistory, loadMemory, loadBulletin,
+  chat, getChatHistory, getSessionKey,
+  saveBulletin, saveMemory, clearHistory, loadMemory, loadBulletin,
   createSubAgent, chatSubAgent, listSubAgents, removeSubAgent,
-  broadcastCommand, appendDailyLog,
+  broadcastCommand,
 };

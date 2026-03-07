@@ -12,6 +12,7 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
+  ERROR_FLASH_DURATION_SEC,
 } from '../../constants.js'
 import type { Character, Seat, FurnitureInstance, TileType as TileTypeVal, OfficeLayout, PlacedFurniture } from '../types.js'
 import { createCharacter, updateCharacter } from './characters.js'
@@ -620,6 +621,13 @@ export class OfficeState {
     }
   }
 
+  setAgentEmotion(id: number, emotion: 'thinking' | 'error' | null): void {
+    const ch = this.characters.get(id)
+    if (!ch) return
+    ch.emotionState = emotion
+    ch.emotionTimer = emotion === 'error' ? ERROR_FLASH_DURATION_SEC : 0
+  }
+
   showWaitingBubble(id: number): void {
     const ch = this.characters.get(id)
     if (ch) {
@@ -672,6 +680,17 @@ export class OfficeState {
         if (ch.bubbleTimer <= 0) {
           ch.bubbleType = null
           ch.bubbleTimer = 0
+        }
+      }
+
+      // Tick emotion timers
+      if (ch.emotionState === 'thinking') {
+        ch.emotionTimer += dt
+      } else if (ch.emotionState === 'error') {
+        ch.emotionTimer -= dt
+        if (ch.emotionTimer <= 0) {
+          ch.emotionState = null
+          ch.emotionTimer = 0
         }
       }
     }

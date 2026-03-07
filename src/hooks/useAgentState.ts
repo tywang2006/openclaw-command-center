@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
+import { authedFetch, getToken } from '../utils/api'
 
 export interface Department {
   id: string
@@ -20,6 +21,15 @@ export interface Activity {
   role: 'user' | 'assistant'
   text: string
   timestamp: number
+  images?: string[]
+  source?: string   // 'app' | 'telegram' | 'gateway' | 'cron'
+  fromName?: string  // sender name (e.g. Telegram username)
+}
+
+export interface ToolState {
+  toolName: string
+  status: string
+  done: boolean
 }
 
 export interface AgentState {
@@ -30,6 +40,10 @@ export interface AgentState {
   activities: Activity[]
   selectedDeptId: string | null
   connected: boolean
+  /** Active tool states per department */
+  toolStates: Map<string, ToolState>
+  /** Streaming text per department (F14) */
+  streamingTexts: Map<string, string>
 }
 
 function parseDepartment(d: any): Department {
@@ -52,12 +66,15 @@ export function useAgentState() {
     activities: [],
     selectedDeptId: null,
     connected: false,
+    toolStates: new Map(),
+    streamingTexts: new Map(),
   })
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const mountedRef = useRef<boolean>(true)
   const reconnectDelayRef = useRef<number>(1000)
+  const wsReceivedDepts = useRef(false)
 
   const connect = () => {
     if (reconnectTimeoutRef.current) {
@@ -65,8 +82,10 @@ export function useAgentState() {
       reconnectTimeoutRef.current = null
     }
 
+    const token = getToken()
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/cmd/ws`)
+    const wsUrl = `${protocol}//${window.location.host}/cmd/ws${token ? `?token=${token}` : ''}`
+    const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
       console.log('[WS] Connected')
@@ -117,8 +136,9 @@ export function useAgentState() {
 
     switch (event) {
       case 'connected':
-        // Initial full state from server
+        // Initial full state from server — takes priority over REST fallback
         console.log('[WS] Received initial state')
+        wsReceivedDepts.current = true
         if (mountedRef.current) {
           setState(prev => {
             const departments = Array.isArray(data?.departments)
@@ -190,18 +210,80 @@ export function useAgentState() {
 
       case 'activity:new':
         if (mountedRef.current) {
-          setState(prev => ({
-            ...prev,
-            activities: [
-              ...prev.activities,
-              {
-                deptId: data?.deptId,
-                role: data?.role || 'assistant',
-                text: data?.text || '',
-                timestamp: Date.now(),
-              },
-            ].slice(-200),
-          }))
+          // Clear streaming text for this dept when final message arrives (F14)
+          if (data?.deptId) {
+            setState(prev => {
+              if (prev.streamingTexts.has(data.deptId)) {
+                const streamingTexts = new Map(prev.streamingTexts)
+                streamingTexts.delete(data.deptId)
+                return { ...prev, streamingTexts }
+              }
+              return prev
+            })
+          }
+          // Handle both single-message format (from telegram.js/gateway events)
+          // and multi-message format (from watcher.js session files)
+          if (Array.isArray(data?.messages)) {
+            // Multi-message format from session file watcher
+            setState(prev => ({
+              ...prev,
+              activities: [
+                ...prev.activities,
+                ...data.messages.map((msg: any) => ({
+                  deptId: data?.deptId,
+                  role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+                  text: msg.text || '',
+                  timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                  source: data?.source || 'session',
+                })),
+              ].slice(-200),
+            }))
+          } else {
+            // Single-message format
+            setState(prev => ({
+              ...prev,
+              activities: [
+                ...prev.activities,
+                {
+                  deptId: data?.deptId,
+                  role: data?.role || 'assistant',
+                  text: data?.text || '',
+                  timestamp: Date.now(),
+                  source: data?.source,
+                  fromName: data?.fromName,
+                },
+              ].slice(-200),
+            }))
+          }
+        }
+        break
+
+      case 'chat:stream':
+        if (mountedRef.current && data?.deptId && data?.chunk) {
+          setState(prev => {
+            const streamingTexts = new Map(prev.streamingTexts)
+            const existing = streamingTexts.get(data.deptId) || ''
+            streamingTexts.set(data.deptId, existing + data.chunk)
+            return { ...prev, streamingTexts }
+          })
+        }
+        break
+
+      case 'tool:update':
+        if (mountedRef.current && data?.deptId) {
+          setState(prev => {
+            const toolStates = new Map(prev.toolStates)
+            if (data.done) {
+              toolStates.delete(data.deptId)
+            } else {
+              toolStates.set(data.deptId, {
+                toolName: data.toolName || 'unknown',
+                status: data.toolStatus || 'running',
+                done: false,
+              })
+            }
+            return { ...prev, toolStates }
+          })
         }
         break
 
@@ -210,11 +292,15 @@ export function useAgentState() {
     }
   }
 
-  // Also fetch departments via REST as backup
+  // REST fallback — only applies if WS hasn't delivered departments yet
   useEffect(() => {
-    fetch('/cmd/api/departments')
-      .then(res => res.json())
+    authedFetch('/cmd/api/departments')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then(data => {
+        if (wsReceivedDepts.current) return // WS already delivered, skip stale REST
         const depts = data?.departments
         if (Array.isArray(depts) && depts.length > 0 && mountedRef.current) {
           setState(prev => ({

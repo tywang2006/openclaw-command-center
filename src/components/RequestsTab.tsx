@@ -1,5 +1,6 @@
 import type { Request } from '../hooks/useAgentState'
 import { RequestIcon } from './Icons'
+import { useLocale } from '../i18n/index'
 import './RequestsTab.css'
 
 interface RequestsTabProps {
@@ -7,12 +8,14 @@ interface RequestsTabProps {
 }
 
 export default function RequestsTab({ requests }: RequestsTabProps) {
+  const { t, locale } = useLocale()
+
   if (requests.length === 0) {
     return (
       <div className="requests-tab empty">
         <div className="empty-message">
           <div className="empty-icon"><RequestIcon size={32} color="#a0a0b0" /></div>
-          <p>暂无跨部门请求</p>
+          <p>{t('requests.empty.title')}</p>
         </div>
       </div>
     )
@@ -20,7 +23,7 @@ export default function RequestsTab({ requests }: RequestsTabProps) {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
@@ -34,7 +37,7 @@ export default function RequestsTab({ requests }: RequestsTabProps) {
         <div key={index} className="request-card">
           <div className="request-header">
             <span className="request-date">{formatDate(request.date)}</span>
-            <span className="badge active">pending</span>
+            <span className="badge active">{t('requests.badge.pending')}</span>
           </div>
           <div className="request-filename">{request.filename}</div>
           <div className="request-content">{request.content}</div>

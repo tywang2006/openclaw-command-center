@@ -1,6 +1,6 @@
 /* ============================================
    OpenClaw Command Center - Office Canvas
-   Pixel office viewport with polished zoom controls
+   Pixel office viewport with retro zoom controls
    ============================================ */
 
 .office-canvas-container {
@@ -8,7 +8,6 @@
   height: 100%;
   overflow: hidden;
   position: relative;
-  border-radius: var(--radius-lg);
 }
 
 .office-canvas-container canvas {
@@ -17,58 +16,59 @@
   height: 100%;
 }
 
-/* ---- Zoom controls ---- */
+/* ---- Zoom controls (pixel style) ---- */
 .zoom-controls {
   position: absolute;
-  bottom: 14px;
-  right: 14px;
+  bottom: 10px;
+  right: 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(12, 12, 26, 0.88);
-  border: 1px solid rgba(42, 42, 80, 0.6);
-  border-radius: var(--radius-md);
-  padding: 6px 10px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-elevated);
+  gap: 6px;
+  background: rgba(10, 10, 22, 0.95);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 4px 8px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
 }
 
 .zoom-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  transition: all var(--transition-fast);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
 }
 
 .zoom-btn:hover:not(:disabled) {
   background: var(--accent-muted);
   color: var(--accent-color);
-  border-color: rgba(0, 212, 170, 0.35);
+  border-color: var(--accent-color);
+  box-shadow: none;
+  transform: translate(1px, 1px);
 }
 
 .zoom-btn:disabled {
   opacity: 0.25;
   cursor: default;
+  box-shadow: none;
 }
 
 .zoom-slider {
-  width: 80px;
+  width: 70px;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+  background: var(--border-color);
+  border-radius: 0;
   outline: none;
   cursor: pointer;
 }
@@ -76,32 +76,25 @@
 .zoom-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
   background: var(--accent-color);
   border: 2px solid var(--bg-primary);
   cursor: pointer;
-  box-shadow: 0 0 6px rgba(0, 212, 170, 0.4);
-  transition: box-shadow var(--transition-fast);
-}
-
-.zoom-slider::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 10px rgba(0, 212, 170, 0.6);
 }
 
 .zoom-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
   background: var(--accent-color);
   border: 2px solid var(--bg-primary);
   cursor: pointer;
-  box-shadow: 0 0 6px rgba(0, 212, 170, 0.4);
 }
 
 .zoom-label {
-  font-size: 11px;
+  font-size: 10px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;

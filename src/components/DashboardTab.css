@@ -1,0 +1,373 @@
+/* ============================================
+   OpenClaw Command Center - Dashboard Tab
+   Pixel-art dark theme performance dashboard
+   ============================================ */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px;
+  gap: 12px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.dashboard-header h2 {
+  font-size: 12px;
+  color: var(--accent-color);
+  font-weight: 600;
+  margin: 0;
+}
+
+.dashboard-loading,
+.dashboard-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+/* ========== Global Stats Row ========== */
+.dashboard-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+}
+
+.dashboard-stat-card {
+  flex: 1;
+  min-width: 120px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboard-stat-value {
+  font-family: var(--font-pixel);
+  font-size: 16px;
+  color: var(--accent-color);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.dashboard-stat-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+/* ========== Gateway Stats ========== */
+.dashboard-gateway {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px;
+  box-shadow: var(--shadow-card);
+}
+
+.dashboard-gateway h3 {
+  font-size: 11px;
+  color: var(--accent-secondary);
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.dashboard-gateway-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gateway-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.gateway-status {
+  padding: 2px 6px;
+  border-radius: 0;
+  border: 2px solid;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.gateway-status.connected {
+  background: rgba(0, 204, 136, 0.15);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.gateway-status.disconnected {
+  background: rgba(255, 68, 102, 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.gateway-label {
+  color: var(--text-secondary);
+}
+
+.gateway-value {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* ========== Department Cards ========== */
+.dashboard-dept-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-dept-section h3 {
+  font-size: 11px;
+  color: var(--accent-color);
+  font-weight: 600;
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.dashboard-dept-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-dept-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dept-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.dept-card-name {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dept-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dept-stat {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.dept-stat.error {
+  color: var(--danger);
+}
+
+/* ========== Bar Chart ========== */
+.dashboard-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 40px;
+  padding: 4px 0;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-subtle);
+  border-radius: 0;
+  margin-top: 4px;
+}
+
+.dashboard-bar {
+  flex: 1;
+  min-width: 3px;
+  background: var(--accent-color);
+  border-radius: 0;
+  transition: none;
+}
+
+.dashboard-bar.error {
+  background: var(--danger);
+}
+
+/* ========== Token Usage ========== */
+.dashboard-tokens {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px;
+  box-shadow: var(--shadow-card);
+}
+
+.dashboard-tokens h3 {
+  font-size: 11px;
+  color: var(--accent-secondary);
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-estimated {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.token-totals {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.token-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.token-label {
+  color: var(--text-secondary);
+}
+
+.token-value {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--accent-color);
+}
+
+.token-value.total {
+  font-size: 13px;
+  color: var(--accent-secondary);
+}
+
+.token-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dashboard-token-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.token-bar-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.token-bar-container {
+  flex: 1;
+  height: 16px;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-subtle);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.dashboard-token-bar {
+  height: 100%;
+  transition: width 200ms ease;
+  border-radius: 0;
+}
+
+.token-bar-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+  min-width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ========== Recent Permissions ========== */
+.dashboard-permissions {
+  margin-top: 12px;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px;
+  box-shadow: var(--shadow-card);
+}
+
+.dashboard-permissions h3 {
+  font-size: 11px;
+  color: #a0a0b0;
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--border-subtle);
+}
+
+.permissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.permission-item {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  color: #808090;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.permission-tool {
+  color: #00d4aa;
+  min-width: 80px;
+}
+
+.permission-dept {
+  color: #c0c0d0;
+  flex: 1;
+}
+
+.permission-time {
+  color: #606070;
+}

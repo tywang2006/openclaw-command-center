@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Department } from '../hooks/useAgentState';
+import { DeptIcon } from './Icons';
+import { useToast } from './Toast';
+import { useLocale } from '../i18n/index';
+import { authedFetch } from '../utils/api';
 import './CronTab.css';
 
 interface CronJob {
@@ -32,6 +36,7 @@ interface CronJob {
     lastDurationMs?: number;
     consecutiveErrors?: number;
     lastError?: string;
+    executionHistory?: { timestamp: number; durationMs: number; success: boolean; responseLength: number }[];
   };
 }
 
@@ -59,9 +64,10 @@ interface CronTabProps {
 }
 
 const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
+  const { showToast } = useToast();
+  const { t, locale } = useLocale();
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -85,19 +91,19 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const response = await fetch('/cmd/api/cron/jobs');
+      const response = await authedFetch('/cmd/api/cron/jobs');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       const data = await response.json();
       setJobs(data.jobs || []);
-      setError(null);
+      // ok
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败');
+      showToast(err instanceof Error ? err.message : t('cron.load.failed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t, showToast]);
 
   useEffect(() => {
     fetchJobs();
@@ -107,7 +113,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   useEffect(() => {
     if (form.deptId) {
-      fetch(`/cmd/api/departments/${form.deptId}/subagents`)
+      authedFetch(`/cmd/api/departments/${form.deptId}/subagents`)
         .then(r => r.json())
         .then(data => setSubAgents(data.agents || []))
         .catch(() => setSubAgents([]));
@@ -138,7 +144,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         payload.subAgentId = form.subAgentId;
       }
 
-      const response = await fetch('/cmd/api/cron/jobs', {
+      const response = await authedFetch('/cmd/api/cron/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -161,13 +167,13 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         timeoutSeconds: 120,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败');
+      showToast(err instanceof Error ? err.message : t('cron.create.failed'));
     }
   };
 
   const handleToggleEnabled = async (job: CronJob) => {
     try {
-      const response = await fetch(`/cmd/api/cron/jobs/${job.id}/toggle`, {
+      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}/toggle`, {
         method: 'POST',
       });
 
@@ -177,13 +183,13 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
       await fetchJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '切换失败');
+      showToast(err instanceof Error ? err.message : t('cron.toggle.failed'));
     }
   };
 
   const handleDeleteJob = async (jobId: string) => {
     try {
-      const response = await fetch(`/cmd/api/cron/jobs/${jobId}`, {
+      const response = await authedFetch(`/cmd/api/cron/jobs/${jobId}`, {
         method: 'DELETE',
       });
 
@@ -194,7 +200,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       await fetchJobs();
       setDeleteConfirmId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败');
+      showToast(err instanceof Error ? err.message : t('cron.delete.failed'));
     }
   };
 
@@ -212,7 +218,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         },
       };
 
-      const response = await fetch(`/cmd/api/cron/jobs/${job.id}`, {
+      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -226,14 +232,14 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       setEditingJobId(null);
       setEditMessage('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新失败');
+      showToast(err instanceof Error ? err.message : t('cron.update.failed'));
     }
   };
 
   const handleRunNow = async (job: CronJob) => {
     setRunningJobId(job.id);
     try {
-      const response = await fetch(`/cmd/api/cron/jobs/${job.id}/run`, {
+      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}/run`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -242,7 +248,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       }
       await fetchJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '执行失败');
+      showToast(err instanceof Error ? err.message : t('cron.run.failed'));
     } finally {
       setRunningJobId(null);
     }
@@ -255,16 +261,16 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       const days = hours / 24;
 
       if (days >= 1 && days % 1 === 0) {
-        return `每 ${days} 天`;
+        return t('cron.schedule.every.day', { days });
       } else if (hours >= 1 && hours % 1 === 0) {
-        return `每 ${hours} 小时`;
+        return t('cron.schedule.every.hour', { hours });
       } else {
-        return `每 ${minutes} 分钟`;
+        return t('cron.schedule.every.minute', { minutes });
       }
     } else if (schedule.kind === 'cron' && schedule.expr) {
       return schedule.expr;
     }
-    return '未知';
+    return t('cron.schedule.unknown');
   };
 
   const formatTime = (ms?: number): string => {
@@ -274,13 +280,13 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
     const diff = now.getTime() - ms;
 
     if (diff < 60000) {
-      return '刚刚';
+      return t('cron.time.now');
     } else if (diff < 3600000) {
-      return `${Math.floor(diff / 60000)} 分钟前`;
+      return t('cron.time.minutes', { minutes: Math.floor(diff / 60000) });
     } else if (diff < 86400000) {
-      return `${Math.floor(diff / 3600000)} 小时前`;
+      return t('cron.time.hours', { hours: Math.floor(diff / 3600000) });
     } else {
-      return date.toLocaleString('zh-CN');
+      return date.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US');
     }
   };
 
@@ -292,21 +298,21 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   const getStatusDot = (job: CronJob): React.ReactNode => {
     if (!job.enabled) {
-      return <span className="status-dot disabled" title="已禁用"></span>;
+      return <span className="status-dot disabled" title={t('cron.status.disabled')}></span>;
     }
     if (job.state?.lastStatus === 'error') {
-      return <span className="status-dot error" title="错误"></span>;
+      return <span className="status-dot error" title={t('cron.status.error')}></span>;
     }
     if (job.state?.lastStatus === 'ok') {
-      return <span className="status-dot ok" title="正常"></span>;
+      return <span className="status-dot ok" title={t('cron.status.ok')}></span>;
     }
-    return <span className="status-dot pending" title="待运行"></span>;
+    return <span className="status-dot pending" title={t('cron.status.pending')}></span>;
   };
 
   if (loading) {
     return (
       <div className="cron-tab">
-        <div className="loading">加载中...</div>
+        <div className="loading">{t('cron.loading')}</div>
       </div>
     );
   }
@@ -314,57 +320,50 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
   return (
     <div className="cron-tab">
       <div className="cron-header">
-        <h2>定时任务</h2>
+        <h2>{t('cron.title')}</h2>
         <button
           className="btn-create-toggle"
           onClick={() => setShowCreateForm(!showCreateForm)}
         >
-          {showCreateForm ? '取消' : '+ 创建'}
+          {showCreateForm ? t('cron.cancel') : t('cron.create')}
         </button>
       </div>
-
-      {error && (
-        <div className="error-banner">
-          {error}
-          <button onClick={() => setError(null)}>×</button>
-        </div>
-      )}
 
       {showCreateForm && (
         <div className="create-form">
           <div className="form-group">
-            <label>定时器名称</label>
+            <label>{t('cron.form.name')}</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="例: 每日备份"
+              placeholder={t('cron.form.name.placeholder')}
             />
           </div>
 
           <div className="form-group">
-            <label>分配给</label>
+            <label>{t('cron.form.assign')}</label>
             <select
               value={form.deptId}
               onChange={(e) => setForm({ ...form, deptId: e.target.value })}
               className="dept-select"
             >
-              <option value="">全局 (无部门)</option>
+              <option value="">{t('cron.form.global')}</option>
               {departments.map(d => (
-                <option key={d.id} value={d.id}>{d.emoji} {d.name}</option>
+                <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
           </div>
 
           {form.deptId && subAgents.length > 0 && (
             <div className="form-group">
-              <label>子代理 (可选)</label>
+              <label>{t('cron.form.subagent')}</label>
               <select
                 value={form.subAgentId}
                 onChange={(e) => setForm({ ...form, subAgentId: e.target.value })}
                 className="dept-select"
               >
-                <option value="">部门主代理</option>
+                <option value="">{t('cron.form.subagent.main')}</option>
                 {subAgents.map(a => (
                   <option key={a.id} value={a.id}>{a.name} - {a.task.substring(0, 30)}</option>
                 ))}
@@ -373,26 +372,26 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
           )}
 
           <div className="form-group">
-            <label>调度方式</label>
+            <label>{t('cron.form.schedule')}</label>
             <div className="schedule-type-selector">
               <button
                 className={form.scheduleKind === 'every' ? 'active' : ''}
                 onClick={() => setForm({ ...form, scheduleKind: 'every' })}
               >
-                间隔
+                {t('cron.form.schedule.interval')}
               </button>
               <button
                 className={form.scheduleKind === 'cron' ? 'active' : ''}
                 onClick={() => setForm({ ...form, scheduleKind: 'cron' })}
               >
-                Cron表达式
+                {t('cron.form.schedule.cron')}
               </button>
             </div>
           </div>
 
           {form.scheduleKind === 'every' ? (
             <div className="form-group">
-              <label>间隔(分钟)</label>
+              <label>{t('cron.form.interval')}</label>
               <input
                 type="number"
                 value={form.intervalMinutes}
@@ -402,7 +401,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             </div>
           ) : (
             <div className="form-group">
-              <label>Cron表达式</label>
+              <label>{t('cron.form.cron')}</label>
               <input
                 type="text"
                 className="cron-input"
@@ -414,17 +413,17 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
           )}
 
           <div className="form-group">
-            <label>消息内容</label>
+            <label>{t('cron.form.message')}</label>
             <textarea
               value={form.message}
               onChange={(e) => setForm({ ...form, message: e.target.value })}
-              placeholder="输入要执行的任务描述..."
+              placeholder={t('cron.form.message.placeholder')}
               rows={4}
             />
           </div>
 
           <div className="form-group">
-            <label>超时(秒)</label>
+            <label>{t('cron.form.timeout')}</label>
             <input
               type="number"
               value={form.timeoutSeconds}
@@ -438,23 +437,23 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             onClick={handleCreateJob}
             disabled={!form.name.trim() || !form.message.trim()}
           >
-            创建定时任务
+            {t('cron.form.submit')}
           </button>
         </div>
       )}
 
       {/* Filter by department */}
       <div className="cron-filter-bar">
-        <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>全部</button>
-        <button className={`filter-chip ${filter === 'global' ? 'active' : ''}`} onClick={() => setFilter('global')}>全局</button>
+        <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>{t('cron.filter.all')}</button>
+        <button className={`filter-chip ${filter === 'global' ? 'active' : ''}`} onClick={() => setFilter('global')}>{t('cron.filter.global')}</button>
         {departments.map(d => (
-          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)}>{d.emoji}</button>
+          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)}><DeptIcon deptId={d.id} size={12} /> {d.name}</button>
         ))}
       </div>
 
       <div className="jobs-list">
         {jobs.filter(j => filter === 'all' ? true : filter === 'global' ? !j.deptId : j.deptId === filter).length === 0 ? (
-          <div className="empty-state">暂无定时任务</div>
+          <div className="empty-state">{t('cron.empty')}</div>
         ) : (
           jobs.filter(j => filter === 'all' ? true : filter === 'global' ? !j.deptId : j.deptId === filter).map((job) => (
             <div key={job.id} className="job-item">
@@ -464,7 +463,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                   <div className="job-name-schedule">
                     <div className="job-name">
                       {job.deptId && (
-                        <span className="job-dept-badge">{departments.find(d => d.id === job.deptId)?.emoji || ''} {departments.find(d => d.id === job.deptId)?.name || job.deptId}</span>
+                        <span className="job-dept-badge"><DeptIcon deptId={job.deptId!} size={10} /> {departments.find(d => d.id === job.deptId)?.name || job.deptId}</span>
                       )}
                       {job.subAgentId && (
                         <span className="job-sub-badge">{job.subAgentId}</span>
@@ -481,14 +480,14 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                     className="btn-run-now"
                     onClick={() => handleRunNow(job)}
                     disabled={runningJobId === job.id}
-                    title="立即执行"
+                    title={t('cron.action.run')}
                   >
                     {runningJobId === job.id ? '⟳' : '▶'}
                   </button>
                   <button
                     className={`toggle-switch ${job.enabled ? 'enabled' : 'disabled'}`}
                     onClick={() => handleToggleEnabled(job)}
-                    title={job.enabled ? '禁用' : '启用'}
+                    title={job.enabled ? t('cron.action.disable') : t('cron.action.enable')}
                   >
                     <span className="toggle-slider"></span>
                   </button>
@@ -498,20 +497,20 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                         className="btn-confirm-delete"
                         onClick={() => handleDeleteJob(job.id)}
                       >
-                        确认
+                        {t('cron.action.delete.confirm')}
                       </button>
                       <button
                         className="btn-cancel-delete"
                         onClick={() => setDeleteConfirmId(null)}
                       >
-                        取消
+                        {t('cron.cancel')}
                       </button>
                     </div>
                   ) : (
                     <button
                       className="btn-delete"
                       onClick={() => setDeleteConfirmId(job.id)}
-                      title="删除"
+                      title={t('cron.action.delete')}
                     >
                       ×
                     </button>
@@ -521,11 +520,11 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
               {job.state && (
                 <div className="job-last-run">
-                  <span className="last-run-label">上次运行:</span>
+                  <span className="last-run-label">{t('cron.lastrun.label')}</span>
                   <span className="last-run-time">{formatTime(job.state.lastRunAtMs)}</span>
                   {job.state.lastStatus && (
                     <span className={`last-run-status ${job.state.lastStatus}`}>
-                      {job.state.lastStatus === 'ok' ? '成功' : '失败'}
+                      {job.state.lastStatus === 'ok' ? t('cron.lastrun.success') : t('cron.lastrun.failed')}
                     </span>
                   )}
                   {job.state.lastDurationMs !== undefined && (
@@ -537,15 +536,15 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               {expandedJobId === job.id && (
                 <div className="job-details">
                   <div className="detail-section">
-                    <div className="detail-label">代理分配:</div>
+                    <div className="detail-label">{t('cron.detail.assign')}</div>
                     <div className="state-grid">
                       <div className="state-item">
-                        <span className="state-key">部门:</span>
-                        <span className="state-value">{job.deptId ? (departments.find(d => d.id === job.deptId)?.name || job.deptId) : '全局'}</span>
+                        <span className="state-key">{t('cron.detail.dept')}</span>
+                        <span className="state-value">{job.deptId ? (departments.find(d => d.id === job.deptId)?.name || job.deptId) : t('cron.detail.dept.global')}</span>
                       </div>
                       {job.subAgentId && (
                         <div className="state-item">
-                          <span className="state-key">子代理:</span>
+                          <span className="state-key">{t('cron.detail.subagent')}</span>
                           <span className="state-value">{job.subAgentId}</span>
                         </div>
                       )}
@@ -553,7 +552,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                   </div>
 
                   <div className="detail-section">
-                    <div className="detail-label">消息内容:</div>
+                    <div className="detail-label">{t('cron.detail.message')}</div>
                     {editingJobId === job.id ? (
                       <div className="edit-message">
                         <textarea
@@ -567,7 +566,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                             onClick={() => handleUpdateMessage(job)}
                             disabled={!editMessage.trim()}
                           >
-                            保存
+                            {t('cron.detail.save')}
                           </button>
                           <button
                             className="btn-cancel"
@@ -576,7 +575,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                               setEditMessage('');
                             }}
                           >
-                            取消
+                            {t('cron.cancel')}
                           </button>
                         </div>
                       </div>
@@ -590,7 +589,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                             setEditMessage(job.payload.message);
                           }}
                         >
-                          编辑
+                          {t('cron.edit')}
                         </button>
                       </div>
                     )}
@@ -598,23 +597,23 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
                   {job.state && (
                     <div className="detail-section">
-                      <div className="detail-label">状态信息:</div>
+                      <div className="detail-label">{t('cron.detail.state')}</div>
                       <div className="state-grid">
                         <div className="state-item">
-                          <span className="state-key">上次运行:</span>
+                          <span className="state-key">{t('cron.detail.lastrun')}</span>
                           <span className="state-value">{formatTime(job.state.lastRunAtMs)}</span>
                         </div>
                         <div className="state-item">
-                          <span className="state-key">运行时长:</span>
+                          <span className="state-key">{t('cron.detail.duration')}</span>
                           <span className="state-value">{formatDuration(job.state.lastDurationMs)}</span>
                         </div>
                         <div className="state-item">
-                          <span className="state-key">连续错误:</span>
+                          <span className="state-key">{t('cron.detail.consecutive_errors')}</span>
                           <span className="state-value">{job.state.consecutiveErrors || 0}</span>
                         </div>
                         {job.state.lastError && (
                           <div className="state-item full-width">
-                            <span className="state-key">错误信息:</span>
+                            <span className="state-key">{t('cron.detail.error')}</span>
                             <span className="state-value error-text">{job.state.lastError}</span>
                           </div>
                         )}
@@ -622,24 +621,46 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                     </div>
                   )}
 
+                  {job.state?.executionHistory && job.state.executionHistory.length > 0 && (
+                    <div className="detail-section">
+                      <div className="detail-label">{t('cron.history.title')}</div>
+                      <div className="cron-history-chart">
+                        {(() => {
+                          const maxDuration = Math.max(...job.state.executionHistory.map(h => h.durationMs));
+                          return job.state.executionHistory.map((exec, idx) => {
+                            const heightPercent = Math.max(5, (exec.durationMs / maxDuration) * 100);
+                            return (
+                              <div
+                                key={idx}
+                                className={`cron-history-bar ${exec.success ? '' : 'error'}`}
+                                style={{ height: `${heightPercent}%` }}
+                                title={`${formatDuration(exec.durationMs)}`}
+                              />
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="detail-section">
-                    <div className="detail-label">其他信息:</div>
+                    <div className="detail-label">{t('cron.detail.other')}</div>
                     <div className="state-grid">
                       <div className="state-item">
-                        <span className="state-key">任务ID:</span>
+                        <span className="state-key">{t('cron.detail.jobid')}</span>
                         <span className="state-value mono">{job.id}</span>
                       </div>
                       <div className="state-item">
-                        <span className="state-key">超时设置:</span>
-                        <span className="state-value">{job.payload.timeoutSeconds || 120}秒</span>
+                        <span className="state-key">{t('cron.detail.timeout')}</span>
+                        <span className="state-value">{t('cron.detail.timeout.value', { seconds: job.payload.timeoutSeconds || 120 })}</span>
                       </div>
                       <div className="state-item">
-                        <span className="state-key">创建时间:</span>
-                        <span className="state-value">{new Date(job.createdAtMs).toLocaleString('zh-CN')}</span>
+                        <span className="state-key">{t('cron.detail.created')}</span>
+                        <span className="state-value">{new Date(job.createdAtMs).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US')}</span>
                       </div>
                       <div className="state-item">
-                        <span className="state-key">更新时间:</span>
-                        <span className="state-value">{new Date(job.updatedAtMs).toLocaleString('zh-CN')}</span>
+                        <span className="state-key">{t('cron.detail.updated')}</span>
+                        <span className="state-value">{new Date(job.updatedAtMs).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US')}</span>
                       </div>
                     </div>
                   </div>

@@ -1,7 +1,9 @@
 /* ============================================
    OpenClaw Command Center - Global Styles
-   Modern dark dashboard design system
+   Pixel-art themed dark dashboard
    ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
 * {
   margin: 0;
@@ -10,26 +12,27 @@
 }
 
 :root {
-  /* Backgrounds */
-  --bg-primary: #0c0c1a;
-  --bg-panel: #14142a;
-  --bg-card: #1c1c36;
-  --bg-elevated: #222244;
+  /* Backgrounds — neutral charcoal, no blue-purple cast */
+  --bg-primary: #0e0e12;
+  --bg-panel: #161619;
+  --bg-card: #1e1e23;
+  --bg-elevated: #28282f;
 
-  /* Borders */
-  --border-color: #2a2a50;
-  --border-subtle: #1e1e3e;
+  /* Borders — neutral gray */
+  --border-color: #3a3a42;
+  --border-subtle: #2a2a30;
 
-  /* Accent */
+  /* Accent — warm teal + secondary amber */
   --accent-color: #00d4aa;
   --accent-hover: #00f0c0;
-  --accent-muted: rgba(0, 212, 170, 0.12);
+  --accent-muted: rgba(0, 212, 170, 0.10);
   --accent-glow: rgba(0, 212, 170, 0.25);
+  --accent-secondary: #e8a838;
 
-  /* Text */
-  --text-primary: #e8e8f0;
-  --text-secondary: #8888a8;
-  --text-muted: #5a5a78;
+  /* Text — warm white */
+  --text-primary: #e8e8e4;
+  --text-secondary: #909098;
+  --text-muted: #606068;
 
   /* Status */
   --status-active: #00cc88;
@@ -39,26 +42,27 @@
   --warning: #ffaa33;
   --success: #00cc88;
 
-  /* Shadows */
-  --shadow-panel: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 12px rgba(0, 212, 170, 0.15);
+  /* Pixel Shadows (hard offset, no blur) */
+  --shadow-panel: 3px 3px 0 rgba(0, 0, 0, 0.5);
+  --shadow-card: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 4px 4px 0 rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 4px rgba(0, 212, 170, 0.3);
 
-  /* Radii */
-  --radius-lg: 12px;
-  --radius-md: 8px;
-  --radius-sm: 6px;
-  --radius-xs: 4px;
+  /* Radii — sharp pixel feel */
+  --radius-lg: 2px;
+  --radius-md: 2px;
+  --radius-sm: 1px;
+  --radius-xs: 0px;
 
   /* Fonts */
-  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --font-ui: 'IBM Plex Mono', 'JetBrains Mono', 'Courier New', monospace;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'Courier New', monospace;
 
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-normal: 200ms ease;
-  --transition-slow: 300ms ease;
+  /* Transitions — snappy retro feel */
+  --transition-fast: 80ms step-end;
+  --transition-normal: 100ms ease;
+  --transition-slow: 200ms ease;
 }
 
 body {
@@ -66,10 +70,11 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  image-rendering: pixelated;
 }
 
 #root {
@@ -77,19 +82,21 @@ body {
   height: 100vh;
 }
 
-/* ---- Scrollbars ---- */
+/* ---- Scrollbars (pixel style) ---- */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--bg-primary);
+  border-left: 2px solid var(--border-subtle);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
-  border-radius: 3px;
+  border-radius: 0;
+  border: 1px solid var(--bg-primary);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -97,29 +104,30 @@ body {
 }
 
 ::-webkit-scrollbar-corner {
-  background: transparent;
+  background: var(--bg-primary);
 }
 
 /* ---- Common panel style ---- */
 .panel {
   background: var(--bg-panel);
-  border: 1px solid var(--border-color);
+  border: 2px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
 }
 
-/* ---- Button styles ---- */
+/* ---- Button styles (retro press effect) ---- */
 button {
   background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  border: 2px solid var(--border-color);
   color: var(--text-primary);
-  padding: 8px 16px;
+  padding: 6px 14px;
   cursor: pointer;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  transition: none;
   line-height: 1.4;
 }
 
@@ -127,28 +135,31 @@ button:hover {
   border-color: var(--accent-color);
   color: var(--accent-color);
   background: var(--accent-muted);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+  transform: translate(1px, 1px);
 }
 
 button:active {
-  transform: scale(0.98);
+  box-shadow: none;
+  transform: translate(2px, 2px);
 }
 
 button:focus-visible {
   outline: 2px solid var(--accent-color);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
   pointer-events: none;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.2);
 }
 
 /* ---- Link styles ---- */
 a {
   color: var(--accent-color);
   text-decoration: none;
-  transition: color var(--transition-fast);
 }
 
 a:hover {
@@ -163,19 +174,19 @@ code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xs);
+  border-radius: 0;
   color: var(--accent-color);
 }
 
 pre {
   background: var(--bg-primary);
   padding: 12px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border: 2px solid var(--border-subtle);
+  border-radius: 0;
   overflow-x: auto;
   margin: 8px 0;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -191,7 +202,7 @@ input,
 select,
 textarea {
   font-family: var(--font-ui);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
 }
 
 /* ---- Status badges ---- */
@@ -199,46 +210,46 @@ textarea {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  border: 1px solid;
-  border-radius: var(--radius-xs);
+  letter-spacing: 0.5px;
+  border: 2px solid;
+  border-radius: 0;
   margin: 0 4px;
 }
 
 .badge.active {
   background: rgba(0, 204, 136, 0.15);
-  border-color: rgba(0, 204, 136, 0.4);
+  border-color: rgba(0, 204, 136, 0.5);
   color: var(--status-active);
 }
 
 .badge.idle {
   background: rgba(255, 170, 51, 0.15);
-  border-color: rgba(255, 170, 51, 0.4);
+  border-color: rgba(255, 170, 51, 0.5);
   color: var(--status-idle);
 }
 
 .badge.offline {
   background: rgba(102, 102, 128, 0.15);
-  border-color: rgba(102, 102, 128, 0.4);
+  border-color: rgba(102, 102, 128, 0.5);
   color: var(--status-offline);
 }
 
-/* ---- Status dots ---- */
+/* ---- Status dots (square pixel dots) ---- */
 .status-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 0;
   margin-right: 6px;
   flex-shrink: 0;
 }
 
 .status-dot.connected {
   background: var(--status-active);
-  box-shadow: 0 0 6px rgba(0, 204, 136, 0.6);
+  box-shadow: 0 0 3px rgba(0, 204, 136, 0.8);
 }
 
 .status-dot.disconnected {
@@ -247,12 +258,12 @@ textarea {
 
 .status-dot.active {
   background: var(--status-active);
-  box-shadow: 0 0 6px rgba(0, 204, 136, 0.6);
+  box-shadow: 0 0 3px rgba(0, 204, 136, 0.8);
 }
 
 .status-dot.idle {
   background: var(--status-idle);
-  box-shadow: 0 0 6px rgba(255, 170, 51, 0.5);
+  box-shadow: 0 0 3px rgba(255, 170, 51, 0.6);
 }
 
 .status-dot.offline {

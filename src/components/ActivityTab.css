@@ -1,7 +1,23 @@
-.activity-tab {
+/* ============================================
+   OpenClaw Command Center - Activity Tab
+   Global activity feed with consistent layout
+   ============================================ */
+
+.activity-tab-container {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-height: 100%;
+  height: 100%;
+}
+
+.activity-tab {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
   overflow-y: auto;
+  padding: 12px;
+  flex: 1;
 }
 
 .activity-tab.empty {
@@ -10,13 +26,20 @@
   justify-content: center;
   min-height: 300px;
   overflow: hidden;
+  padding: 24px;
 }
 
 .activity-item {
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  padding: 10px;
+  border: 2px solid var(--border-color);
+  border-radius: 0;
+  padding: 10px 12px;
   margin-bottom: 8px;
+  transition: none;
+}
+
+.activity-item:last-child {
+  margin-bottom: 0;
 }
 
 .activity-item:hover {
@@ -31,18 +54,141 @@
 }
 
 .activity-emoji {
-  font-size: 16px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .activity-time {
   font-size: 11px;
   color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .activity-text {
   color: var(--text-primary);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
   word-wrap: break-word;
+}
+
+/* Empty state hint */
+.empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ============================================
+   Replay Controls
+   ============================================ */
+
+/* Replay toolbar */
+.replay-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border-color);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.replay-btn {
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.replay-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.replay-btn.recording {
+  border-color: #ef4444;
+  color: #ef4444;
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+}
+
+.recording-indicator {
+  font-size: 11px;
+  color: #ef4444;
+  font-family: var(--font-mono);
+}
+
+.playback-indicator {
+  font-size: 11px;
+  color: var(--accent-color);
+  font-family: var(--font-mono);
+}
+
+/* Replay list */
+.replay-list {
+  border-bottom: 2px solid var(--border-color);
+  background: var(--bg-panel);
+  max-height: 200px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.replay-list-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.replay-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.replay-item:last-child {
+  border-bottom: none;
+}
+
+.replay-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.replay-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.replay-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.replay-actions button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.replay-actions button:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
 }
