@@ -16,21 +16,42 @@ Express + ws (port 5100)
 
 ## Quick Start
 
-### One-Click Install
+### Interactive Installer
 
 ```bash
-# If you already have OpenClaw installed:
+# Clone and run the interactive installer:
 git clone https://github.com/openclaw/command-center.git ~/.openclaw/workspace/command-center
 cd ~/.openclaw/workspace/command-center
 bash install.sh
 ```
 
-The installer will:
+The installer offers **two modes**:
+
+**Beginner Mode** (12 steps) — full setup from scratch:
 1. Check prerequisites (Node.js >= 18, npm, pm2)
-2. Detect your OpenClaw installation and auth token
-3. Install dependencies and build the frontend
-4. Generate the pixel office layout
-5. Start the service via PM2
+2. Overwrite warning (if existing OpenClaw found)
+3. Install OpenClaw globally
+4. Run `openclaw setup --wizard` (interactive)
+5. Configure model provider
+6. Configure Gateway
+7. Start Gateway service
+8. Verify Gateway health (15 retries)
+9. Install npm dependencies
+10. Set password, generate .env, configure departments
+11. Build frontend + generate office layout + start PM2
+12. Final health check
+
+**Existing User Mode** (8 steps) — Command Center only:
+1. Check prerequisites
+2. Detect OpenClaw config and extract auth token
+3. Verify Gateway is running
+4. Install dependencies
+5. Configure (password, .env, departments)
+6. Build and start service
+7. Auto-configure Nginx (if detected)
+8. Final health check
+
+Features: bilingual (中文/English), whiptail menus with plain-text fallback, retry/skip/abort on failure, animated spinners, Chinese npm mirror hints.
 
 Access at **http://localhost:5100/cmd/**
 
@@ -218,7 +239,7 @@ command-center/
 │   └── utils/
 ├── scripts/
 │   └── migrate-config.js     # Config format migration
-├── install.sh                 # One-click installer
+├── install.sh                 # Interactive installer (bilingual, 2 modes)
 ├── ecosystem.config.cjs       # PM2 config
 └── public/assets/             # Sprites + layout
 ```
