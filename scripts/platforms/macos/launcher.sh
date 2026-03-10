@@ -33,7 +33,15 @@ if [ -f "${CMD_DIR}/.env" ]; then
   set -a; . "${CMD_DIR}/.env"; set +a
 fi
 
-# Kill any existing instance on our port
+# Ensure OpenClaw Gateway is running
+if command -v openclaw >/dev/null 2>&1; then
+  if ! curl -s --max-time 1 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+    nohup openclaw gateway >/dev/null 2>&1 &
+    sleep 2
+  fi
+fi
+
+# Kill any existing Command Center instance on our port
 lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
 
 # Start server

@@ -48,6 +48,19 @@ t() {
       url)               echo "访问地址" ;;
       password_label)    echo "密码" ;;
       relaunch)          echo "请关闭此窗口，然后重新双击应用图标启动" ;;
+      oc_checking)       echo "检查 OpenClaw..." ;;
+      oc_found)          echo "OpenClaw 已安装" ;;
+      oc_not_found)      echo "未检测到 OpenClaw" ;;
+      oc_install_ask)    echo "是否安装 OpenClaw？(需要它来驱动 AI 功能)" ;;
+      oc_installing)     echo "正在安装 OpenClaw..." ;;
+      oc_install_ok)     echo "OpenClaw 安装成功" ;;
+      oc_install_fail)   echo "OpenClaw 安装失败，请稍后手动安装: npm install -g openclaw" ;;
+      oc_init)           echo "初始化 OpenClaw..." ;;
+      oc_gateway_start)  echo "启动 OpenClaw Gateway..." ;;
+      oc_gateway_ok)     echo "Gateway 已启动" ;;
+      oc_gateway_fail)   echo "Gateway 启动失败（可稍后手动启动: openclaw gateway）" ;;
+      oc_skip)           echo "跳过 OpenClaw 安装（AI 功能将不可用）" ;;
+      yes_no)            echo "[Y/n]" ;;
       *)                 echo "$key" ;;
     esac
   else
@@ -67,6 +80,19 @@ t() {
       url)               echo "Access URL" ;;
       password_label)    echo "Password" ;;
       relaunch)          echo "Close this window and double-click the app icon to launch" ;;
+      oc_checking)       echo "Checking OpenClaw..." ;;
+      oc_found)          echo "OpenClaw installed" ;;
+      oc_not_found)      echo "OpenClaw not detected" ;;
+      oc_install_ask)    echo "Install OpenClaw? (required for AI features)" ;;
+      oc_installing)     echo "Installing OpenClaw..." ;;
+      oc_install_ok)     echo "OpenClaw installed successfully" ;;
+      oc_install_fail)   echo "OpenClaw install failed. Install manually later: npm install -g openclaw" ;;
+      oc_init)           echo "Initializing OpenClaw..." ;;
+      oc_gateway_start)  echo "Starting OpenClaw Gateway..." ;;
+      oc_gateway_ok)     echo "Gateway started" ;;
+      oc_gateway_fail)   echo "Gateway failed to start (run manually later: openclaw gateway)" ;;
+      oc_skip)           echo "Skipping OpenClaw install (AI features will be unavailable)" ;;
+      yes_no)            echo "[Y/n]" ;;
       *)                 echo "$key" ;;
     esac
   fi
@@ -108,7 +134,104 @@ OPENCLAW_HOME="${HOME}/.openclaw"
 CMD_DIR="${OPENCLAW_HOME}/workspace/command-center"
 CMD_PORT="${CMD_PORT:-5100}"
 
-# Copy app files
+# ================================================================
+# Step 1: Check & install OpenClaw
+# ================================================================
+info "$(t oc_checking)"
+
+OPENCLAW_BIN=""
+HAS_OPENCLAW=false
+
+# Check system PATH first, then bundled node's global
+if command -v openclaw >/dev/null 2>&1; then
+  OPENCLAW_BIN="$(command -v openclaw)"
+  HAS_OPENCLAW=true
+fi
+
+if $HAS_OPENCLAW; then
+  OC_VER=$("$OPENCLAW_BIN" --version 2>/dev/null || echo "unknown")
+  log "$(t oc_found) (v${OC_VER})"
+else
+  warn "$(t oc_not_found)"
+  echo ""
+  printf "  ${BOLD}$(t oc_install_ask)${NC} $(t yes_no): "
+  read -r install_oc
+  case "$install_oc" in
+    n|N|no|NO)
+      warn "$(t oc_skip)"
+      ;;
+    *)
+      info "$(t oc_installing)"
+      # Use bundled node's npm to install globally
+      NPM_DIR="$(dirname "$NODE")"
+      if "$NODE" "${NPM_DIR}/../lib/node_modules/npm/bin/npm-cli.js" install -g openclaw 2>/dev/null; then
+        log "$(t oc_install_ok)"
+        HAS_OPENCLAW=true
+        OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
+      else
+        # Fallback: try system npm
+        if command -v npm >/dev/null 2>&1; then
+          if npm install -g openclaw 2>/dev/null; then
+            log "$(t oc_install_ok)"
+            HAS_OPENCLAW=true
+            OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
+          else
+            warn "$(t oc_install_fail)"
+          fi
+        else
+          warn "$(t oc_install_fail)"
+        fi
+      fi
+      ;;
+  esac
+fi
+
+# Initialize OpenClaw if freshly installed (no config exists)
+if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ] && [ ! -f "${OPENCLAW_HOME}/openclaw.json" ]; then
+  echo ""
+  info "$(t oc_init)"
+  "$OPENCLAW_BIN" init 2>/dev/null || "$OPENCLAW_BIN" doctor --fix 2>/dev/null || true
+fi
+
+# Start Gateway if OpenClaw is available but Gateway isn't running
+if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ]; then
+  GATEWAY_RUNNING=false
+  if curl -s --max-time 2 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+    GATEWAY_RUNNING=true
+  fi
+
+  if ! $GATEWAY_RUNNING; then
+    echo ""
+    info "$(t oc_gateway_start)"
+    # Start Gateway in background
+    nohup "$OPENCLAW_BIN" gateway >/dev/null 2>&1 &
+    GATEWAY_PID=$!
+
+    # Wait up to 10 seconds for Gateway to be ready
+    i=0
+    while [ $i -lt 20 ]; do
+      if curl -s --max-time 1 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+        log "$(t oc_gateway_ok) (pid: $GATEWAY_PID)"
+        GATEWAY_RUNNING=true
+        break
+      fi
+      sleep 0.5
+      i=$((i + 1))
+    done
+
+    if ! $GATEWAY_RUNNING; then
+      warn "$(t oc_gateway_fail)"
+    fi
+  else
+    log "$(t oc_gateway_ok)"
+  fi
+fi
+
+echo ""
+
+# ================================================================
+# Step 2: Copy app files
+# ================================================================
 info "$(t copying)"
 mkdir -p "$CMD_DIR"
 if command -v rsync >/dev/null 2>&1; then
@@ -118,7 +241,9 @@ else
 fi
 log "$(t copying)"
 
-# Password
+# ================================================================
+# Step 3: Password
+# ================================================================
 echo ""
 info "$(t password_prompt)"
 printf "  > "
@@ -136,7 +261,9 @@ fi
 printf '%s' "$pw1" > "$CMD_DIR/.auth_password"
 log "$(t password_ok)"
 
-# .env
+# ================================================================
+# Step 4: .env
+# ================================================================
 info "$(t env_create)"
 OC_TOKEN=""
 if [ -f "${OPENCLAW_HOME}/openclaw.json" ]; then
@@ -155,11 +282,15 @@ OPENCLAW_AUTH_TOKEN=${OC_TOKEN}
 ENVEOF
 log ".env"
 
-# Layout
+# ================================================================
+# Step 5: Layout
+# ================================================================
 info "$(t layout_gen)"
 "${NODE}" "$CMD_DIR/scripts/gen-layout.js" >/dev/null 2>&1 || true
 
-# Start server
+# ================================================================
+# Step 6: Start server
+# ================================================================
 info "$(t starting)"
 cd "$CMD_DIR"
 "${NODE}" server/index.js &
@@ -179,7 +310,9 @@ touch "${CMD_DIR}/.setup-done"
 # Open browser
 open "http://localhost:${CMD_PORT}/cmd/" 2>/dev/null || true
 
+# ================================================================
 # Done
+# ================================================================
 PASSWORD=$(cat "$CMD_DIR/.auth_password" 2>/dev/null || echo "openclaw")
 echo ""
 printf "  ${TEAL}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
