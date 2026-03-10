@@ -5,8 +5,14 @@ dist/
 .env
 .env.local
 .auth_password
+.encryption_key
 integrations.json
+integrations.bak.*
 departments/*/daily/
 departments/*/memory/
 logs/
 uploads/
+.node-cache/
+release/
+outputs/
+notifications.json
