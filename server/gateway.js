@@ -7,7 +7,11 @@ const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const HEARTBEAT_INTERVAL_MS = 25000;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
+const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
+
+// Fatal error codes — do not reconnect on these
+const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN'];
 
 // Forward-compatible: support protocol range so newer Gateway versions still work
 const MIN_PROTOCOL = 3;
@@ -215,10 +219,23 @@ class GatewayClient {
     // Connect handshake
     if (frame.id === 'connect') {
       if (frame.error) {
-        console.error('[Gateway] Connect handshake failed:', frame.error);
+        const code = frame.error.code || '';
+        const msg = frame.error.message || 'Handshake failed';
+        console.error(`[Gateway] Connect handshake failed: ${code} — ${msg}`);
         this.authenticated = false;
+
+        // Fatal errors — stop reconnecting entirely
+        if (FATAL_ERROR_CODES.includes(code)) {
+          console.warn(`[Gateway] Fatal error (${code}), will NOT retry. Fix config and restart.`);
+          this.shutdownRequested = true;
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+          }
+        }
+
         if (this._connectReject) {
-          this._connectReject(new Error(frame.error.message || 'Handshake failed'));
+          this._connectReject(new Error(msg));
           this._connectResolve = null;
           this._connectReject = null;
         }
@@ -452,8 +469,15 @@ class GatewayClient {
   _scheduleReconnect() {
     if (this.shutdownRequested || this.reconnectTimer) return;
 
+    this.reconnectAttempt++;
+
+    if (this.reconnectAttempt > RECONNECT_MAX_ATTEMPTS) {
+      console.warn(`[Gateway] Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up. Gateway features disabled.`);
+      return;
+    }
+
     const baseDelay = Math.min(
-      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempt),
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempt - 1),
       RECONNECT_MAX_DELAY_MS
     );
 
@@ -461,9 +485,7 @@ class GatewayClient {
     const jitter = Math.random() * 0.3;
     const delay = Math.floor(baseDelay * (1 + jitter));
 
-    this.reconnectAttempt++;
-
-    console.log(`[Gateway] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})...`);
+    console.log(`[Gateway] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt}/${RECONNECT_MAX_ATTEMPTS})...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch(err => {
