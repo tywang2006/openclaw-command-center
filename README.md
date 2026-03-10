@@ -1,0 +1,221 @@
+# OpenClaw Command Center
+
+A pixel-art office visualization and control panel for [OpenClaw](https://github.com/openclaw) AI agents. Manage departments, chat with AI agents, monitor activity, and orchestrate workflows — all from a retro-style virtual office.
+
+```
+Browser (React 18 + Canvas 2D)
+  ├── Pixel Office (department characters + zoom)
+  ├── Right Panel (Chat / Bulletin / Memory / Activity / Scheduler / Stats / Capabilities)
+  └── Bottom Status Bar (department cards + context menu)
+       ↓ WebSocket
+Express + ws (port 5100)
+  ├── chokidar (file watcher)
+  ├── REST API (/api/*)
+  └── gateway.js → OpenClaw Gateway (ws://127.0.0.1:18789)
+```
+
+## Quick Start
+
+### One-Click Install
+
+```bash
+# If you already have OpenClaw installed:
+git clone https://github.com/openclaw/command-center.git ~/.openclaw/workspace/command-center
+cd ~/.openclaw/workspace/command-center
+bash install.sh
+```
+
+The installer will:
+1. Check prerequisites (Node.js >= 18, npm, pm2)
+2. Detect your OpenClaw installation and auth token
+3. Install dependencies and build the frontend
+4. Generate the pixel office layout
+5. Start the service via PM2
+
+Access at **http://localhost:5100/cmd/**
+
+### Manual Setup
+
+```bash
+git clone https://github.com/openclaw/command-center.git
+cd command-center
+npm install
+cp .env.example .env          # edit as needed
+npm run build                 # build frontend
+node server/index.js          # start server
+```
+
+## Features
+
+**Pixel Office**
+- Canvas-rendered office with animated sprite characters per department
+- Auto-expanding grid layout (4 offices per row, grows with departments)
+- Click a character to select their department for chat
+
+**Department Management**
+- Create / edit / delete departments from the UI
+- Right-click (desktop) or long-press (mobile) a status bar card to edit
+- Each department has: name, icon (16 choices), color (8 presets), optional Telegram Topic ID
+- Dynamic config — no code changes needed to add departments
+
+**AI Chat**
+- Chat with any department's AI agent through OpenClaw Gateway
+- Sub-agent creation for parallel tasks
+- Streaming responses with real-time text display
+- Image and document upload (PDF, DOCX, XLSX, PPTX)
+- Conversation export (Markdown / HTML)
+
+**Integrations**
+- Telegram bidirectional messaging (auto-syncs with group topics)
+- Gmail SMTP email sending
+- Google Drive backup
+- Voice input (OpenAI Whisper transcription)
+- Webhook notifications
+
+**Monitoring**
+- Real-time activity feed from all departments
+- Gateway connection stats and latency
+- Token usage tracking
+- Scheduled task management (cron)
+- Workflow automation builder
+
+**Mobile**
+- Responsive layout with swipe gestures
+- Mobile navigation bar and drawer menu
+- Touch-optimized department picker
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw root directory |
+| `CMD_PORT` | `5100` | Server port |
+| `OPENCLAW_GATEWAY_URL` | `ws://127.0.0.1:18789` | Gateway WebSocket URL |
+| `OPENCLAW_AUTH_TOKEN` | *(from openclaw.json)* | Gateway auth token |
+| `TELEGRAM_BOT_TOKEN` | | Telegram bot token |
+| `TELEGRAM_GROUP_ID` | | Telegram group ID |
+
+### Department Config
+
+Departments are defined in `~/.openclaw/workspace/departments/config.json`:
+
+```json
+{
+  "departments": {
+    "engineering": {
+      "name": "Engineering",
+      "agent": "CTO",
+      "icon": "wrench",
+      "color": "#00d4aa",
+      "hue": 180,
+      "telegramTopicId": 1430,
+      "order": 1
+    }
+  },
+  "defaultDepartment": "engineering"
+}
+```
+
+Departments can also be managed through the UI — click the `+` button on the status bar or right-click an existing department to edit.
+
+### Linking Telegram Topics
+
+1. Create a department in Command Center (with or without a Topic ID)
+2. In Telegram, create a topic in your group
+3. Right-click the department card in the status bar → Edit
+4. Enter the Telegram Topic ID and save
+
+The department will now sync bidirectionally with that Telegram topic.
+
+## Development
+
+```bash
+npm run dev        # Vite dev server (hot reload, proxies API to :5100)
+npm run build      # Production build (tsc + vite)
+npm run server     # Start Express server only
+```
+
+Frontend runs on Vite with proxy to the Express backend. The base URL is `/cmd/` for reverse proxy compatibility.
+
+## Deployment
+
+### PM2 (Recommended)
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup    # auto-start on reboot
+```
+
+### Nginx Reverse Proxy
+
+```nginx
+location /cmd/ {
+    proxy_pass http://127.0.0.1:5100;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+```
+
+### Health Check
+
+```
+GET /health
+```
+
+Returns server status, uptime, WebSocket client count, and Gateway connection state.
+
+## Project Structure
+
+```
+command-center/
+├── server/                    # Express backend
+│   ├── index.js               # HTTP + WebSocket server
+│   ├── gateway.js             # OpenClaw Gateway client
+│   ├── agent.js               # AI chat via Gateway
+│   ├── auth.js                # Password auth (scrypt)
+│   ├── watcher.js             # File change monitor
+│   ├── layout-generator.js    # Dynamic office layout
+│   └── routes/                # API route modules
+│       ├── api.js             # Core CRUD + chat
+│       ├── capabilities.js    # System capabilities
+│       ├── cron.js            # Scheduled tasks
+│       ├── workflows.js       # Automation workflows
+│       └── ...                # email, drive, voice, etc.
+├── src/                       # React frontend
+│   ├── App.tsx                # Main app + ErrorBoundary
+│   ├── components/            # UI components
+│   │   ├── OfficeCanvas.tsx   # Pixel office renderer
+│   │   ├── ChatPanel.tsx      # Department chat
+│   │   ├── StatusBar.tsx      # Department cards
+│   │   ├── DeptFormModal.tsx  # Create/edit departments
+│   │   └── ...                # 16 more components
+│   ├── hooks/
+│   │   ├── useAgentState.ts   # WebSocket state manager
+│   │   └── useMobile.ts      # Mobile detection
+│   ├── office/                # Pixel art engine
+│   ├── i18n/                  # Chinese + English translations
+│   └── utils/
+├── scripts/
+│   └── migrate-config.js     # Config format migration
+├── install.sh                 # One-click installer
+├── ecosystem.config.cjs       # PM2 config
+└── public/assets/             # Sprites + layout
+```
+
+## Tech Stack
+
+- **Frontend**: React 18, TypeScript, Vite, Canvas 2D
+- **Backend**: Express, WebSocket (ws), chokidar
+- **AI**: OpenClaw Gateway (protocol 3-5)
+- **Auth**: scrypt password hashing
+- **Process**: PM2
+- **i18n**: Chinese / English
+
+## License
+
+MIT
