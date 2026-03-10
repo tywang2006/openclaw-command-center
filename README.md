@@ -64,6 +64,18 @@ node server/index.js          # start server
 - Streaming responses with real-time text display
 - Image and document upload (PDF, DOCX, XLSX, PPTX)
 - Conversation export (Markdown / HTML)
+- Slash commands with autocomplete hints (type `/` to see all)
+
+**Slash Commands**
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/dept` | `/部门` | Create/manage departments |
+| `/broadcast` | `/广播` | Broadcast message to all departments |
+| `/export` | `/导出` | Export current conversation |
+| `/status` | `/状态` | View system status |
+| `/clear` | `/清屏` | Clear current chat |
+| `/help` | `/帮助` | Show all commands |
 
 **Integrations**
 - Telegram bidirectional messaging (auto-syncs with group topics)
@@ -118,7 +130,10 @@ Departments are defined in `~/.openclaw/workspace/departments/config.json`:
 }
 ```
 
-Departments can also be managed through the UI — click the `+` button on the status bar or right-click an existing department to edit.
+Departments can also be managed through the UI:
+- Click the `+` button on the status bar to create
+- Right-click (desktop) or long-press (mobile) a department card to edit/delete
+- Type `/dept` in chat to create via slash command
 
 ### Linking Telegram Topics
 
@@ -177,7 +192,8 @@ command-center/
 │   ├── index.js               # HTTP + WebSocket server
 │   ├── gateway.js             # OpenClaw Gateway client
 │   ├── agent.js               # AI chat via Gateway
-│   ├── auth.js                # Password auth (scrypt)
+│   ├── utils.js               # Shared utilities (BASE_PATH, file helpers)
+│   ├── auth.js                # Password auth (scrypt, timing-safe)
 │   ├── watcher.js             # File change monitor
 │   ├── layout-generator.js    # Dynamic office layout
 │   └── routes/                # API route modules
@@ -212,7 +228,7 @@ command-center/
 - **Frontend**: React 18, TypeScript, Vite, Canvas 2D
 - **Backend**: Express, WebSocket (ws), chokidar
 - **AI**: OpenClaw Gateway (protocol 3-5)
-- **Auth**: scrypt password hashing
+- **Auth**: scrypt password hashing + timing-safe comparison
 - **Process**: PM2
 - **i18n**: Chinese / English
 

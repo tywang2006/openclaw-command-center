@@ -35,12 +35,18 @@ function hashPassword(password) {
 function verifyPassword(password, stored) {
   // Support both plain text (legacy) and hashed passwords
   if (!stored.includes(':')) {
-    // Legacy plain text — verify directly
-    return password === stored;
+    // Legacy plain text — verify directly (timing-safe comparison)
+    const storedBuf = Buffer.from(stored);
+    const passwordBuf = Buffer.from(password);
+    // Pad to equal length to avoid timing leak
+    const maxLen = Math.max(storedBuf.length, passwordBuf.length);
+    const a = Buffer.concat([storedBuf, Buffer.alloc(maxLen - storedBuf.length)]);
+    const b = Buffer.concat([passwordBuf, Buffer.alloc(maxLen - passwordBuf.length)]);
+    return crypto.timingSafeEqual(a, b) && storedBuf.length === passwordBuf.length;
   }
   const [salt, hash] = stored.split(':');
   const testHash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return hash === testHash;
+  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(testHash));
 }
 
 /**

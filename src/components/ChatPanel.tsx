@@ -23,9 +23,10 @@ interface ChatPanelProps {
   streamingTexts?: Map<string, string>
   prefillMessage?: string | null
   onPrefillConsumed?: () => void
+  onOpenDeptForm?: (prefill?: { name: string }) => void
 }
 
-export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange, streamingTexts, prefillMessage, onPrefillConsumed }: ChatPanelProps) {
+export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange, streamingTexts, prefillMessage, onPrefillConsumed, onOpenDeptForm }: ChatPanelProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
 
@@ -98,6 +99,10 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
 
   // Bottom toolbar toggle
   const [showToolbar, setShowToolbar] = useState(false)
+
+  // Slash command hints
+  const [showCmdHints, setShowCmdHints] = useState(false)
+  const [cmdFilter, setCmdFilter] = useState('')
 
   // Drag and drop
   const [isDragging, setIsDragging] = useState(false)
@@ -486,9 +491,156 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       })
   }, [selectedDeptId])
 
+  // Slash command definitions
+  const chatCommands = [
+    { cmd: '/dept', alias: '/部门', desc: t('cmd.dept.desc'), hint: t('cmd.dept.hint') },
+    { cmd: '/broadcast', alias: '/广播', desc: t('cmd.broadcast.desc'), hint: t('cmd.broadcast.hint') },
+    { cmd: '/export', alias: '/导出', desc: t('cmd.export.desc'), hint: t('cmd.export.hint') },
+    { cmd: '/status', alias: '/状态', desc: t('cmd.status.desc'), hint: t('cmd.status.hint') },
+    { cmd: '/clear', alias: '/清屏', desc: t('cmd.clear.desc'), hint: t('cmd.clear.hint') },
+    { cmd: '/help', alias: '/帮助', desc: t('cmd.help.desc'), hint: t('cmd.help.hint') },
+  ]
+
+  const filteredCommands = cmdFilter
+    ? chatCommands.filter(c => c.cmd.startsWith(cmdFilter) || c.alias.startsWith(cmdFilter))
+    : chatCommands
+
+  // Chat command handler
+  const handleChatCommand = (msg: string): boolean => {
+    const trimmed = msg.trim()
+    if (!trimmed.startsWith('/')) return false
+
+    // /dept or /部门
+    const deptMatch = trimmed.match(/^\/(dept|部门)\s*(.*)$/i)
+    if (deptMatch) {
+      const arg = deptMatch[2].trim()
+      setText('')
+      setShowCmdHints(false)
+
+      if (!arg) {
+        onOpenDeptForm?.()
+        addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('dept.cmd.openForm'), timestamp: Date.now(), source: 'app' })
+        return true
+      }
+
+      const name = arg
+      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 30) || 'dept'
+      addActivity({ deptId: selectedDeptId || 'system', role: 'user', text: `/dept ${name}`, timestamp: Date.now(), source: 'app' })
+
+      authedFetch('/api/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, icon: 'bolt', color: '#94a3b8', hue: 200 }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          addActivity({
+            deptId: selectedDeptId || 'system', role: 'assistant',
+            text: data.success ? t('dept.cmd.created', { name, id }) : t('dept.cmd.failed', { error: data.error || 'Unknown error' }),
+            timestamp: Date.now(), source: 'app',
+          })
+        })
+        .catch(() => {
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('dept.cmd.failed', { error: 'Network error' }), timestamp: Date.now(), source: 'app' })
+        })
+      return true
+    }
+
+    // /broadcast or /广播
+    const broadcastMatch = trimmed.match(/^\/(broadcast|广播)\s+(.+)$/is)
+    if (broadcastMatch) {
+      const message = broadcastMatch[2].trim()
+      if (!message) return false
+      setText('')
+      setShowCmdHints(false)
+      addActivity({ deptId: selectedDeptId || 'system', role: 'user', text: `/broadcast ${message}`, timestamp: Date.now(), source: 'app' })
+
+      authedFetch('/api/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.results) {
+            const summary = data.results.map((r: { deptId: string; reply?: string; error?: string }) =>
+              `[${r.deptId}] ${r.reply?.substring(0, 100) || r.error || '...'}`
+            ).join('\n')
+            addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.broadcast.done', { count: data.results.length }) + '\n' + summary, timestamp: Date.now(), source: 'app' })
+          } else {
+            addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.broadcast.failed', { error: data.error || '' }), timestamp: Date.now(), source: 'app' })
+          }
+        })
+        .catch(() => {
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.broadcast.failed', { error: 'Network error' }), timestamp: Date.now(), source: 'app' })
+        })
+      return true
+    }
+
+    // /export or /导出
+    if (/^\/(export|导出)$/i.test(trimmed)) {
+      setText('')
+      setShowCmdHints(false)
+      if (selectedDeptId) {
+        handleExport('md')
+        addActivity({ deptId: selectedDeptId, role: 'assistant', text: t('cmd.export.started'), timestamp: Date.now(), source: 'app' })
+      }
+      return true
+    }
+
+    // /status or /状态
+    if (/^\/(status|状态)$/i.test(trimmed)) {
+      setText('')
+      setShowCmdHints(false)
+      authedFetch('/health')
+        .then(r => r.json())
+        .then(data => {
+          const lines = [
+            `Gateway: ${data.gateway || 'unknown'}`,
+            `Uptime: ${data.uptime ? Math.floor(data.uptime / 60) + 'min' : 'N/A'}`,
+            `WS Clients: ${data.wsClients ?? 'N/A'}`,
+            `Departments: ${departments.length}`,
+          ]
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.status.result') + '\n' + lines.join('\n'), timestamp: Date.now(), source: 'app' })
+        })
+        .catch(() => {
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.status.failed'), timestamp: Date.now(), source: 'app' })
+        })
+      return true
+    }
+
+    // /clear or /清屏
+    if (/^\/(clear|清屏)$/i.test(trimmed)) {
+      setText('')
+      setShowCmdHints(false)
+      if (selectedDeptId) {
+        setHistoryByDept(prev => {
+          const next = { ...prev }
+          delete next[selectedDeptId]
+          return next
+        })
+      }
+      return true
+    }
+
+    // /help or /帮助
+    if (/^\/(help|帮助)$/i.test(trimmed)) {
+      setText('')
+      setShowCmdHints(false)
+      const helpText = chatCommands.map(c => `${c.cmd}  ${c.alias}  — ${c.desc}`).join('\n')
+      addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.help.title') + '\n' + helpText, timestamp: Date.now(), source: 'app' })
+      return true
+    }
+
+    return false
+  }
+
   const sendMessage = async () => {
     if ((!text.trim() && pendingImages.length === 0) || sending || !selectedDeptId) return
     const msg = text.trim()
+
+    // Check for chat commands first
+    if (msg && handleChatCommand(msg)) return
     const images = [...pendingImages]
     const docs = [...pendingDocs]
     setText('')
@@ -694,11 +846,33 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     setCreatingTimer(false)
   }
 
+  const handleTextChange = (val: string) => {
+    setText(val)
+    if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
+      setCmdFilter(val)
+      setShowCmdHints(true)
+    } else {
+      setShowCmdHints(false)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showCmdHints && (e.key === 'Escape' || e.key === 'Tab')) {
+      e.preventDefault()
+      setShowCmdHints(false)
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      setShowCmdHints(false)
       sendMessage()
     }
+  }
+
+  const selectCommand = (cmd: string) => {
+    setText(cmd + ' ')
+    setShowCmdHints(false)
+    textareaRef.current?.focus()
   }
 
   const formatTime = (ts: number) => {
@@ -1252,6 +1426,19 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         </div>
       )}
 
+      {/* Slash command hints */}
+      {showCmdHints && filteredCommands.length > 0 && (
+        <div className="cmd-hints-dropdown">
+          {filteredCommands.map(c => (
+            <button key={c.cmd} className="cmd-hint-item" onClick={() => selectCommand(c.cmd)}>
+              <span className="cmd-hint-name">{c.cmd}</span>
+              <span className="cmd-hint-alias">{c.alias}</span>
+              <span className="cmd-hint-desc">{c.desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input */}
       <div className="chat-input-row">
         <button
@@ -1268,7 +1455,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           ref={textareaRef}
           className="chat-input"
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={e => handleTextChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onFocus={() => {

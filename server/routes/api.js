@@ -4,11 +4,9 @@ import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
 import { chat, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
 import { generateAndSave } from '../layout-generator.js';
+import { BASE_PATH, readJsonFile, readTextFile } from '../utils.js';
 
 const router = express.Router();
-
-// Base data path
-const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
 
 // Input validation
 const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
@@ -27,37 +25,6 @@ function validateDate(date) {
 
 function validateSubId(id) {
   return typeof id === 'string' && VALID_SUB_ID.test(id);
-}
-
-/**
- * Helper: Read JSON file safely
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Helper: Read text file safely
- */
-function readTextFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8');
-    }
-    return '';
-  } catch (error) {
-    console.error(`Error reading text file ${filePath}:`, error.message);
-    return '';
-  }
 }
 
 /**

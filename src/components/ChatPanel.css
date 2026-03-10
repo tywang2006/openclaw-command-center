@@ -2145,3 +2145,56 @@
     min-width: 44px;
   }
 }
+
+/* ---- Slash Command Hints ---- */
+.cmd-hints-dropdown {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-bottom: none;
+  max-height: 200px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.cmd-hint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.cmd-hint-item:hover {
+  background: rgba(0, 212, 170, 0.1);
+}
+
+.cmd-hint-name {
+  color: var(--accent-color);
+  font-weight: 700;
+  min-width: 80px;
+}
+
+.cmd-hint-alias {
+  color: var(--text-muted);
+  font-size: 11px;
+  min-width: 50px;
+}
+
+.cmd-hint-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

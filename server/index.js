@@ -21,6 +21,7 @@ import driveRoutes from './routes/drive.js';
 import voiceRoutes from './routes/voice.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
+import { BASE_PATH } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,7 +30,6 @@ const app = express();
 const server = http.createServer(app);
 
 // Configuration
-const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
 const HOST = '0.0.0.0';
 const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
 

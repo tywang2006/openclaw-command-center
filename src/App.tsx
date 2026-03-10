@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, Component, type ReactNode, type ErrorInfo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useAgentState } from './hooks/useAgentState'
 import { useLocale } from './i18n/index'
 import { useMobile, useSwipeGesture } from './hooks/useMobile'
@@ -131,7 +131,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
       console.error('Failed to delete department:', err)
     }
     setDeleteDeptId(null)
-  }, [deleteDeptId, agentState])
+  }, [deleteDeptId, agentState.selectedDeptId, agentState.setSelectedDeptId])
 
   const handleCloseDeptForm = useCallback(() => {
     setShowDeptForm(false)
@@ -142,7 +142,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     agentState.setSelectedDeptId(deptId)
     setChatPrefill(prefillMessage)
     setRightTab('chat')
-  }, [agentState])
+  }, [agentState.setSelectedDeptId])
 
   // Swipe to switch departments on mobile
   const swipeToDept = useCallback((direction: 'next' | 'prev') => {
@@ -188,6 +188,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   const [notifyPrefs, setNotifyPrefs] = useState(getNotificationPrefs())
   const [showNotifyDropdown, setShowNotifyDropdown] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const notifyDropdownRef = useRef<HTMLDivElement>(null)
 
   const toggleNotifyPref = async (key: 'errors' | 'gateway' | 'slow') => {
     const newPrefs = { ...notifyPrefs, [key]: !notifyPrefs[key] }
@@ -204,6 +205,18 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     setNotifyPrefs(newPrefs)
     saveNotificationPrefs(newPrefs)
   }
+
+  // Close notification dropdown on outside click
+  useEffect(() => {
+    if (!showNotifyDropdown) return
+    const handleClick = (e: MouseEvent) => {
+      if (notifyDropdownRef.current && !notifyDropdownRef.current.contains(e.target as Node)) {
+        setShowNotifyDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showNotifyDropdown])
 
   const RIGHT_TABS = useMemo(() => [
     { id: 'chat' as RightTab, label: t('app.tab.chat'), Icon: ({ size = 14, color = '#a0a0b0' }) => (
@@ -237,9 +250,9 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     )},
   ], [t])
 
-  const handleSubAgentsChange = (deptId: string, subs: SubAgent[]) => {
+  const handleSubAgentsChange = useCallback((deptId: string, subs: SubAgent[]) => {
     setSubAgentsByDept(prev => ({ ...prev, [deptId]: subs }))
-  }
+  }, [])
 
   // Load subagents for ALL departments on startup
   const [subAgentsLoaded, setSubAgentsLoaded] = useState(false)
@@ -277,6 +290,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
           streamingTexts={agentState.streamingTexts}
           prefillMessage={chatPrefill}
           onPrefillConsumed={() => setChatPrefill(null)}
+          onOpenDeptForm={() => { setEditDeptData(null); setShowDeptForm(true) }}
         />
       )}
       {rightTab === 'bulletin' && (
@@ -369,7 +383,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
               </svg>
             </button>
             {showNotifyDropdown && (
-              <div className="notify-dropdown">
+              <div ref={notifyDropdownRef} className="notify-dropdown">
                 <label className="notify-option main">
                   <input type="checkbox" checked={notifyPrefs.enabled} onChange={toggleNotifications} />
                   <span>{t('notify.enable')}</span>

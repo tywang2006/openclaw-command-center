@@ -2,16 +2,26 @@ import fs from 'fs';
 import path from 'path';
 import { getGateway } from './gateway.js';
 import { recordChat, recordTokens } from './routes/metrics.js';
-
-const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
+import { BASE_PATH } from './utils.js';
 
 // ---- Config / mappings ----
 
+let _configCache = null;
+let _configMtime = 0;
+
 function loadConfig() {
+  const configPath = path.join(BASE_PATH, 'departments', 'config.json');
   try {
-    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch { return { departments: {} }; }
+    const stat = fs.statSync(configPath);
+    if (_configCache && stat.mtimeMs === _configMtime) {
+      return _configCache;
+    }
+    _configCache = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    _configMtime = stat.mtimeMs;
+    return _configCache;
+  } catch {
+    return { departments: {} };
+  }
 }
 
 /**

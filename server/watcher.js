@@ -2,42 +2,10 @@ import chokidar from 'chokidar';
 import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readFromOffset } from './parsers/jsonl.js';
-
-const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
+import { BASE_PATH, readJsonFile, readTextFile } from './utils.js';
 
 // Track file offsets for JSONL files (tail-follow mode)
 const fileOffsets = new Map();
-
-/**
- * Safely read JSON file
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`Error reading JSON ${filePath}:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Safely read text file
- */
-function readTextFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8');
-    }
-    return '';
-  } catch (error) {
-    console.error(`Error reading text ${filePath}:`, error.message);
-    return '';
-  }
-}
 
 /**
  * Broadcast message to all connected WebSocket clients
