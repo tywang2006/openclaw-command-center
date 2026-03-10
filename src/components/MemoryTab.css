@@ -53,6 +53,10 @@
   font-weight: 600;
   margin: 0;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .memory-actions {
@@ -231,4 +235,58 @@
 
 .memory-version-preview .mem-btn.save {
   align-self: flex-end;
+}
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .memory-tab {
+    padding: 10px;
+  }
+
+  .memory-header h2 {
+    font-size: 14px;
+  }
+
+  .mem-btn {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .mem-btn:active {
+    opacity: 0.7;
+  }
+
+  .memory-content {
+    font-size: 13px;
+    overflow-x: hidden;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .memory-content pre {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .memory-editor {
+    font-size: 14px;
+    max-width: 100%;
+  }
+
+  .memory-history-item {
+    padding: 10px 12px;
+    font-size: 12px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .history-item-time {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
 }

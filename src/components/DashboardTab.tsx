@@ -56,7 +56,7 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const res = await authedFetch('/cmd/api/metrics')
+      const res = await authedFetch('/api/metrics')
       const raw = await res.json()
       if (!raw.success) return
       // Transform API response to component format
@@ -93,7 +93,7 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
 
   const fetchGatewayStats = useCallback(async () => {
     try {
-      const res = await authedFetch('/cmd/api/gateway/stats')
+      const res = await authedFetch('/api/gateway/stats')
       const raw = await res.json()
       if (!raw.success) return
       const gw = raw.gateway || {}
@@ -111,7 +111,7 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
 
   const fetchPermissions = useCallback(async () => {
     try {
-      const res = await authedFetch('/cmd/api/metrics/permissions')
+      const res = await authedFetch('/api/metrics/permissions')
       const raw = await res.json()
       if (!raw.success || !raw.data?.permissions) return
       setPermissions(raw.data.permissions)

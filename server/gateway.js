@@ -1,12 +1,37 @@
 import WebSocket from 'ws';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
-const AUTH_TOKEN = process.env.OPENCLAW_AUTH_TOKEN || '';
 const HEARTBEAT_INTERVAL_MS = 25000;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
+
+// Forward-compatible: support protocol range so newer Gateway versions still work
+const MIN_PROTOCOL = 3;
+const MAX_PROTOCOL = 5;
+
+/**
+ * Resolve auth token with fallback chain for forward compatibility.
+ * Checks env var first, then reads from openclaw.json with multiple field names.
+ */
+function resolveAuthToken() {
+  if (process.env.OPENCLAW_AUTH_TOKEN) return process.env.OPENCLAW_AUTH_TOKEN;
+  try {
+    const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
+    const configPath = path.join(home, 'openclaw.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      // Try multiple field names for forward compatibility
+      return config.authToken || config.token || config.auth?.token || '';
+    }
+  } catch {}
+  return '';
+}
+
+const AUTH_TOKEN = resolveAuthToken();
 
 class GatewayClient {
   constructor() {
@@ -130,12 +155,12 @@ class GatewayClient {
       id: 'connect',
       method: 'connect',
       params: {
-        minProtocol: 3,
-        maxProtocol: 3,
+        minProtocol: MIN_PROTOCOL,
+        maxProtocol: MAX_PROTOCOL,
         client: {
           id: 'gateway-client',
           version: '1.0.0',
-          platform: 'linux',
+          platform: process.platform || 'linux',
           mode: 'backend',
           displayName: 'Command Center',
         },

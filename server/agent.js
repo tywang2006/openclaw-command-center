@@ -3,8 +3,7 @@ import path from 'path';
 import { getGateway } from './gateway.js';
 import { recordChat, recordTokens } from './routes/metrics.js';
 
-const BASE_PATH = '/root/.openclaw/workspace';
-const GROUP_ID = '-1003570960670';
+const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
 
 // ---- Config / mappings ----
 
@@ -17,16 +16,15 @@ function loadConfig() {
 
 /**
  * Build the Telegram session key for a department.
- * Maps deptId -> topicId -> `agent:main:telegram:group:{groupId}:topic:{topicId}`
+ * Maps deptId -> `agent:main:telegram:group:{groupId}:topic:{telegramTopicId}`
  * Falls back to `agent:main:{deptId}` if no topic mapping exists.
  */
 function getSessionKey(deptId) {
   const config = loadConfig();
-  for (const [topicId, dept] of Object.entries(config.departments || {})) {
-    if (dept.id === deptId) {
-      const gid = config.groupId || GROUP_ID;
-      return `agent:main:telegram:group:${gid}:topic:${topicId}`;
-    }
+  const dept = config.departments?.[deptId];
+  if (dept?.telegramTopicId !== undefined) {
+    const gid = config.groupId || '';
+    return `agent:main:telegram:group:${gid}:topic:${dept.telegramTopicId}`;
   }
   return `agent:main:${deptId}`;
 }
@@ -199,7 +197,7 @@ async function broadcastCommand(command) {
     try { await gateway.waitForReady(5000); } catch { return []; }
   }
 
-  const departments = Object.values(config.departments || {});
+  const departments = Object.entries(config.departments || {}).map(([id, dept]) => ({ ...dept, id }));
   const tasks = departments.map(async (dept) => {
     const sessionKey = getSessionKey(dept.id);
     try {

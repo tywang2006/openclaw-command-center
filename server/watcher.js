@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readFromOffset } from './parsers/jsonl.js';
 
-const BASE_PATH = '/root/.openclaw/workspace';
+const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
 
 // Track file offsets for JSONL files (tail-follow mode)
 const fileOffsets = new Map();
@@ -211,16 +211,19 @@ function getInitialState() {
     state.status = status;
 
     // Merge department info
-    state.departments = Object.entries(config.departments || {}).map(([key, dept]) => {
-      const agentStatus = status.agents[dept.id] || {};
-      return {
-        ...dept,
-        status: agentStatus.status || 'idle',
-        lastSeen: agentStatus.lastSeen || null,
-        currentTask: agentStatus.currentTask || null,
-        sessionCount: agentStatus.sessionCount || 0
-      };
-    });
+    state.departments = Object.entries(config.departments || {})
+      .sort((a, b) => (a[1].order ?? 99) - (b[1].order ?? 99))
+      .map(([id, dept]) => {
+        const agentStatus = status.agents[id] || {};
+        return {
+          id,
+          ...dept,
+          status: agentStatus.status || 'idle',
+          lastSeen: agentStatus.lastSeen || null,
+          currentTask: agentStatus.currentTask || null,
+          sessionCount: agentStatus.sessionCount || 0
+        };
+      });
 
     // Load bulletin
     const bulletinPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
@@ -253,16 +256,28 @@ function getInitialState() {
 }
 
 /**
+ * Load department IDs from config
+ */
+function loadDepartmentIds() {
+  try {
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return Object.keys(config.departments || {});
+  } catch { return []; }
+}
+
+/**
  * Create and configure file watcher
  */
 function createWatcher(wss) {
   // Initialize offsets before watching
   initializeOffsets();
 
-  const departments = ['coo', 'engineering', 'operations', 'research', 'product', 'admin', 'blockchain'];
+  const departments = loadDepartmentIds();
 
   // Define watch paths
   const watchPaths = [
+    path.join(BASE_PATH, 'departments', 'config.json'),
     path.join(BASE_PATH, 'departments', 'status.json'),
     path.join(BASE_PATH, 'departments', 'bulletin', 'board.md'),
     path.join(BASE_PATH, 'departments', 'bulletin', 'requests', '*.md'),
@@ -302,7 +317,9 @@ function createWatcher(wss) {
     .on('change', filePath => {
       console.log(`[Watcher] File changed: ${filePath}`);
 
-      if (filePath.endsWith('status.json')) {
+      if (filePath.endsWith('config.json') && filePath.includes('departments')) {
+        broadcast(wss, 'departments:updated', {});
+      } else if (filePath.endsWith('status.json')) {
         handleStatusChange(wss, filePath);
       } else if (filePath.endsWith('board.md')) {
         handleBulletinChange(wss, filePath);

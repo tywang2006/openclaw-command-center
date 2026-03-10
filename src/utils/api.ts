@@ -1,5 +1,9 @@
 const TOKEN_KEY = 'cmd_token'
 
+// In production, BASE_URL = '/cmd/' (from vite.config.ts base).
+// Strip trailing slash so '/cmd/' + '/api/foo' = '/cmd/api/foo'.
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY)
 }
@@ -24,7 +28,8 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  const res = await fetch(url, { ...options, headers })
+  const fullUrl = url.startsWith('/api') ? `${API_BASE}${url}` : url
+  const res = await fetch(fullUrl, { ...options, headers })
   if (res.status === 401) {
     clearToken()
     onUnauthorized?.()

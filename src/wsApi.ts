@@ -1,7 +1,4 @@
-// Stub that replaces VS Code postMessage API
-// The command center doesn't need to send messages back to VS Code
-export const vscode = {
-  postMessage(_msg: unknown): void {
-    // No-op in standalone mode
-  }
-}
+// Stub file for vscode API compatibility
+// This is not used in the command-center context but needed for build compatibility
+
+export const vscode: any = null

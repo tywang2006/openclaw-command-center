@@ -697,6 +697,10 @@
   font-weight: 600;
   margin-right: 6px;
   vertical-align: middle;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- Department select in form ---- */
@@ -767,6 +771,10 @@
   font-weight: 600;
   margin-right: 6px;
   vertical-align: middle;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- Execution History Chart ---- */
@@ -792,4 +800,230 @@
 
 .cron-history-bar.error {
   background: #ff4444;
+}
+
+/* ---- Mobile responsive ---- */
+@media (max-width: 768px) {
+  .cron-header {
+    padding: 10px;
+    min-height: 48px;
+  }
+
+  .cron-header h2 {
+    font-size: 14px;
+  }
+
+  .btn-create-toggle {
+    min-height: 44px;
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+
+  .btn-create-toggle:active {
+    opacity: 0.7;
+  }
+
+  .job-header {
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .job-main-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .job-controls {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .btn-run-now,
+  .btn-delete {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    min-width: 32px;
+    font-size: 13px;
+  }
+
+  .btn-run-now:active:not(:disabled),
+  .btn-delete:active {
+    opacity: 0.7;
+  }
+
+  .toggle-switch {
+    min-height: 22px;
+    min-width: 40px;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+
+  .delete-confirm {
+    flex-direction: row;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .btn-confirm-delete,
+  .btn-cancel-delete {
+    padding: 4px 8px;
+    font-size: 11px;
+    min-height: 32px;
+    white-space: nowrap;
+  }
+
+  .btn-confirm-delete:active,
+  .btn-cancel-delete:active {
+    opacity: 0.7;
+  }
+
+  .job-last-run {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .jobs-list {
+    padding: 8px;
+  }
+
+  .job-item {
+    padding: 12px;
+  }
+
+  .job-name {
+    font-size: 15px;
+  }
+
+  .job-schedule {
+    font-size: 13px;
+  }
+
+  .cron-filter-bar {
+    padding: 6px 8px;
+    gap: 4px;
+    min-height: 40px;
+    align-items: center;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+
+  .cron-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filter-chip {
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 12px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Hide department name text on mobile, show icon only */
+  .filter-chip .filter-chip-text {
+    display: none;
+  }
+
+  .filter-chip:active {
+    opacity: 0.7;
+  }
+
+  /* Ensure job name doesn't overflow */
+  .job-name-schedule {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .job-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Message text overflow */
+  .message-text {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+  }
+
+  /* State value overflow */
+  .state-value {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* Form inputs */
+  .create-form {
+    padding: 12px;
+    overflow-x: hidden;
+  }
+
+  .form-group input[type="text"],
+  .form-group input[type="number"],
+  .form-group textarea {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .schedule-type-selector button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .schedule-type-selector button:active {
+    opacity: 0.7;
+  }
+
+  .btn-create {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .btn-create:active:not(:disabled) {
+    opacity: 0.7;
+  }
+
+  .dept-select {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .btn-edit {
+    min-height: 44px;
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+
+  .edit-message textarea {
+    font-size: 16px;
+    min-height: 100px;
+  }
+
+  .btn-save,
+  .btn-cancel {
+    min-height: 44px;
+    padding: 8px 18px;
+    font-size: 14px;
+  }
 }

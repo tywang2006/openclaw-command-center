@@ -131,18 +131,115 @@ export function ChainIcon({ size = 16, color = '#4488ff', className }: IconProps
   )
 }
 
-// Map department ID to icon component
-const DEPT_ICONS: Record<string, (props: IconProps) => JSX.Element> = {
-  coo: BoltIcon,
-  engineering: WrenchIcon,
-  operations: SearchIcon,
-  research: ChartIcon,
-  product: PaletteIcon,
-  admin: ClipboardIcon,
-  blockchain: ChainIcon,
+export function GlobeIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6" stroke={color} strokeWidth="1.3" />
+      <ellipse cx="8" cy="8" rx="3" ry="6" stroke={color} strokeWidth="1" />
+      <path d="M2 8h12" stroke={color} strokeWidth="1" />
+    </svg>
+  )
 }
 
-export function DeptIcon({ deptId, size = 16, className }: { deptId: string; size?: number; className?: string }) {
-  const Icon = DEPT_ICONS[deptId] || BoltIcon
-  return <Icon size={size} className={className} />
+export function ShieldIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 1L2 4v4c0 3.5 2.5 6 6 7 3.5-1 6-3.5 6-7V4L8 1z" stroke={color} strokeWidth="1.3" />
+    </svg>
+  )
 }
+
+export function DatabaseIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <ellipse cx="8" cy="4" rx="5" ry="2" stroke={color} strokeWidth="1.3" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4" stroke={color} strokeWidth="1.3" />
+      <path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" stroke={color} strokeWidth="1" opacity="0.5" />
+    </svg>
+  )
+}
+
+export function RocketIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 1c-2 3-3 6-3 9l3 2 3-2c0-3-1-6-3-9z" stroke={color} strokeWidth="1.3" />
+      <circle cx="8" cy="7" r="1.5" stroke={color} strokeWidth="1" />
+    </svg>
+  )
+}
+
+export function HeartIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 14s-5.5-3.5-5.5-7A3 3 0 018 4.5 3 3 0 0113.5 7C13.5 10.5 8 14 8 14z" stroke={color} strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+export function StarIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 1l2 4.5H15l-3.5 3 1 5L8 11l-4.5 2.5 1-5L1 5.5h5L8 1z" stroke={color} strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+export function CodeIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M5 4L1 8l4 4M11 4l4 4-4 4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 2l-2 12" stroke={color} strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function BugIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <ellipse cx="8" cy="9" rx="3.5" ry="4" stroke={color} strokeWidth="1.3" />
+      <circle cx="8" cy="5" r="2" stroke={color} strokeWidth="1.3" />
+      <path d="M2 8h2M12 8h2M3 12l2-1M11 12l2 1" stroke={color} strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function BookIcon({ size = 16, color = '#94a3b8', className }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M2 2h5v12H2zM9 2h5v12H9z" stroke={color} strokeWidth="1.3" />
+      <path d="M7 2v12M9 2v12" stroke={color} strokeWidth="1" />
+    </svg>
+  )
+}
+
+// Map icon name to component
+const ICON_MAP: Record<string, (props: IconProps) => JSX.Element> = {
+  bolt: BoltIcon,
+  wrench: WrenchIcon,
+  search: SearchIcon,
+  chart: ChartIcon,
+  palette: PaletteIcon,
+  clipboard: ClipboardIcon,
+  chain: ChainIcon,
+  globe: GlobeIcon,
+  shield: ShieldIcon,
+  database: DatabaseIcon,
+  rocket: RocketIcon,
+  heart: HeartIcon,
+  star: StarIcon,
+  code: CodeIcon,
+  bug: BugIcon,
+  book: BookIcon,
+}
+
+// Keep backward compatibility — lookup by dept ID falls back to icon name
+export function DeptIcon({ deptId, icon, color, size = 16, className }: { deptId?: string; icon?: string; color?: string; size?: number; className?: string }) {
+  // First try icon name, then deptId-based legacy lookup
+  const iconName = icon || deptId || 'bolt'
+  const Icon = ICON_MAP[iconName] || BoltIcon
+  return <Icon size={size} color={color} className={className} />
+}
+
+// Export ICON_MAP for DeptFormModal
+export { ICON_MAP }
+export type { IconProps }

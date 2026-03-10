@@ -13,7 +13,8 @@
   border: 2px solid #3a3a42;
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.6);
   padding: 32px 40px;
-  width: 320px;
+  width: 90%;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -83,4 +84,62 @@
   font-size: 11px;
   text-align: center;
   padding: 4px 0;
+}
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .login-overlay {
+    align-items: flex-start;
+    padding-top: 20vh;
+  }
+
+  .login-panel {
+    width: calc(100% - 32px);
+    max-width: 360px;
+    padding: 28px 24px;
+    gap: 14px;
+  }
+
+  .login-title {
+    font-size: 16px;
+  }
+
+  .login-subtitle {
+    font-size: 10px;
+    margin-bottom: 8px;
+  }
+
+  .login-input {
+    font-size: 16px;
+    padding: 12px 14px;
+    min-height: 48px;
+  }
+
+  .login-btn {
+    font-size: 13px;
+    padding: 14px;
+    min-height: 48px;
+  }
+
+  .login-btn:active:not(:disabled) {
+    opacity: 0.75;
+    transform: translate(1px, 1px) scale(0.98);
+  }
+
+  .login-error {
+    font-size: 14px;
+    padding: 6px 0;
+  }
+}
+
+/* ---- Small screens (375px and below) ---- */
+@media (max-width: 375px) {
+  .login-panel {
+    width: calc(100% - 24px);
+    padding: 24px 20px;
+  }
+
+  .login-title {
+    font-size: 14px;
+  }
 }

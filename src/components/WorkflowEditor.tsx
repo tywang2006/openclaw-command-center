@@ -59,8 +59,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       try {
         setLoading(true);
         const [workflowsRes, deptsRes] = await Promise.all([
-          authedFetch('/cmd/api/workflows'),
-          authedFetch('/cmd/api/departments')
+          authedFetch('/api/workflows'),
+          authedFetch('/api/departments')
         ]);
 
         if (workflowsRes.ok) {
@@ -111,13 +111,13 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       let res: Response;
 
       if (editingWorkflow) {
-        res = await authedFetch(`/cmd/api/workflows/${editingWorkflow.id}`, {
+        res = await authedFetch(`/api/workflows/${editingWorkflow.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
-        res = await authedFetch('/cmd/api/workflows', {
+        res = await authedFetch('/api/workflows', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -129,7 +129,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       }
 
       // Refresh workflows list
-      const listRes = await authedFetch('/cmd/api/workflows');
+      const listRes = await authedFetch('/api/workflows');
       if (listRes.ok) {
         const data = await listRes.json();
         setWorkflows(data.workflows || []);
@@ -151,7 +151,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       setRunningWorkflowId(workflowId);
       setResults(null);
 
-      const res = await authedFetch(`/cmd/api/workflows/${workflowId}/run`, {
+      const res = await authedFetch(`/api/workflows/${workflowId}/run`, {
         method: 'POST'
       });
 
@@ -174,7 +174,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     if (!window.confirm(t('workflow.delete.confirm'))) return;
 
     try {
-      const res = await authedFetch(`/cmd/api/workflows/${workflowId}`, {
+      const res = await authedFetch(`/api/workflows/${workflowId}`, {
         method: 'DELETE'
       });
 
@@ -215,7 +215,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
 
   const getDepartmentName = (deptId: string) => {
     const dept = departments.find(d => d.id === deptId);
-    return dept ? `${dept.emoji} ${dept.name}` : deptId;
+    return dept ? dept.name : deptId;
   };
 
   return (
@@ -369,7 +369,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                               <option value="">-- {t('workflow.step.dept')} --</option>
                               {departments.map((dept) => (
                                 <option key={dept.id} value={dept.id}>
-                                  {dept.emoji} {dept.name}
+                                  {dept.name}
                                 </option>
                               ))}
                             </select>

@@ -26,6 +26,10 @@
 .target-name {
   color: #00d4aa;
   font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .target-status {
@@ -158,4 +162,55 @@
 
 .command-status.err {
   color: #ff4444;
+}
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .command-panel {
+    padding: 8px;
+  }
+
+  .command-empty {
+    font-size: 14px;
+  }
+
+  .command-target {
+    font-size: 14px;
+    gap: 8px;
+  }
+
+  .target-emoji {
+    font-size: 18px;
+  }
+
+  .target-status {
+    font-size: 12px;
+    padding: 2px 8px;
+  }
+
+  .command-input {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 80px;
+  }
+
+  .action-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 14px;
+  }
+
+  .action-btn:active:not(:disabled) {
+    opacity: 0.7;
+    transform: scale(0.93);
+    transition: transform 60ms ease, opacity 60ms ease;
+  }
+
+  .send-btn {
+    font-size: 18px;
+  }
+
+  .command-status {
+    font-size: 13px;
+  }
 }

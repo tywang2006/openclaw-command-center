@@ -4,7 +4,12 @@ import { authedFetch, getToken } from '../utils/api'
 export interface Department {
   id: string
   name: string
-  emoji: string
+  icon: string
+  color: string
+  hue: number
+  order: number
+  agent?: string
+  telegramTopicId?: number
   status: 'active' | 'idle' | 'offline'
   lastSeen: number
   currentTask?: string
@@ -16,12 +21,19 @@ export interface Request {
   date: string
 }
 
+export interface Attachment {
+  name: string
+  url: string
+  size: number
+}
+
 export interface Activity {
   deptId: string
   role: 'user' | 'assistant'
   text: string
   timestamp: number
   images?: string[]
+  attachments?: Attachment[]
   source?: string   // 'app' | 'telegram' | 'gateway' | 'cron'
   fromName?: string  // sender name (e.g. Telegram username)
 }
@@ -50,7 +62,12 @@ function parseDepartment(d: any): Department {
   return {
     id: d.id || d.name,
     name: d.name || d.id,
-    emoji: d.emoji || '',
+    icon: d.icon || 'bolt',
+    color: d.color || '#94a3b8',
+    hue: d.hue ?? 200,
+    order: d.order ?? 0,
+    agent: d.agent,
+    telegramTopicId: d.telegramTopicId,
     status: d.status || 'idle',
     lastSeen: d.lastSeen ? new Date(d.lastSeen).getTime() : Date.now(),
     currentTask: d.currentTask || undefined,
@@ -74,7 +91,9 @@ export function useAgentState() {
   const reconnectTimeoutRef = useRef<number | null>(null)
   const mountedRef = useRef<boolean>(true)
   const reconnectDelayRef = useRef<number>(1000)
+  const reconnectCountRef = useRef<number>(0)
   const wsReceivedDepts = useRef(false)
+  const MAX_RECONNECT = 20
 
   const connect = () => {
     if (reconnectTimeoutRef.current) {
@@ -90,6 +109,7 @@ export function useAgentState() {
     ws.onopen = () => {
       console.log('[WS] Connected')
       reconnectDelayRef.current = 1000
+      reconnectCountRef.current = 0
       if (mountedRef.current) {
         setState(prev => ({ ...prev, connected: true }))
       }
@@ -103,9 +123,14 @@ export function useAgentState() {
       wsRef.current = null
 
       if (mountedRef.current) {
+        reconnectCountRef.current++
+        if (reconnectCountRef.current > MAX_RECONNECT) {
+          console.error('[WS] Max reconnect attempts reached')
+          return  // Stop reconnecting
+        }
         const delay = reconnectDelayRef.current
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log('[WS] Reconnecting...')
+          console.log(`[WS] Reconnecting... (attempt ${reconnectCountRef.current}/${MAX_RECONNECT})`)
           connect()
         }, delay)
         reconnectDelayRef.current = Math.min(delay * 2, 30000)
@@ -287,6 +312,21 @@ export function useAgentState() {
         }
         break
 
+      case 'departments:updated':
+        // Reload departments from REST API
+        authedFetch('/api/departments')
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data?.departments) && mountedRef.current) {
+              setState(prev => ({
+                ...prev,
+                departments: data.departments.map(parseDepartment),
+              }))
+            }
+          })
+          .catch(() => {})
+        break
+
       default:
         console.log('[WS] Unknown event:', event, data)
     }
@@ -294,7 +334,7 @@ export function useAgentState() {
 
   // REST fallback — only applies if WS hasn't delivered departments yet
   useEffect(() => {
-    authedFetch('/cmd/api/departments')
+    authedFetch('/api/departments')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()

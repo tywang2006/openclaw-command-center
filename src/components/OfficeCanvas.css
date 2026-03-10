@@ -101,3 +101,44 @@
   min-width: 32px;
   text-align: center;
 }
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .zoom-controls {
+    bottom: 6px;
+    right: 6px;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .zoom-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .zoom-btn:active:not(:disabled) {
+    opacity: 0.7;
+    transform: scale(0.9);
+    transition: transform 60ms ease, opacity 60ms ease;
+  }
+
+  .zoom-slider {
+    width: 60px;
+    height: 6px;
+  }
+
+  .zoom-slider::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+  }
+
+  .zoom-label {
+    font-size: 12px;
+  }
+}

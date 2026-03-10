@@ -37,28 +37,6 @@ interface OfficeCanvasProps {
   toolStates?: Map<string, ToolState>
 }
 
-// Map department IDs to character sprite palettes
-const DEPT_TO_CHAR_ID: Record<string, number> = {
-  coo: 0,
-  engineering: 1,
-  operations: 2,
-  research: 3,
-  product: 4,
-  admin: 5,
-  blockchain: 0, // Uses char_0 with hue shift
-}
-
-// Map department IDs to their main chair seat UID in the layout
-const DEPT_TO_SEAT: Record<string, string> = {
-  coo: 'dept-coo-chair-main',
-  engineering: 'dept-engineering-chair-main',
-  operations: 'dept-operations-chair-main',
-  research: 'dept-research-chair-main',
-  product: 'dept-product-chair-main',
-  admin: 'dept-admin-chair-main',
-  blockchain: 'dept-blockchain-chair-main',
-}
-
 export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept, subAgents, toolStates }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -105,9 +83,9 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       .then(layout => {
         officeStateRef.current = new OfficeState(layout)
         departments.forEach((dept, index) => {
-          const charId = DEPT_TO_CHAR_ID[dept.id] ?? 0
-          const hueShift = dept.id === 'blockchain' ? 180 : 0
-          const seatId = DEPT_TO_SEAT[dept.id]
+          const charId = index % 6
+          const hueShift = dept.hue ?? 0
+          const seatId = `dept-${dept.id}-chair-main`
           officeStateRef.current!.addAgent(index, charId, hueShift, seatId, true)
         })
         setOfficeReady(true)
@@ -116,9 +94,9 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         console.error('[OfficeCanvas] Failed to load layout:', err)
         officeStateRef.current = new OfficeState()
         departments.forEach((dept, index) => {
-          const charId = DEPT_TO_CHAR_ID[dept.id] ?? 0
-          const hueShift = dept.id === 'blockchain' ? 180 : 0
-          const seatId = DEPT_TO_SEAT[dept.id]
+          const charId = index % 6
+          const hueShift = dept.hue ?? 0
+          const seatId = `dept-${dept.id}-chair-main`
           officeStateRef.current!.addAgent(index, charId, hueShift, seatId, true)
         })
         setOfficeReady(true)
@@ -153,7 +131,7 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
   // Poll collaboration links every 60s (F11)
   useEffect(() => {
     const fetchCollab = () => {
-      authedFetch('/cmd/api/collaboration')
+      authedFetch('/api/collaboration')
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data?.links)) setCollabLinks(data.links)

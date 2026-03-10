@@ -3,11 +3,12 @@ import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
 import { chat, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
+import { generateAndSave } from '../layout-generator.js';
 
 const router = express.Router();
 
 // Base data path
-const BASE_PATH = '/root/.openclaw/workspace';
+const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
 
 // Input validation
 const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
@@ -71,17 +72,30 @@ router.get('/departments', (req, res) => {
     const config = readJsonFile(configPath) || { departments: {} };
     const status = readJsonFile(statusPath) || { agents: {} };
 
-    // Merge config and status
-    const departments = Object.entries(config.departments || {}).map(([key, dept]) => {
-      const agentStatus = status.agents[dept.id] || {};
-      return {
-        ...dept,
-        status: agentStatus.status || 'idle',
-        lastSeen: agentStatus.lastSeen || null,
-        currentTask: agentStatus.currentTask || null,
-        sessionCount: agentStatus.sessionCount || 0
-      };
-    });
+    // Forward-compatible: handle both { departments: {...} } and flat object
+    const deptSource = config.departments || config;
+
+    // Merge config and status with defensive defaults
+    const departments = Object.entries(deptSource)
+      .filter(([, v]) => typeof v === 'object' && v !== null && typeof v.name === 'string')
+      .sort((a, b) => (a[1].order ?? 99) - (b[1].order ?? 99))
+      .map(([id, dept]) => {
+        const agentStatus = status.agents?.[id] || {};
+        return {
+          id,
+          name: dept.name || id,
+          agent: dept.agent || dept.name || id,
+          icon: dept.icon || 'bolt',
+          color: dept.color || '#94a3b8',
+          hue: dept.hue ?? 200,
+          order: dept.order ?? 99,
+          telegramTopicId: dept.telegramTopicId,
+          status: agentStatus.status || 'idle',
+          lastSeen: agentStatus.lastSeen || null,
+          currentTask: agentStatus.currentTask || null,
+          sessionCount: agentStatus.sessionCount || 0
+        };
+      });
 
     res.json({
       departments,
@@ -406,7 +420,7 @@ router.get('/collaboration', (req, res) => {
     // Get known department IDs
     const configPath = path.join(BASE_PATH, 'departments', 'config.json');
     const config = readJsonFile(configPath) || { departments: {} };
-    const deptIds = new Set(Object.values(config.departments || {}).map(d => d.id));
+    const deptIds = new Set(Object.keys(config.departments || {}));
 
     const files = fs.readdirSync(requestsDir)
       .filter(f => f.endsWith('.md') && !f.startsWith('.'));
@@ -449,11 +463,9 @@ const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 function getTopicId(deptId) {
   const configPath = path.join(BASE_PATH, 'departments', 'config.json');
   const config = readJsonFile(configPath);
-  if (!config || !config.departments) return null;
-  for (const [topicId, dept] of Object.entries(config.departments)) {
-    if (dept.id === deptId) return topicId;
-  }
-  return null;
+  if (!config?.departments?.[deptId]) return null;
+  const topicId = config.departments[deptId].telegramTopicId;
+  return topicId !== undefined ? String(topicId) : null;
 }
 
 /**
@@ -587,8 +599,8 @@ router.get('/departments/:id/history', async (req, res) => {
 /**
  * POST /api/departments/:id/chat
  * Chat with a department's AI agent
- * Body: { message: "your message" }
- * Returns: { reply: "agent response", deptId }
+ * Body: { message: "your message", images: [], documents: [] }
+ * Returns: { reply: "agent response", deptId, attachments: [] }
  */
 router.post('/departments/:id/chat', async (req, res) => {
   try {
@@ -596,10 +608,10 @@ router.post('/departments/:id/chat', async (req, res) => {
     if (!validateDeptId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
-    const { message, images } = req.body;
+    const { message, images, documents } = req.body;
 
-    if ((!message || !message.trim()) && (!images || images.length === 0)) {
-      return res.status(400).json({ error: 'Message or image is required' });
+    if ((!message || !message.trim()) && (!images || images.length === 0) && (!documents || documents.length === 0)) {
+      return res.status(400).json({ error: 'Message, image, or document is required' });
     }
     if (message && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
@@ -607,13 +619,58 @@ router.post('/departments/:id/chat', async (req, res) => {
 
     const msgText = (message || '').trim();
     const imgCount = Array.isArray(images) ? images.length : 0;
-    console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}`);
+    const docCount = Array.isArray(documents) ? documents.length : 0;
+    console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}${docCount ? ` [+${docCount} docs]` : ''}`);
 
-    const result = await chat(id, msgText, images);
+    // Build enhanced message with document content
+    let enhancedMessage = msgText;
+    if (documents && documents.length > 0) {
+      enhancedMessage += '\n\n[Documents:\n';
+      for (const doc of documents) {
+        enhancedMessage += `\n--- ${doc.name} ---\n`;
+        if (doc.extracted) {
+          if (doc.extracted.text) {
+            enhancedMessage += doc.extracted.text.substring(0, 5000); // Limit text length
+          } else if (doc.extracted.sheets) {
+            // Excel data
+            const sheetData = Object.entries(doc.extracted.sheets).map(([name, data]) => {
+              return `Sheet: ${name}\n${JSON.stringify(data.slice(0, 10), null, 2)}`;
+            }).join('\n\n');
+            enhancedMessage += sheetData;
+          } else if (doc.extracted.slides) {
+            // PowerPoint data
+            const slideText = doc.extracted.slides.map((s) => `Slide ${s.slide}:\n${s.text}`).join('\n\n');
+            enhancedMessage += slideText;
+          }
+        }
+        enhancedMessage += '\n';
+      }
+      enhancedMessage += ']';
+    }
+
+    const result = await chat(id, enhancedMessage, images);
 
     if (result.success) {
       console.log(`[Chat] ${id} -> ${result.reply.substring(0, 60)}`);
-      res.json({ success: true, reply: result.reply, deptId: id });
+      
+      // Check if reply contains file references
+      const attachments = [];
+      const fileMatches = result.reply.match(/\[FILE:\s*(.+?)\s*\((\d+)\s*bytes?\)\]/gi);
+      if (fileMatches) {
+        for (const match of fileMatches) {
+          const nameMatch = match.match(/\[FILE:\s*(.+?)\s*\(/);
+          const sizeMatch = match.match(/\((\d+)\s*bytes?\)/);
+          if (nameMatch && sizeMatch) {
+            attachments.push({
+              name: nameMatch[1].trim(),
+              url: `/cmd/api/files/download/${nameMatch[1].trim()}`,
+              size: parseInt(sizeMatch[1])
+            });
+          }
+        }
+      }
+      
+      res.json({ success: true, reply: result.reply, deptId: id, attachments });
     } else {
       let errMsg = result.error || 'Agent failed to respond';
       if (errMsg.includes('timeout') || errMsg.includes('TIMEOUT')) {
@@ -737,6 +794,306 @@ router.delete('/departments/:id/subagents/:subId', (req, res) => {
   }
   const removed = removeSubAgent(req.params.id, req.params.subId);
   res.json({ success: removed });
+});
+
+// ============================================================
+// Export API
+// ============================================================
+
+/**
+ * POST /api/departments/:id/export
+ * Generate conversation export as downloadable file
+ * Body: { format: 'md'|'html' }
+ */
+router.post('/departments/:id/export', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+
+    const { format = 'md' } = req.body;
+    if (!['md', 'html'].includes(format)) {
+      return res.status(400).json({ error: 'Format must be "md" or "html"' });
+    }
+
+    // Get department name
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = readJsonFile(configPath) || { departments: {} };
+    const deptName = config.departments?.[id]?.name || id;
+
+    // Fetch chat history
+    const messages = await getChatHistory(id, 100);
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    let content = '';
+    let filename = '';
+    let contentType = '';
+
+    if (format === 'md') {
+      // Generate Markdown
+      content = `# ${deptName} Conversation Export\n\n`;
+      content += `**Export Date:** ${timestamp}\n\n`;
+      content += `---\n\n`;
+
+      for (const msg of messages) {
+        const role = msg.role === 'user' ? 'User' : deptName;
+        const time = new Date(msg.timestamp).toLocaleString();
+        content += `### ${role} (${time})\n\n`;
+        content += `${msg.text}\n\n`;
+        content += `---\n\n`;
+      }
+
+      filename = `${id}_export_${timestamp}.md`;
+      contentType = 'text/markdown';
+    } else if (format === 'html') {
+      // Generate HTML
+      content = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${deptName} Conversation Export</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .header {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .message {
+      background: white;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .message-header {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    .message-time {
+      font-size: 0.9em;
+      color: #666;
+    }
+    .message-text {
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .user { border-left: 4px solid #4CAF50; }
+    .assistant { border-left: 4px solid #2196F3; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${deptName} Conversation Export</h1>
+    <p><strong>Export Date:</strong> ${timestamp}</p>
+  </div>
+`;
+
+      for (const msg of messages) {
+        const role = msg.role === 'user' ? 'User' : deptName;
+        const roleClass = msg.role;
+        const time = new Date(msg.timestamp).toLocaleString();
+
+        content += `  <div class="message ${roleClass}">
+    <div class="message-header">${role} <span class="message-time">(${time})</span></div>
+    <div class="message-text">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+  </div>
+`;
+      }
+
+      content += `</body>
+</html>`;
+
+      filename = `${id}_export_${timestamp}.html`;
+      contentType = 'text/html';
+    }
+
+    // Set headers for file download
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(content);
+
+    console.log(`[Export] Generated ${format} export for ${id}: ${filename}`);
+  } catch (error) {
+    console.error(`[Export] Error in POST /api/departments/${req.params.id}/export:`, error);
+    res.status(500).json({ error: 'Failed to generate export' });
+  }
+});
+
+// ============================================================
+// Department CRUD API
+// ============================================================
+
+/**
+ * POST /api/departments
+ * Create a new department
+ * Body: { id, name, agent, icon, color, hue, telegramTopicId, order }
+ */
+router.post('/departments', (req, res) => {
+  try {
+    const { id, name, agent, icon, color, hue, telegramTopicId, order } = req.body;
+
+    if (!id || !VALID_DEPT_ID.test(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid department ID' });
+    }
+    if (!name) {
+      return res.status(400).json({ success: false, error: 'Name is required' });
+    }
+
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = readJsonFile(configPath) || { departments: {} };
+
+    if (config.departments[id]) {
+      return res.status(409).json({ success: false, error: 'Department already exists' });
+    }
+
+    config.departments[id] = {
+      name,
+      agent: agent || name,
+      icon: icon || 'bolt',
+      color: color || '#94a3b8',
+      hue: hue ?? 200,
+      order: order ?? Object.keys(config.departments).length,
+      ...(telegramTopicId !== undefined ? { telegramTopicId } : {})
+    };
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+    // Create department directory structure
+    const deptDir = path.join(BASE_PATH, 'departments', id);
+    if (!fs.existsSync(deptDir)) fs.mkdirSync(deptDir, { recursive: true });
+    const memDir = path.join(deptDir, 'memory');
+    if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true });
+
+    // Rebuild layout with new department
+    try {
+      generateAndSave();
+      console.log(`[Layout] Auto-rebuilt after creating department: ${id}`);
+    } catch (layoutError) {
+      console.error('[Layout] Auto-rebuild failed:', layoutError);
+    }
+
+    res.json({ success: true, department: { id, ...config.departments[id] } });
+  } catch (error) {
+    console.error('Error in POST /api/departments:', error);
+    res.status(500).json({ success: false, error: 'Failed to create department' });
+  }
+});
+
+/**
+ * PUT /api/departments/:id
+ * Update an existing department
+ * Body: { name, agent, icon, color, hue, telegramTopicId, order }
+ */
+router.put('/departments/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid department ID' });
+    }
+
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = readJsonFile(configPath) || { departments: {} };
+
+    if (!config.departments[id]) {
+      return res.status(404).json({ success: false, error: 'Department not found' });
+    }
+
+    const { name, agent, icon, color, hue, telegramTopicId, order } = req.body;
+
+    if (name !== undefined) config.departments[id].name = name;
+    if (agent !== undefined) config.departments[id].agent = agent;
+    if (icon !== undefined) config.departments[id].icon = icon;
+    if (color !== undefined) config.departments[id].color = color;
+    if (hue !== undefined) config.departments[id].hue = hue;
+    if (telegramTopicId !== undefined) config.departments[id].telegramTopicId = telegramTopicId;
+    if (order !== undefined) config.departments[id].order = order;
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+    // Rebuild layout if hue or order changed (affects visual layout)
+    if (hue !== undefined || order !== undefined) {
+      try {
+        generateAndSave();
+        console.log(`[Layout] Auto-rebuilt after updating department: ${id}`);
+      } catch (layoutError) {
+        console.error('[Layout] Auto-rebuild failed:', layoutError);
+      }
+    }
+
+    res.json({ success: true, department: { id, ...config.departments[id] } });
+  } catch (error) {
+    console.error(`Error in PUT /api/departments/${req.params.id}:`, error);
+    res.status(500).json({ success: false, error: 'Failed to update department' });
+  }
+});
+
+/**
+ * DELETE /api/departments/:id
+ * Delete a department
+ */
+router.delete('/departments/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ success: false, error: 'Invalid department ID' });
+    }
+
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const config = readJsonFile(configPath) || { departments: {} };
+
+    if (!config.departments[id]) {
+      return res.status(404).json({ success: false, error: 'Department not found' });
+    }
+
+    delete config.departments[id];
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+    // Rebuild layout after department deletion
+    try {
+      generateAndSave();
+      console.log(`[Layout] Auto-rebuilt after deleting department: ${id}`);
+    } catch (layoutError) {
+      console.error('[Layout] Auto-rebuild failed:', layoutError);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`Error in DELETE /api/departments/${req.params.id}:`, error);
+    res.status(500).json({ success: false, error: 'Failed to delete department' });
+  }
+});
+
+// ============================================================
+// Layout Generation API
+// ============================================================
+
+/**
+ * POST /api/layout/rebuild
+ * Regenerate the office layout based on current department configuration
+ */
+router.post('/layout/rebuild', async (req, res) => {
+  try {
+    console.log('[Layout] Rebuild requested');
+    const result = generateAndSave();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('[Layout] Rebuild failed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 export default router;

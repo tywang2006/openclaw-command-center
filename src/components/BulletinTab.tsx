@@ -30,7 +30,7 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
     setResponses([])
 
     try {
-      const res = await authedFetch('/cmd/api/broadcast', {
+      const res = await authedFetch('/api/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: cmd })

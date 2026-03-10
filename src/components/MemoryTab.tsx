@@ -24,6 +24,8 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
   const [versionContent, setVersionContent] = useState<string | null>(null)
   const [versionLoading, setVersionLoading] = useState(false)
+  const [driveSaving, setDriveSaving] = useState(false)
+  const [driveConfigured, setDriveConfigured] = useState(false)
   const { t } = useLocale()
 
   const selectedDept = departments.find(d => d.id === selectedDeptId)
@@ -44,7 +46,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     }
 
     setLoading(true)
-    authedFetch(`/cmd/api/departments/${selectedDeptId}/memory`)
+    authedFetch(`/api/departments/${selectedDeptId}/memory`)
       .then(res => res.json())
       .then(data => {
         const content = data.content || ''
@@ -68,6 +70,11 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setVersionContent(null)
   }, [selectedDeptId])
 
+  // Check drive status
+  useEffect(() => {
+    authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch(() => {})
+  }, [])
+
   const handleEdit = useCallback(() => {
     setEditing(true)
     setEditContent(memoryContent || '')
@@ -85,7 +92,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setSaving(true)
     setSaveMsg(null)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/memory`, {
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/memory`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editContent }),
@@ -110,7 +117,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     if (!selectedDeptId) return
     setHistoryLoading(true)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/memory/history`)
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/memory/history`)
       const data = await res.json()
       setVersions(data.versions || [])
     } catch {
@@ -124,7 +131,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setVersionLoading(true)
     setSelectedVersion(filename)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/memory/history/${filename}`)
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/memory/history/${filename}`)
       const data = await res.json()
       setVersionContent(data.content || '')
     } catch {
@@ -137,7 +144,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     if (!selectedDeptId || !versionContent) return
     setSaving(true)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/memory`, {
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/memory`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: versionContent }),
@@ -158,6 +165,32 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setSaving(false)
   }, [selectedDeptId, versionContent, t])
 
+  const handleSaveToDrive = useCallback(async () => {
+    if (!selectedDeptId) return
+    setDriveSaving(true)
+    try {
+      const res = await authedFetch('/api/drive/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: `${selectedDeptId}-memory-${new Date().toISOString().split('T')[0]}.md`,
+          content: memoryContent || '',
+          mimeType: 'text/markdown',
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSaveMsg(t('drive.saved'))
+        setTimeout(() => setSaveMsg(null), 2000)
+      } else {
+        setSaveMsg(t('drive.failed', { error: data.error || '' }))
+      }
+    } catch {
+      setSaveMsg(t('drive.failed', { error: 'Network error' }))
+    }
+    setDriveSaving(false)
+  }, [selectedDeptId, memoryContent, t])
+
   if (!selectedDeptId) {
     return (
       <div className="memory-tab empty">
@@ -177,6 +210,16 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         <div className="memory-actions">
           {!editing ? (
             <>
+              {driveConfigured && (
+                <button className="mem-btn" onClick={handleSaveToDrive} disabled={driveSaving} title={t('drive.save')}>
+                  {driveSaving ? t('drive.saving') : (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 1v10M4 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M2 12v2h12v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </button>
+              )}
               <button className="mem-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory() }} title={t('memory.history')}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />

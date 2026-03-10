@@ -11,6 +11,14 @@ import cronRoutes from './routes/cron.js';
 import metricsRoutes, { recordPermission } from './routes/metrics.js';
 import workflowsRoutes from './routes/workflows.js';
 import replayRoutes, { isRecording, addReplayEvent } from './routes/replay.js';
+import capabilitiesRoutes from './routes/capabilities.js';
+import documentsRoutes from './routes/documents.js';
+import filesRoutes from './routes/files.js';
+import integrationsConfigRoutes, { checkAutoBackup } from './routes/integrations-config.js';
+import systemConfigRoutes from './routes/system-config.js';
+import emailRoutes from './routes/email.js';
+import driveRoutes from './routes/drive.js';
+import voiceRoutes from './routes/voice.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
 
@@ -21,8 +29,9 @@ const app = express();
 const server = http.createServer(app);
 
 // Configuration
-const HOST = '127.0.0.1';
-const PORT = 5100;
+const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw'), 'workspace');
+const HOST = '0.0.0.0';
+const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -35,6 +44,15 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
+  }
+  next();
+});
+
+// Rewrite /cmd/api/* → /api/* so frontend (BASE_URL=/cmd/) hits the right routes.
+// One middleware, covers all current and future /api routes automatically.
+app.use((req, res, next) => {
+  if (req.url.startsWith('/cmd/api')) {
+    req.url = req.url.replace('/cmd/api', '/api');
   }
   next();
 });
@@ -52,6 +70,14 @@ app.use('/api/cron', cronRoutes);
 app.use('/api', metricsRoutes);
 app.use('/api/workflows', workflowsRoutes);
 app.use('/api/replay', replayRoutes);
+app.use('/api', capabilitiesRoutes);
+app.use('/api', documentsRoutes);
+app.use('/api', filesRoutes);
+app.use('/api', integrationsConfigRoutes);
+app.use('/api', systemConfigRoutes);
+app.use('/api', emailRoutes);
+app.use('/api', driveRoutes);
+app.use('/api', voiceRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -86,10 +112,18 @@ app.get('/cmd', (req, res) => {
   res.redirect('/cmd/');
 });
 
-// WebSocket server at /ws path
-const wss = new WebSocketServer({
-  server,
-  path: '/ws'
+// WebSocket server — accept both /ws and /cmd/ws
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
+  if (pathname === '/ws' || pathname === '/cmd/ws') {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 wss.on('connection', (ws, req) => {
@@ -172,20 +206,42 @@ gateway.connect().then(() => {
 });
 
 // Load department config for session-key-to-department mapping
-const deptConfigPath = '/root/.openclaw/workspace/departments/config.json';
+// Uses mutable maps so file watcher can hot-reload without restart
+const deptConfigPath = path.join(BASE_PATH, 'departments', 'config.json');
+let deptNames = {};
+let topicToDept = {};
+
 function loadDeptMaps() {
   try {
-    const config = JSON.parse(fs.readFileSync(deptConfigPath, 'utf8'));
+    const raw = fs.readFileSync(deptConfigPath, 'utf8');
+    const config = JSON.parse(raw);
     const idToName = {};
     const topicToId = {};
-    for (const [topicId, dept] of Object.entries(config.departments || {})) {
-      idToName[dept.id] = dept.name;
-      topicToId[topicId] = dept.id;
+    // Forward-compatible: handle both { departments: {...} } and flat object
+    const depts = config.departments || config;
+    for (const [deptId, dept] of Object.entries(depts)) {
+      if (typeof dept !== 'object' || !dept) continue;
+      idToName[deptId] = dept.name || deptId;
+      if (dept.telegramTopicId !== undefined) {
+        topicToId[String(dept.telegramTopicId)] = deptId;
+      }
     }
-    return { idToName, topicToId };
-  } catch { return { idToName: {}, topicToId: {} }; }
+    deptNames = idToName;
+    topicToDept = topicToId;
+    console.log(`[Config] Loaded ${Object.keys(idToName).length} departments`);
+  } catch (err) {
+    console.error('[Config] Failed to load department config:', err.message);
+  }
 }
-const { idToName: deptNames, topicToId: topicToDept } = loadDeptMaps();
+loadDeptMaps();
+
+// Watch config.json for hot-reload (forward-compatible with file moves)
+try {
+  fs.watchFile(deptConfigPath, { interval: 2000 }, () => {
+    console.log('[Config] Department config changed, reloading...');
+    loadDeptMaps();
+  });
+} catch {}
 
 /**
  * Parse a Gateway session key to extract the department ID.
@@ -284,9 +340,13 @@ gateway.onEvent((event) => {
   }
 });
 
+// Auto backup scheduler — check every 60 seconds
+const autoBackupInterval = setInterval(checkAutoBackup, 60000);
+
 // Graceful shutdown
 function gracefulShutdown(signal) {
   console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  clearInterval(autoBackupInterval);
   getGateway().disconnect();
   watcher.close();
 

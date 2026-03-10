@@ -91,7 +91,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const response = await authedFetch('/cmd/api/cron/jobs');
+      const response = await authedFetch('/api/cron/jobs');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -113,7 +113,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   useEffect(() => {
     if (form.deptId) {
-      authedFetch(`/cmd/api/departments/${form.deptId}/subagents`)
+      authedFetch(`/api/departments/${form.deptId}/subagents`)
         .then(r => r.json())
         .then(data => setSubAgents(data.agents || []))
         .catch(() => setSubAgents([]));
@@ -144,7 +144,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         payload.subAgentId = form.subAgentId;
       }
 
-      const response = await authedFetch('/cmd/api/cron/jobs', {
+      const response = await authedFetch('/api/cron/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -173,7 +173,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   const handleToggleEnabled = async (job: CronJob) => {
     try {
-      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}/toggle`, {
+      const response = await authedFetch(`/api/cron/jobs/${job.id}/toggle`, {
         method: 'POST',
       });
 
@@ -189,7 +189,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
   const handleDeleteJob = async (jobId: string) => {
     try {
-      const response = await authedFetch(`/cmd/api/cron/jobs/${jobId}`, {
+      const response = await authedFetch(`/api/cron/jobs/${jobId}`, {
         method: 'DELETE',
       });
 
@@ -218,7 +218,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         },
       };
 
-      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}`, {
+      const response = await authedFetch(`/api/cron/jobs/${job.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -239,7 +239,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
   const handleRunNow = async (job: CronJob) => {
     setRunningJobId(job.id);
     try {
-      const response = await authedFetch(`/cmd/api/cron/jobs/${job.id}/run`, {
+      const response = await authedFetch(`/api/cron/jobs/${job.id}/run`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -447,7 +447,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>{t('cron.filter.all')}</button>
         <button className={`filter-chip ${filter === 'global' ? 'active' : ''}`} onClick={() => setFilter('global')}>{t('cron.filter.global')}</button>
         {departments.map(d => (
-          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)}><DeptIcon deptId={d.id} size={12} /> {d.name}</button>
+          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)} title={d.name}><DeptIcon deptId={d.id} size={14} /> <span className="filter-chip-text">{d.name}</span></button>
         ))}
       </div>
 

@@ -15,8 +15,37 @@ const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const activeTokens = new Map();
 
 /**
+ * Hash a password using scrypt
+ * @param {string} password - Plain text password
+ * @returns {string} Salt and hash joined by ':'
+ */
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+/**
+ * Verify a password against stored hash
+ * Supports both plain text (legacy) and hashed passwords
+ * @param {string} password - Plain text password to verify
+ * @param {string} stored - Stored password (plain or hashed)
+ * @returns {boolean} True if password matches
+ */
+function verifyPassword(password, stored) {
+  // Support both plain text (legacy) and hashed passwords
+  if (!stored.includes(':')) {
+    // Legacy plain text — verify directly
+    return password === stored;
+  }
+  const [salt, hash] = stored.split(':');
+  const testHash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return hash === testHash;
+}
+
+/**
  * Read password from .auth_password file
- * @returns {string} The password
+ * @returns {string} The stored password (plain or hashed)
  */
 function getStoredPassword() {
   try {
@@ -124,7 +153,7 @@ authRouter.post('/login', (req, res) => {
 
   const storedPassword = getStoredPassword();
 
-  if (password !== storedPassword) {
+  if (!verifyPassword(password, storedPassword)) {
     return res.status(401).json({
       success: false,
       error: 'Invalid password'
@@ -165,6 +194,60 @@ authRouter.post('/logout', (req, res) => {
   res.json({
     success: true,
     message: 'Logged out successfully'
+  });
+});
+
+/**
+ * PUT /api/auth/password
+ * Change the system password
+ * Body: { currentPassword, newPassword }
+ */
+authRouter.put('/password', (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      error: 'currentPassword and newPassword are required'
+    });
+  }
+
+  const storedPassword = getStoredPassword();
+
+  if (!verifyPassword(currentPassword, storedPassword)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Current password is incorrect'
+    });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      error: 'New password must be at least 6 characters'
+    });
+  }
+
+  try {
+    // Hash the new password before storing
+    const hashedPassword = hashPassword(newPassword);
+    fs.writeFileSync(PASSWORD_FILE, hashedPassword, 'utf8');
+  } catch (error) {
+    console.error('[Auth] Error writing password file:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save new password'
+    });
+  }
+
+  // Clear all active tokens to force re-login
+  const tokenCount = activeTokens.size;
+  activeTokens.clear();
+  console.log(`[Auth] Password changed, cleared ${tokenCount} active token(s)`);
+
+  res.json({
+    success: true,
+    message: 'Password changed successfully'
   });
 });
 

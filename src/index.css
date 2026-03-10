@@ -80,6 +80,7 @@ body {
 #root {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ---- Scrollbars (pixel style) ---- */
@@ -274,4 +275,110 @@ textarea {
 ::selection {
   background: rgba(0, 212, 170, 0.3);
   color: var(--text-primary);
+}
+
+/* ============================================
+   Mobile Responsive Styles
+   Breakpoint: max-width 768px
+   ============================================ */
+
+@media (max-width: 768px) {
+  :root {
+    /* Mobile-specific spacing */
+    --mobile-padding: 8px;
+    --mobile-gap: 6px;
+    --mobile-font-min: 16px;
+    --mobile-touch-min: 44px;
+  }
+
+  body {
+    font-size: var(--mobile-font-min);
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Wider scrollbars for touch */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    border-left: none;
+  }
+
+  /* Global button touch targets */
+  button {
+    min-height: var(--mobile-touch-min);
+    min-width: var(--mobile-touch-min);
+    font-size: 14px;
+    padding: 8px 16px;
+  }
+
+  /* Touch feedback — active press effect */
+  button:active:not(:disabled) {
+    opacity: 0.75;
+    transform: scale(0.97);
+    transition: transform 60ms ease, opacity 60ms ease;
+  }
+
+  /* Input touch targets */
+  input,
+  select,
+  textarea {
+    font-size: var(--mobile-font-min);
+    min-height: var(--mobile-touch-min);
+    padding: 10px 12px;
+  }
+
+  /* Badges readable on mobile */
+  .badge {
+    font-size: 11px;
+    padding: 3px 10px;
+  }
+
+  /* Status dots slightly larger */
+  .status-dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  code {
+    font-size: 14px;
+    padding: 3px 8px;
+    word-break: break-all;
+  }
+
+  pre {
+    font-size: 13px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent any element from causing horizontal overflow */
+  img, video, iframe, canvas, svg, table {
+    max-width: 100%;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Button text overflow prevention */
+  button {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Ensure all flex/grid children respect container bounds */
+  * {
+    min-width: 0;
+  }
 }

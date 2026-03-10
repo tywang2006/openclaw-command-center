@@ -4,3 +4,9 @@ dist/
 .DS_Store
 .env
 .env.local
+.auth_password
+integrations.json
+departments/*/daily/
+departments/*/memory/
+logs/
+uploads/

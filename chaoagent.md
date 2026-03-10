@@ -172,6 +172,7 @@ Express + ws (port 5100)
 | `server/parsers/jsonl.js` | JSONL session 文件解析 |
 | `server/telegram.js` | Telegram 双向通信 (已弃用，由 OpenClaw 原生处理) |
 | `server/agent.js` | AI agent 对话 (通过 OpenClaw Gateway，session key = Telegram topic) |
+| `server/routes/capabilities.js` | 系统能力 API — 读取 openclaw.json + skills/ |
 
 ### 前端 (src/)
 
@@ -185,6 +186,7 @@ Express + ws (port 5100)
 | `src/components/ActivityTab.tsx` | 实时活动日志 |
 | `src/components/StatusBar.tsx` | 底部7个部门状态指示器 |
 | `src/components/Icons.tsx` | SVG 图标组件 |
+| `src/components/IntegrationsTab.tsx` | 系统能力面板 (Capabilities Dashboard) |
 | `src/hooks/useAgentState.ts` | WebSocket 状态管理 |
 | `src/office/furnitureAssets.ts` | 32种办公家具程序化精灵 |
 | `src/office/` | 像素办公室游戏引擎 (来自 pixel-agents) |
@@ -207,6 +209,7 @@ Express + ws (port 5100)
 | `/api/broadcast` | POST | 全公司广播命令 |
 | `/api/requests` | GET | 获取跨部门请求 |
 | `/api/activity/:topicId?` | GET | 获取活动记录 |
+| `/api/system/capabilities` | GET | 系统能力总览 (channels, plugins, skills, models) |
 
 ### Telegram 集成
 
@@ -422,3 +425,92 @@ pm2 restart openclaw-cmd
 8. **剩余精灵提升** — 仅改了 8/32 个精灵（电脑、桌子、书架、椅子、植物、自动贩卖机、服务器），其余可继续优化
 
 9. **Telegram health 事件不一致** — Gateway health 广播 `running: false`，但 `openclaw channels status --probe` 显示 running。需调查 health 事件报告逻辑
+
+---
+
+## 已完成 (2026-03-09)
+
+### ✅ 集成面板改造 → 系统能力面板 (Capabilities Dashboard)
+
+**目标**: 用真实系统数据替换空表单集成面板，合并 SkillsTab
+
+**后端新增**:
+- `server/routes/capabilities.js` — `GET /api/system/capabilities`
+  - 读取 `openclaw.json` 提取 channels, plugins, skills.entries, models
+  - 扫描 `workspace/skills/` 目录获取技能列表 + SKILL.md frontmatter
+  - 所有 API key/token 脱敏，只返回 `hasApiKey: boolean`
+  - 返回 4 个分类: channels, plugins, skills, models
+
+**前端重写**:
+- `IntegrationsTab.tsx` — 全新 Capabilities Dashboard
+  - 4 个可折叠 section: 通道、插件、技能、模型
+  - 每张卡片显示真实状态 (RUNNING/STOPPED/ENABLED/DISABLED/API KEY)
+  - 技能搜索 (从 SkillsTab 继承) + 点击查看 SKILL.md 详情弹窗
+  - 纯只读 + "在对话中配置" CTA 按钮
+- `IntegrationsTab.css` — 全新 `.cap-` 前缀样式
+- `App.tsx` — 移除 SkillsTab，简化 IntegrationsTab props
+
+**删除文件**:
+- `server/routes/integrations.js` — 旧的按部门配置集成路由
+- `src/components/SkillsTab.tsx` + `SkillsTab.css` — 合并到 IntegrationsTab
+- `departments/integrations/*.json` — 旧的部门集成配置文件
+
+**i18n**: 替换 `integrations.*` 键为 `cap.*` 键，tab 标签 '集成' → '能力'
+
+### ✅ 5大功能升级: 集成配置 + Gmail + Google Drive + 语音输入 + 对话导出
+
+**新增后端路由文件 (4个)**:
+
+| 文件 | 功能 |
+|------|------|
+| `server/routes/integrations-config.js` | 集成配置 CRUD — Gmail/Drive/Voice 凭证管理 |
+| `server/routes/email.js` | Gmail SMTP 发送 (Nodemailer + App Password) |
+| `server/routes/drive.js` | Google Drive 备份 (googleapis + Service Account) |
+| `server/routes/voice.js` | 语音转文字 (OpenAI Whisper API + multer) |
+
+**新增 API 端点**:
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/integrations/config` | GET | 获取所有集成配置 (敏感字段脱敏) |
+| `/api/integrations/config/:service` | PUT | 更新服务配置 (gmail/drive/voice) |
+| `/api/integrations/config/:service/test` | POST | 测试服务连接 |
+| `/api/integrations/config/:service` | DELETE | 重置服务为默认配置 |
+| `/api/email/status` | GET | Gmail 配置状态 |
+| `/api/email/test` | POST | 测试 Gmail 连接 |
+| `/api/email/send` | POST | 发送邮件 (to, subject, body, html?, attachments?) |
+| `/api/drive/status` | GET | Drive 配置状态 |
+| `/api/drive/upload` | POST | 上传文件到 Drive 备份文件夹 |
+| `/api/drive/backup` | POST | 备份部门记忆+日志到 Drive |
+| `/api/drive/files` | GET | 列出 Drive 备份文件 |
+| `/api/voice/transcribe` | POST | 语音转文字 (multipart audio) |
+| `/api/departments/:id/export` | POST | 导出对话 (md/html 格式下载) |
+
+**配置存储**: `integrations.json` (项目根目录)
+```json
+{
+  "gmail": { "enabled": false, "email": "", "appPassword": "" },
+  "drive": { "enabled": false, "serviceAccountKey": null, "folderId": null },
+  "voice": { "enabled": true, "source": "openclaw", "apiKeyOverride": null }
+}
+```
+
+**前端改动**:
+
+| 文件 | 改动 |
+|------|------|
+| `IntegrationsTab.tsx` | +Services 配置区 (3张卡片: Gmail/Drive/Voice) + 配置弹窗 |
+| `IntegrationsTab.css` | +config-form, config-modal, service-card, test-result 样式 |
+| `ChatPanel.tsx` | +麦克风按钮 (MediaRecorder → Whisper), +邮件表单, +导出下拉菜单 |
+| `ChatPanel.css` | +mic-btn 录音脉冲动画, +email-form, +export-menu 样式 |
+| `MemoryTab.tsx` | +"保存到 Drive" 按钮 |
+| `i18n/en.ts` + `zh.ts` | +~50 个 i18n 键 (integ.*, email.*, drive.*, voice.*, export.*) |
+
+**npm 依赖**: +`nodemailer`, +`googleapis`
+
+**技术方案**:
+- Gmail: Nodemailer + Gmail App Password (16位应用专用密码)，非 OAuth2
+- Google Drive: Service Account JSON Key，自动创建 "CommandCenter-Backups" 文件夹
+- 语音: 浏览器 MediaRecorder API 录音 → 服务端 Whisper API 转文字 → 填入输入框
+- 导出: 服务端生成 Markdown/HTML，Content-Disposition 附件下载
+- Voice API Key 优先级: integrations.json override > openclaw.json `skills.entries['openai-whisper-api'].apiKey`

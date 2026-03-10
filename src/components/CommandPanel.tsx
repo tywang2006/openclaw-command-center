@@ -46,7 +46,7 @@ export default function CommandPanel({ selectedDeptId, departments, addActivity 
     setSending(true)
     setStatus(null)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/message`, {
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.trim() })
@@ -86,7 +86,7 @@ export default function CommandPanel({ selectedDeptId, departments, addActivity 
     setSending(true)
     setStatus(null)
     try {
-      const res = await authedFetch(`/cmd/api/departments/${selectedDeptId}/photo`, {
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/photo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photo: preview, caption: text.trim() || '' })

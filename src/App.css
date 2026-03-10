@@ -8,6 +8,7 @@
   flex-direction: column;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-primary);
   position: relative;
 }
@@ -254,6 +255,8 @@
   transition: none;
   white-space: nowrap;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .right-tab:hover {
@@ -352,4 +355,93 @@
 
 .notify-option input:disabled + span {
   opacity: 0.4;
+}
+
+/* ============================================
+   Mobile Layout (< 768px)
+   ============================================ */
+
+/* Mobile app container - strict flex column, no overflow */
+.app.mobile {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+.app.mobile::after {
+  display: none;
+}
+
+/* ---- Mobile Top Bar ---- */
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 4px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--border-color);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.mobile-hamburger {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-hamburger:active {
+  opacity: 0.6;
+}
+
+.mobile-topbar-title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--accent-color);
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.mobile-topbar-status {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Mobile main content area - fills between header and bottom nav.
+   NO padding-bottom; the nav is in the flex flow, not fixed. */
+.mobile-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
 }

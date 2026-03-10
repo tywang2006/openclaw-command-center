@@ -173,6 +173,10 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--accent-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .broadcast-response-text {
@@ -301,4 +305,96 @@
 
 .markdown-content tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.02);
+}
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .broadcast-bar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .broadcast-input {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .broadcast-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+
+  .broadcast-btn:active:not(:disabled) {
+    opacity: 0.7;
+  }
+
+  .broadcast-responses {
+    padding: 10px;
+  }
+
+  .broadcast-response {
+    padding: 12px;
+  }
+
+  .broadcast-dept-name {
+    font-size: 14px;
+  }
+
+  .broadcast-response-text {
+    font-size: 14px;
+  }
+
+  .bulletin-content {
+    padding: 10px;
+  }
+
+  .markdown-content h1 {
+    font-size: 18px;
+  }
+
+  .markdown-content h2 {
+    font-size: 15px;
+  }
+
+  .markdown-content p,
+  .markdown-content ul,
+  .markdown-content ol {
+    font-size: 14px;
+  }
+
+  .markdown-content pre {
+    font-size: 13px;
+    padding: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .markdown-content code {
+    word-break: break-all;
+    font-size: 13px;
+  }
+
+  .markdown-content table {
+    font-size: 12px;
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent any content from overflowing bulletin */
+  .bulletin-content {
+    overflow-x: hidden;
+  }
+
+  .broadcast-response-text {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .broadcast-response {
+    overflow: hidden;
+  }
 }

@@ -70,6 +70,8 @@
   font-size: 13px;
   line-height: 1.5;
   word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Empty state hint */
@@ -166,6 +168,10 @@
   flex: 1;
   color: var(--text-primary);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .replay-meta {
@@ -191,4 +197,71 @@
 .replay-actions button:hover {
   border-color: var(--accent-color);
   color: var(--accent-color);
+}
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .activity-tab {
+    padding: 10px;
+  }
+
+  .activity-item {
+    padding: 12px;
+  }
+
+  .activity-text {
+    font-size: 14px;
+  }
+
+  .activity-time {
+    font-size: 12px;
+  }
+
+  .replay-toolbar {
+    padding: 8px 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .replay-btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .replay-btn:active {
+    opacity: 0.7;
+  }
+
+  .replay-item {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    overflow: hidden;
+  }
+
+  .replay-name {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .replay-actions button {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  /* Prevent activity text from overflowing */
+  .activity-text {
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+  }
+
+  .activity-item {
+    overflow: hidden;
+  }
 }

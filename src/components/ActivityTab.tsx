@@ -38,7 +38,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
 
     const pollStatus = async () => {
       try {
-        const res = await authedFetch('/cmd/api/replay/status')
+        const res = await authedFetch('/api/replay/status')
         if (res.ok) {
           const data = await res.json()
           setRecordingStatus(data)
@@ -56,7 +56,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
   // Replay API functions
   const startRecording = async () => {
     try {
-      const res = await authedFetch('/cmd/api/replay/start', { method: 'POST' })
+      const res = await authedFetch('/api/replay/start', { method: 'POST' })
       if (res.ok) {
         setIsRecording(true)
       }
@@ -67,7 +67,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
 
   const stopRecording = async () => {
     try {
-      const res = await authedFetch('/cmd/api/replay/stop', { method: 'POST' })
+      const res = await authedFetch('/api/replay/stop', { method: 'POST' })
       if (res.ok) {
         setIsRecording(false)
         loadReplays()
@@ -79,7 +79,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
 
   const loadReplays = async () => {
     try {
-      const res = await authedFetch('/cmd/api/replay/list')
+      const res = await authedFetch('/api/replay/list')
       if (res.ok) {
         const data = await res.json()
         setReplays(data)
@@ -91,7 +91,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
 
   const deleteReplay = async (id: string) => {
     try {
-      const res = await authedFetch(`/cmd/api/replay/${id}`, { method: 'DELETE' })
+      const res = await authedFetch(`/api/replay/${id}`, { method: 'DELETE' })
       if (res.ok) {
         loadReplays()
       }
@@ -112,7 +112,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
     if (!addActivity) return
 
     try {
-      const res = await authedFetch(`/cmd/api/replay/${id}`)
+      const res = await authedFetch(`/api/replay/${id}`)
       if (!res.ok) return
 
       const data = await res.json()
