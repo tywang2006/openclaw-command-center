@@ -2,6 +2,7 @@
 #
 # OpenClaw Command Center — macOS .app launcher
 # Lives at: OpenClaw Command Center.app/Contents/MacOS/launcher
+# Compatible with macOS default bash 3.2.
 #
 
 CONTENTS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,7 +14,7 @@ CMD_DIR="${OPENCLAW_HOME}/workspace/command-center"
 SETUP_MARKER="${CMD_DIR}/.setup-done"
 
 # First run — open Terminal for interactive setup
-if [[ ! -f "$SETUP_MARKER" ]]; then
+if [ ! -f "$SETUP_MARKER" ]; then
   osascript -e "
     tell application \"Terminal\"
       activate
@@ -28,7 +29,9 @@ export OPENCLAW_HOME
 export CMD_PORT="${CMD_PORT:-5100}"
 
 # Source .env if present
-[[ -f "${CMD_DIR}/.env" ]] && set -a && source "${CMD_DIR}/.env" && set +a
+if [ -f "${CMD_DIR}/.env" ]; then
+  set -a; . "${CMD_DIR}/.env"; set +a
+fi
 
 # Kill any existing instance on our port
 lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
@@ -39,11 +42,13 @@ cd "$CMD_DIR"
 SERVER_PID=$!
 
 # Wait for server to be ready (max 15 seconds)
-for i in {1..30}; do
-  if curl -s --max-time 1 "http://127.0.0.1:${CMD_PORT}/health" | grep -q '"status":"ok"' 2>/dev/null; then
+i=0
+while [ $i -lt 30 ]; do
+  if curl -s --max-time 1 "http://127.0.0.1:${CMD_PORT}/health" 2>/dev/null | grep -q '"status":"ok"'; then
     break
   fi
   sleep 0.5
+  i=$((i + 1))
 done
 
 # Open browser
