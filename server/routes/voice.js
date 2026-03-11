@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
+import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
 
@@ -56,10 +57,15 @@ const upload = multer({
  * 2. openclaw.json skills.entries['openai-whisper-api'].apiKey
  */
 function getApiKey() {
-  // Try integrations.json override
+  // Try integrations.json override (with decryption)
   const integrationsConfig = readJsonFile(CONFIG_PATH);
-  if (integrationsConfig?.voice?.apiKeyOverride) {
-    return integrationsConfig.voice.apiKeyOverride;
+  if (integrationsConfig) {
+    const key = getEncryptionKey();
+    migratePlaintextFields(integrationsConfig, key);
+    decryptSensitiveFields(integrationsConfig, key);
+    if (integrationsConfig.voice?.apiKeyOverride) {
+      return integrationsConfig.voice.apiKeyOverride;
+    }
   }
 
   // Try openclaw.json

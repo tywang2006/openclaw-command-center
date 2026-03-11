@@ -20,8 +20,11 @@ export function isRecording() {
   return recording !== null;
 }
 
+const MAX_REPLAY_EVENTS = 10000;
+
 export function addReplayEvent(event) {
   if (!recording) return;
+  if (recording.events.length >= MAX_REPLAY_EVENTS) return;
   recording.events.push({
     ...event,
     replayTs: Date.now(),

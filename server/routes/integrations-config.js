@@ -517,7 +517,7 @@ async function runAutoBackup() {
     const deptConfigPath = path.join(BASE_PATH, 'departments', 'config.json');
     const deptConfig = readJsonFile(deptConfigPath);
     const departments = deptConfig?.departments || {};
-    const deptIds = Object.values(departments).map(d => d.id);
+    const deptIds = Object.keys(departments);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const files = [];
 

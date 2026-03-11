@@ -748,18 +748,23 @@ router.post('/departments/:id/subagents', (req, res) => {
  * Body: { message: "your message" }
  */
 router.post('/departments/:id/subagents/:subId/chat', async (req, res) => {
-  if (!validateDeptId(req.params.id) || !validateSubId(req.params.subId)) {
-    return res.status(400).json({ error: 'Invalid department or sub-agent ID' });
+  try {
+    if (!validateDeptId(req.params.id) || !validateSubId(req.params.subId)) {
+      return res.status(400).json({ error: 'Invalid department or sub-agent ID' });
+    }
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
+    }
+    const result = await chatSubAgent(req.params.id, req.params.subId, message.trim());
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Sub-agent chat error:', error);
+    res.status(500).json({ error: 'Sub-agent chat failed' });
   }
-  const { message } = req.body;
-  if (!message || !message.trim()) {
-    return res.status(400).json({ error: 'Message is required' });
-  }
-  if (message.length > MAX_MESSAGE_LENGTH) {
-    return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
-  }
-  const result = await chatSubAgent(req.params.id, req.params.subId, message.trim());
-  res.json(result);
 });
 
 /**

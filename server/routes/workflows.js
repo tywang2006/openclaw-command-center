@@ -157,49 +157,54 @@ router.delete('/:id', (req, res) => {
  * Execute a workflow: run each step sequentially via chat()
  */
 router.post('/:id/run', async (req, res) => {
-  const data = readWorkflows();
-  const wf = data.workflows.find(w => w.id === req.params.id);
-  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+  try {
+    const data = readWorkflows();
+    const wf = data.workflows.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
-  console.log(`[Workflows] Running "${wf.name}" (${wf.steps.length} steps)`);
-  const results = [];
+    console.log(`[Workflows] Running "${wf.name}" (${wf.steps.length} steps)`);
+    const results = [];
 
-  for (let i = 0; i < wf.steps.length; i++) {
-    const step = wf.steps[i];
+    for (let i = 0; i < wf.steps.length; i++) {
+      const step = wf.steps[i];
 
-    // Delay between steps (except first)
-    if (i > 0 && step.delayMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, Math.min(step.delayMs, 60000)));
+      // Delay between steps (except first)
+      if (i > 0 && step.delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(step.delayMs, 60000)));
+      }
+
+      const startMs = Date.now();
+      const result = await chat(step.deptId, step.message);
+      const durationMs = Date.now() - startMs;
+
+      results.push({
+        step: i + 1,
+        deptId: step.deptId,
+        message: step.message,
+        success: result.success,
+        reply: result.reply || result.error || '',
+        durationMs,
+      });
+
+      console.log(`[Workflows] Step ${i + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
     }
 
-    const startMs = Date.now();
-    const result = await chat(step.deptId, step.message);
-    const durationMs = Date.now() - startMs;
+    // Update last run info
+    wf.lastRunAtMs = Date.now();
+    wf.lastRunStatus = results.every(r => r.success) ? 'ok' : 'partial';
+    writeWorkflows(data);
 
-    results.push({
-      step: i + 1,
-      deptId: step.deptId,
-      message: step.message,
-      success: result.success,
-      reply: result.reply || result.error || '',
-      durationMs,
+    res.json({
+      success: true,
+      workflow: { id: wf.id, name: wf.name },
+      results,
+      totalSteps: wf.steps.length,
+      successCount: results.filter(r => r.success).length,
     });
-
-    console.log(`[Workflows] Step ${i + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
+  } catch (error) {
+    console.error('[Workflows] POST /:id/run error:', error);
+    res.status(500).json({ error: 'Workflow execution failed' });
   }
-
-  // Update last run info
-  wf.lastRunAtMs = Date.now();
-  wf.lastRunStatus = results.every(r => r.success) ? 'ok' : 'partial';
-  writeWorkflows(data);
-
-  res.json({
-    success: true,
-    workflow: { id: wf.id, name: wf.name },
-    results,
-    totalSteps: wf.steps.length,
-    successCount: results.filter(r => r.success).length,
-  });
 });
 
 export default router;

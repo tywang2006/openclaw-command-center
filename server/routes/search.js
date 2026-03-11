@@ -31,7 +31,7 @@ router.get('/search', (req, res) => {
     if (fs.existsSync(configPath)) {
       try {
         const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        deptIds = Object.values(cfg.departments || {}).map(d => d.id);
+        deptIds = Object.keys(cfg.departments || {});
       } catch { /* fallback */ }
     }
     if (deptIds.length === 0) {

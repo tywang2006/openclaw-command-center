@@ -93,6 +93,17 @@ class GatewayClient {
 
     // Track connection time for uptime
     this._connectedAt = null;
+
+    // Periodic cleanup of stale stream buffers (every 60s)
+    this._bufferCleanupTimer = setInterval(() => {
+      if (this._streamBuffers.size === 0) return;
+      const staleThreshold = Date.now() - 300000;
+      for (const [id, buf] of this._streamBuffers) {
+        if (buf.startedAt < staleThreshold) {
+          this._streamBuffers.delete(id);
+        }
+      }
+    }, 60000);
   }
 
   connect() {
@@ -155,6 +166,12 @@ class GatewayClient {
       this.reconnectTimer = null;
     }
     this._stopHeartbeat();
+
+    if (this._bufferCleanupTimer) {
+      clearInterval(this._bufferCleanupTimer);
+      this._bufferCleanupTimer = null;
+    }
+    this._streamBuffers.clear();
 
     for (const [, req] of this.pendingRequests) {
       clearTimeout(req.timer);

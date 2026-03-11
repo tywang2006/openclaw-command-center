@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { google } from 'googleapis';
 import { BASE_PATH, readJsonFile } from '../utils.js';
+import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
 
@@ -23,10 +24,14 @@ function writeJsonFile(filePath, data) {
 }
 
 /**
- * Helper: Get Drive configuration
+ * Helper: Get Drive configuration (with decryption)
  */
 function getDriveConfig() {
   const config = readJsonFile(CONFIG_PATH);
+  if (!config) return { enabled: false, serviceAccountKey: null, folderId: null };
+  const key = getEncryptionKey();
+  migratePlaintextFields(config, key);
+  decryptSensitiveFields(config, key);
   return config?.drive || { enabled: false, serviceAccountKey: null, folderId: null };
 }
 
@@ -201,14 +206,13 @@ router.post('/drive/backup', async (req, res) => {
       let deptIds = [];
       if (deptId) {
         // Validate department exists
-        const found = Object.values(departments).find(d => d.id === deptId);
-        if (!found) {
+        if (!departments[deptId]) {
           return res.status(404).json({ error: `Department ${deptId} not found` });
         }
         deptIds = [deptId];
       } else {
         // Backup all departments
-        deptIds = Object.values(departments).map(d => d.id);
+        deptIds = Object.keys(departments);
       }
 
       const files = [];

@@ -2,16 +2,21 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import { BASE_PATH, readJsonFile } from '../utils.js';
+import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 
 /**
- * Helper: Get Gmail configuration
+ * Helper: Get Gmail configuration (with decryption)
  */
 function getGmailConfig() {
   const config = readJsonFile(CONFIG_PATH);
+  if (!config) return { enabled: false, email: '', appPassword: '' };
+  const key = getEncryptionKey();
+  migratePlaintextFields(config, key);
+  decryptSensitiveFields(config, key);
   return config?.gmail || { enabled: false, email: '', appPassword: '' };
 }
 

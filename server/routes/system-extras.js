@@ -1,12 +1,15 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
 
 const router = express.Router();
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Valid department ID pattern (must match api.js)
+const VALID_DEPT_ID = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /**
  * Helper: Mask sensitive tokens (first 8 chars + "...")
@@ -33,7 +36,7 @@ router.post('/system/observer', async (req, res) => {
     if (fs.existsSync(observerPath)) {
       try {
         console.log(`[SystemExtras] Running observer: ${observerPath}`);
-        const { stdout, stderr } = await execAsync(`bash ${observerPath}`, {
+        const { stdout, stderr } = await execFileAsync('bash', [observerPath], {
           timeout: 30000,
           cwd: path.dirname(observerPath),
         });
@@ -64,7 +67,7 @@ router.post('/system/observer', async (req, res) => {
     if (fs.existsSync(reflectorPath)) {
       try {
         console.log(`[SystemExtras] Running reflector: ${reflectorPath}`);
-        const { stdout, stderr } = await execAsync(`bash ${reflectorPath}`, {
+        const { stdout, stderr } = await execFileAsync('bash', [reflectorPath], {
           timeout: 30000,
           cwd: path.dirname(reflectorPath),
         });
@@ -228,6 +231,9 @@ router.get('/system/devices', (req, res) => {
 router.get('/departments/:id/persona', (req, res) => {
   try {
     const { id } = req.params;
+    if (!VALID_DEPT_ID.test(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
     console.log(`[SystemExtras] GET /departments/${id}/persona`);
 
     // Try primary path first
@@ -260,6 +266,9 @@ router.get('/departments/:id/persona', (req, res) => {
 router.put('/departments/:id/persona', (req, res) => {
   try {
     const { id } = req.params;
+    if (!VALID_DEPT_ID.test(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
     const { content } = req.body;
 
     if (typeof content !== 'string') {
@@ -288,7 +297,7 @@ router.put('/departments/:id/persona', (req, res) => {
     fs.writeFileSync(personaPath, content, 'utf8');
     console.log(`[SystemExtras] Wrote persona to ${personaPath}`);
 
-    res.json({ success: true, path: personaPath });
+    res.json({ success: true });
   } catch (error) {
     console.error('[SystemExtras] PUT /departments/:id/persona error:', error);
     res.status(500).json({ error: error.message });
@@ -301,6 +310,11 @@ router.put('/departments/:id/persona', (req, res) => {
  * Sends a response first, then exits after a short delay.
  */
 router.post('/system/shutdown', (req, res) => {
+  const { confirm } = req.body || {};
+  if (confirm !== 'SHUTDOWN') {
+    return res.status(400).json({ error: 'Must send { "confirm": "SHUTDOWN" } to confirm' });
+  }
+
   console.log('[SystemExtras] POST /system/shutdown — shutting down server');
   res.json({ success: true, message: 'Server shutting down' });
 
