@@ -33,7 +33,11 @@ if echo "$SYS_LANG" | grep -qi "zh"; then
   BTN_LAUNCH="启动"
   BTN_REINSTALL="重装"
   BTN_UNINSTALL="卸载"
-  CONFIRM_REINSTALL="重装将重新运行安装向导，当前配置会被覆盖。确定继续？"
+  REINSTALL_MSG="请选择重装模式："
+  BTN_REINSTALL_APP="仅重装 App"
+  BTN_REINSTALL_ALL="完全重装（含 OpenClaw）"
+  CONFIRM_REINSTALL_APP="将重新运行安装向导，当前指挥中心配置会被覆盖。OpenClaw 配置保留。确定继续？"
+  CONFIRM_REINSTALL_ALL="将删除整个 ~/.openclaw 目录并重新安装所有组件（OpenClaw + 指挥中心）。所有数据、配置、会话都将丢失！确定继续？"
   CONFIRM_UNINSTALL="确定卸载？这将删除 ~/.openclaw/workspace/command-center 下的所有数据。"
   UNINSTALL_DONE="已卸载。你可以将应用从"应用程序"文件夹中删除。"
 else
@@ -42,7 +46,11 @@ else
   BTN_LAUNCH="Launch"
   BTN_REINSTALL="Reinstall"
   BTN_UNINSTALL="Uninstall"
-  CONFIRM_REINSTALL="Reinstall will re-run the setup wizard and overwrite current config. Continue?"
+  REINSTALL_MSG="Choose reinstall mode:"
+  BTN_REINSTALL_APP="App Only"
+  BTN_REINSTALL_ALL="Full Reset (incl. OpenClaw)"
+  CONFIRM_REINSTALL_APP="This will re-run setup and overwrite Command Center config. OpenClaw config is preserved. Continue?"
+  CONFIRM_REINSTALL_ALL="This will DELETE the entire ~/.openclaw directory and reinstall everything (OpenClaw + Command Center). All data, config, and sessions will be lost! Continue?"
   CONFIRM_UNINSTALL="Are you sure? This will delete all data under ~/.openclaw/workspace/command-center."
   UNINSTALL_DONE="Uninstalled. You can now remove the app from Applications."
 fi
@@ -83,27 +91,71 @@ fi
 
 # ── Handle: Reinstall ──
 if [ "$CHOICE" = "$BTN_REINSTALL" ]; then
-  CONFIRM=$(osascript -e "
+  # Sub-choice: App Only vs Full Reset
+  REINSTALL_MODE=$(osascript -e "
     tell application \"System Events\"
-      set btn to button returned of (display dialog \"${CONFIRM_REINSTALL}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"OK\"} default button \"Cancel\" with icon caution)
+      set btn to button returned of (display dialog \"${REINSTALL_MSG}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"${BTN_REINSTALL_APP}\", \"${BTN_REINSTALL_ALL}\"} default button \"${BTN_REINSTALL_APP}\")
     end tell
     return btn
   " 2>/dev/null)
 
-  if [ "$CONFIRM" = "OK" ]; then
-    # Kill running server
-    CMD_PORT="${CMD_PORT:-5100}"
-    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
-    # Remove setup marker to trigger fresh setup
-    rm -f "$SETUP_MARKER"
-    # Run setup in Terminal
-    osascript -e "
-      tell application \"Terminal\"
-        activate
-        do script \"bash '${RESOURCES}/setup.sh' && exit\"
-      end tell
-    "
+  if [ -z "$REINSTALL_MODE" ]; then
+    exit 0
   fi
+
+  if [ "$REINSTALL_MODE" = "$BTN_REINSTALL_ALL" ]; then
+    # Full reset — confirm with strong warning
+    CONFIRM=$(osascript -e "
+      tell application \"System Events\"
+        set btn to button returned of (display dialog \"${CONFIRM_REINSTALL_ALL}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"OK\"} default button \"Cancel\" with icon caution)
+      end tell
+      return btn
+    " 2>/dev/null)
+
+    if [ "$CONFIRM" = "OK" ]; then
+      # Kill running server
+      CMD_PORT="${CMD_PORT:-5100}"
+      lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+      # Kill openclaw gateway if running
+      pkill -f "openclaw gateway" 2>/dev/null || true
+      # Delete entire ~/.openclaw
+      rm -rf "$OPENCLAW_HOME"
+      # Remove setup marker (parent dir already gone, but be safe)
+      rm -f "$SETUP_MARKER"
+      # Run setup in Terminal
+      osascript -e "
+        tell application \"Terminal\"
+          activate
+          do script \"bash '${RESOURCES}/setup.sh' && exit\"
+        end tell
+      "
+    fi
+
+  elif [ "$REINSTALL_MODE" = "$BTN_REINSTALL_APP" ]; then
+    # App only — confirm
+    CONFIRM=$(osascript -e "
+      tell application \"System Events\"
+        set btn to button returned of (display dialog \"${CONFIRM_REINSTALL_APP}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"OK\"} default button \"Cancel\" with icon caution)
+      end tell
+      return btn
+    " 2>/dev/null)
+
+    if [ "$CONFIRM" = "OK" ]; then
+      # Kill running server
+      CMD_PORT="${CMD_PORT:-5100}"
+      lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+      # Remove setup marker to trigger fresh setup
+      rm -f "$SETUP_MARKER"
+      # Run setup in Terminal
+      osascript -e "
+        tell application \"Terminal\"
+          activate
+          do script \"bash '${RESOURCES}/setup.sh' && exit\"
+        end tell
+      "
+    fi
+  fi
+
   exit 0
 fi
 
