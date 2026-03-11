@@ -471,6 +471,20 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 1000);
 });
 
+// Auto-generate layout if missing (first run or fresh install)
+try {
+  const layoutPath = path.join(__dirname, '..', 'dist', 'assets', 'default-layout.json');
+  if (!fs.existsSync(layoutPath)) {
+    const { generateAndSave } = await import('./layout-generator.js');
+    const result = generateAndSave();
+    if (result.departmentCount > 0) {
+      console.log(`[Startup] Generated layout: ${result.departmentCount} departments`);
+    }
+  }
+} catch (err) {
+  console.warn('[Startup] Layout generation skipped:', err.message);
+}
+
 // Start server
 server.listen(PORT, HOST, () => {
   console.log('='.repeat(60));

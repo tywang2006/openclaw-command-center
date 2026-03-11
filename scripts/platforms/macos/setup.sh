@@ -239,8 +239,41 @@ echo ""
 
 # Auto-pair command-center device so Gateway accepts our connection
 if $HAS_OPENCLAW || [ -d "${OPENCLAW_HOME}" ]; then
-  "${NODE}" "$APP_DIR/scripts/auto-pair.js" --openclaw-home "$OPENCLAW_HOME" 2>/dev/null && \
-    log "$(t device_paired)" || warn "$(t device_pair_fail)"
+  mkdir -p "${OPENCLAW_HOME}/devices"
+  "${NODE}" -e "
+    const fs = require('fs');
+    const path = require('path');
+    const crypto = require('crypto');
+    const home = process.argv[1];
+    const pairedPath = path.join(home, 'devices', 'paired.json');
+    let devices = {};
+    try { devices = JSON.parse(fs.readFileSync(pairedPath, 'utf8')); } catch {}
+    for (const e of Object.values(devices)) {
+      if (e.clientId === 'gateway-client' && e.clientMode === 'backend') {
+        console.log('[auto-pair] Already paired'); process.exit(0);
+      }
+    }
+    const id = crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
+    const now = Date.now();
+    devices[id] = {
+      deviceId: id,
+      publicKey: crypto.randomBytes(32).toString('base64url'),
+      displayName: 'Command Center',
+      platform: process.platform,
+      clientId: 'gateway-client',
+      clientMode: 'backend',
+      role: 'operator',
+      roles: ['operator'],
+      scopes: ['operator.admin'],
+      tokens: { operator: { token: crypto.randomBytes(16).toString('hex'), role: 'operator', scopes: ['operator.admin'], createdAtMs: now } },
+      createdAtMs: now,
+      approvedAtMs: now,
+    };
+    const tmp = pairedPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(devices, null, 2));
+    fs.renameSync(tmp, pairedPath);
+    console.log('[auto-pair] Paired device gateway-client/backend');
+  " "$OPENCLAW_HOME" && log "$(t device_paired)" || warn "$(t device_pair_fail)"
 
   # Create default departments config if missing
   DEPT_CONFIG="${OPENCLAW_HOME}/workspace/departments/config.json"

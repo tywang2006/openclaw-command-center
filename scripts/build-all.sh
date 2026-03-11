@@ -134,8 +134,9 @@ echo -e "${BOLD}[3/7] Staging application files...${NC}"
 # Copy server code
 cp -r "$PROJECT_DIR/server" "$STAGING_DIR/server"
 
-# Copy built frontend
+# Copy built frontend (exclude stale layout — generated at install time per user config)
 cp -r "$PROJECT_DIR/dist" "$STAGING_DIR/dist"
+rm -f "$STAGING_DIR/dist/assets/default-layout.json"
 
 # Copy scripts (gen-layout, migrate-config, etc.)
 mkdir -p "$STAGING_DIR/scripts"

@@ -117,9 +117,20 @@ if [ -f "${CMD_DIR}/.env" ]; then
 fi
 
 # Auto-pair device if needed (idempotent — skips if already paired)
-if [ -f "${CMD_DIR}/scripts/auto-pair.js" ]; then
-  "${NODE}" "${CMD_DIR}/scripts/auto-pair.js" --openclaw-home "$OPENCLAW_HOME" >/dev/null 2>&1 || true
-fi
+"${NODE}" -e "
+  const fs = require('fs');
+  const path = require('path');
+  const crypto = require('crypto');
+  const home = process.argv[1];
+  const pp = path.join(home, 'devices', 'paired.json');
+  let d = {}; try { d = JSON.parse(fs.readFileSync(pp, 'utf8')); } catch {}
+  for (const e of Object.values(d)) { if (e.clientId === 'gateway-client' && e.clientMode === 'backend') process.exit(0); }
+  fs.mkdirSync(path.join(home, 'devices'), { recursive: true });
+  const id = crypto.createHash('sha256').update(crypto.randomBytes(32)).digest('hex');
+  const now = Date.now();
+  d[id] = { deviceId: id, publicKey: crypto.randomBytes(32).toString('base64url'), displayName: 'Command Center', platform: process.platform, clientId: 'gateway-client', clientMode: 'backend', role: 'operator', roles: ['operator'], scopes: ['operator.admin'], tokens: { operator: { token: crypto.randomBytes(16).toString('hex'), role: 'operator', scopes: ['operator.admin'], createdAtMs: now } }, createdAtMs: now, approvedAtMs: now };
+  const tmp = pp + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(d, null, 2)); fs.renameSync(tmp, pp);
+" "$OPENCLAW_HOME" 2>/dev/null || true
 
 # Ensure ChaoClaw Gateway is running
 if command -v openclaw >/dev/null 2>&1; then
