@@ -271,6 +271,79 @@
   cursor: not-allowed;
 }
 
+/* ---- Config section ---- */
+.system-config-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.system-config-item:last-child {
+  border-bottom: none;
+}
+
+.system-config-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.system-config-preview {
+  margin-bottom: 4px;
+}
+
+.system-config-preview code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 4px;
+}
+
+.system-config-input-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.system-config-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.system-config-input:focus {
+  border-color: var(--accent-color);
+}
+
+.system-config-input::placeholder {
+  color: var(--text-muted);
+}
+
+.system-config-status {
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.system-config-status.ok {
+  color: var(--success);
+}
+
+.system-config-status.err {
+  color: var(--danger);
+}
+
+.system-config-status.saving {
+  color: var(--accent-color);
+}
+
 /* ---- Shutdown section ---- */
 .system-shutdown-section {
   margin-top: auto;

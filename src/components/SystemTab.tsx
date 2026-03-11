@@ -52,6 +52,27 @@ interface Device {
   tokenPreview?: string
 }
 
+interface ProviderConfig {
+  id: string
+  baseUrl: string
+  api: string
+  hasApiKey: boolean
+  apiKeyPreview: string | null
+  models: { id: string; name: string }[]
+}
+
+interface SkillConfig {
+  slug: string
+  hasApiKey: boolean
+  apiKeyPreview: string | null
+}
+
+interface TelegramConfig {
+  enabled: boolean
+  hasBotToken: boolean
+  botTokenPreview: string | null
+}
+
 export default function SystemTab() {
   const { t } = useLocale()
   const [gateway, setGateway] = useState<GatewayStats | null>(null)
@@ -69,15 +90,36 @@ export default function SystemTab() {
   const [shutdownConfirm, setShutdownConfirm] = useState(false)
   const [serverStopped, setServerStopped] = useState(false)
 
+  // OpenClaw config state
+  const [providers, setProviders] = useState<ProviderConfig[]>([])
+  const [skills, setSkills] = useState<SkillConfig[]>([])
+  const [telegram, setTelegram] = useState<TelegramConfig | null>(null)
+  const [editingKeys, setEditingKeys] = useState<Record<string, string>>({})
+  const [configStatus, setConfigStatus] = useState<Record<string, { type: 'ok' | 'err' | 'saving'; msg: string }>>({})
+
+  const showConfigStatus = (key: string, type: 'ok' | 'err' | 'saving', msg: string) => {
+    setConfigStatus(prev => ({ ...prev, [key]: { type, msg } }))
+    if (type !== 'saving') {
+      setTimeout(() => setConfigStatus(prev => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      }), 3000)
+    }
+  }
+
   const toggle = (section: string) => setCollapsed(prev => ({ ...prev, [section]: !prev[section] }))
 
   const fetchAll = useCallback(async () => {
     try {
-      const [capRes, gwRes, sessRes, devRes] = await Promise.all([
+      const [capRes, gwRes, sessRes, devRes, modelsRes, skillsRes, tgRes] = await Promise.all([
         authedFetch('/api/system/capabilities'),
         authedFetch('/api/health').catch(() => null),
         authedFetch('/api/system/sessions').catch(() => null),
         authedFetch('/api/system/devices').catch(() => null),
+        authedFetch('/api/system/config/models').catch(() => null),
+        authedFetch('/api/system/config/skills').catch(() => null),
+        authedFetch('/api/system/config/telegram').catch(() => null),
       ])
       const cap = await capRes.json()
       const health = gwRes?.ok ? await gwRes.json() : {}
@@ -95,6 +137,23 @@ export default function SystemTab() {
       if (devRes?.ok) {
         const devData = await devRes.json()
         setDevices(devData.devices || [])
+      }
+
+      // OpenClaw config data
+      if (modelsRes?.ok) {
+        const md = await modelsRes.json()
+        const provList: ProviderConfig[] = Object.entries(md.providers || {}).map(
+          ([id, p]: [string, any]) => ({ id, ...p })
+        )
+        setProviders(provList)
+      }
+      if (skillsRes?.ok) {
+        const sd = await skillsRes.json()
+        setSkills(sd.skills || [])
+      }
+      if (tgRes?.ok) {
+        const td = await tgRes.json()
+        setTelegram(td)
       }
     } catch (err) {
       console.error('Failed to fetch system data:', err)
@@ -161,6 +220,134 @@ export default function SystemTab() {
       // Expected — server dies before response completes
     }
     setServerStopped(true)
+  }
+
+  // ---- OpenClaw Config handlers ----
+
+  const handleSaveProviderKey = async (providerId: string) => {
+    const key = editingKeys[`provider:${providerId}`]
+    if (key === undefined) return
+    showConfigStatus(`provider:${providerId}`, 'saving', t('system.config.saving'))
+    try {
+      const res = await authedFetch('/api/system/config/models', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providers: { [providerId]: { apiKey: key } } }),
+      })
+      if (res.ok) {
+        showConfigStatus(`provider:${providerId}`, 'ok', t('system.config.saved'))
+        setEditingKeys(prev => { const n = { ...prev }; delete n[`provider:${providerId}`]; return n })
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showConfigStatus(`provider:${providerId}`, 'err', err.error || 'Error')
+      }
+    } catch {
+      showConfigStatus(`provider:${providerId}`, 'err', 'Network error')
+    }
+  }
+
+  const handleTestProvider = async (providerId: string) => {
+    showConfigStatus(`provider:${providerId}`, 'saving', t('system.config.testing'))
+    try {
+      const res = await authedFetch('/api/system/config/models/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: providerId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        showConfigStatus(`provider:${providerId}`, 'ok', data.message || t('system.config.test.ok'))
+      } else {
+        showConfigStatus(`provider:${providerId}`, 'err', data.error || t('system.config.test.fail'))
+      }
+    } catch {
+      showConfigStatus(`provider:${providerId}`, 'err', 'Network error')
+    }
+  }
+
+  const handleSaveSkillKey = async (slug: string) => {
+    const key = editingKeys[`skill:${slug}`]
+    if (key === undefined) return
+    showConfigStatus(`skill:${slug}`, 'saving', t('system.config.saving'))
+    try {
+      const res = await authedFetch(`/api/system/config/skills/${slug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: key || null }),
+      })
+      if (res.ok) {
+        showConfigStatus(`skill:${slug}`, 'ok', t('system.config.saved'))
+        setEditingKeys(prev => { const n = { ...prev }; delete n[`skill:${slug}`]; return n })
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showConfigStatus(`skill:${slug}`, 'err', err.error || 'Error')
+      }
+    } catch {
+      showConfigStatus(`skill:${slug}`, 'err', 'Network error')
+    }
+  }
+
+  const handleTestSkill = async (slug: string) => {
+    showConfigStatus(`skill:${slug}`, 'saving', t('system.config.testing'))
+    try {
+      const res = await authedFetch(`/api/system/config/skills/${slug}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        showConfigStatus(`skill:${slug}`, 'ok', data.message || t('system.config.test.ok'))
+      } else {
+        showConfigStatus(`skill:${slug}`, 'err', data.error || t('system.config.test.fail'))
+      }
+    } catch {
+      showConfigStatus(`skill:${slug}`, 'err', 'Network error')
+    }
+  }
+
+  const handleSaveTelegramToken = async () => {
+    const key = editingKeys['telegram:token']
+    if (key === undefined) return
+    showConfigStatus('telegram:token', 'saving', t('system.config.saving'))
+    try {
+      const res = await authedFetch('/api/system/config/telegram', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: key }),
+      })
+      if (res.ok) {
+        showConfigStatus('telegram:token', 'ok', t('system.config.saved'))
+        setEditingKeys(prev => { const n = { ...prev }; delete n['telegram:token']; return n })
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showConfigStatus('telegram:token', 'err', err.error || 'Error')
+      }
+    } catch {
+      showConfigStatus('telegram:token', 'err', 'Network error')
+    }
+  }
+
+  const handleTestTelegram = async () => {
+    showConfigStatus('telegram:token', 'saving', t('system.config.testing'))
+    try {
+      const res = await authedFetch('/api/system/config/telegram/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        showConfigStatus('telegram:token', 'ok', data.message || t('system.config.test.ok'))
+      } else {
+        showConfigStatus('telegram:token', 'err', data.error || t('system.config.test.fail'))
+      }
+    } catch {
+      showConfigStatus('telegram:token', 'err', 'Network error')
+    }
   }
 
   const formatUptime = (ms: number) => {
@@ -355,6 +542,169 @@ export default function SystemTab() {
                   <span className={`system-badge ok`}>P{d.protocol}</span>
                 </div>
               ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* OpenClaw Config */}
+      <div className="system-section">
+        <button className="system-section-header" onClick={() => toggle('config')}>
+          <span className="system-section-title">{t('system.config.title')}</span>
+          <span className="system-chevron">{collapsed.config ? '▸' : '▾'}</span>
+        </button>
+        {!collapsed.config && (
+          <div className="system-section-body">
+            {/* Providers */}
+            <div className="system-subsection">
+              <div className="system-sublabel">{t('system.config.providers')}</div>
+              {providers.map(prov => {
+                const statusKey = `provider:${prov.id}`
+                const status = configStatus[statusKey]
+                const isEditing = statusKey in editingKeys
+                return (
+                  <div key={prov.id} className="system-config-item">
+                    <div className="system-config-item-header">
+                      <span className="system-plugin-name">{prov.id}</span>
+                      <span className={`system-badge ${prov.hasApiKey ? 'ok' : 'warn'}`}>
+                        {prov.hasApiKey ? t('system.config.configured') : t('system.config.nokey')}
+                      </span>
+                    </div>
+                    {prov.hasApiKey && !isEditing && (
+                      <div className="system-config-preview">
+                        <code>{prov.apiKeyPreview}</code>
+                      </div>
+                    )}
+                    <div className="system-config-input-row">
+                      <input
+                        type="password"
+                        className="system-config-input"
+                        placeholder={t('system.config.apikey.placeholder')}
+                        value={editingKeys[statusKey] ?? ''}
+                        onChange={e => setEditingKeys(prev => ({ ...prev, [statusKey]: e.target.value }))}
+                      />
+                      <button
+                        className="system-action-btn"
+                        onClick={() => handleSaveProviderKey(prov.id)}
+                        disabled={!editingKeys[statusKey] || status?.type === 'saving'}
+                      >
+                        {t('system.config.save')}
+                      </button>
+                      <button
+                        className="system-action-btn"
+                        onClick={() => handleTestProvider(prov.id)}
+                        disabled={status?.type === 'saving'}
+                      >
+                        {t('system.config.test')}
+                      </button>
+                    </div>
+                    {status && (
+                      <div className={`system-config-status ${status.type}`}>{status.msg}</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Skills */}
+            {skills.length > 0 && (
+              <div className="system-subsection">
+                <div className="system-sublabel">{t('system.config.skills')}</div>
+                {skills.map(skill => {
+                  const statusKey = `skill:${skill.slug}`
+                  const status = configStatus[statusKey]
+                  const isEditing = statusKey in editingKeys
+                  return (
+                    <div key={skill.slug} className="system-config-item">
+                      <div className="system-config-item-header">
+                        <span className="system-plugin-name">{skill.slug}</span>
+                        <span className={`system-badge ${skill.hasApiKey ? 'ok' : 'warn'}`}>
+                          {skill.hasApiKey ? t('system.config.configured') : t('system.config.nokey')}
+                        </span>
+                      </div>
+                      {skill.hasApiKey && !isEditing && (
+                        <div className="system-config-preview">
+                          <code>{skill.apiKeyPreview}</code>
+                        </div>
+                      )}
+                      <div className="system-config-input-row">
+                        <input
+                          type="password"
+                          className="system-config-input"
+                          placeholder={t('system.config.apikey.placeholder')}
+                          value={editingKeys[statusKey] ?? ''}
+                          onChange={e => setEditingKeys(prev => ({ ...prev, [statusKey]: e.target.value }))}
+                        />
+                        <button
+                          className="system-action-btn"
+                          onClick={() => handleSaveSkillKey(skill.slug)}
+                          disabled={!editingKeys[statusKey] || status?.type === 'saving'}
+                        >
+                          {t('system.config.save')}
+                        </button>
+                        <button
+                          className="system-action-btn"
+                          onClick={() => handleTestSkill(skill.slug)}
+                          disabled={status?.type === 'saving'}
+                        >
+                          {t('system.config.test')}
+                        </button>
+                      </div>
+                      {status && (
+                        <div className={`system-config-status ${status.type}`}>{status.msg}</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Telegram */}
+            {telegram && (
+              <div className="system-subsection">
+                <div className="system-sublabel">{t('system.config.telegram')}</div>
+                <div className="system-config-item">
+                  <div className="system-config-item-header">
+                    <span className="system-plugin-name">{t('system.config.bottoken')}</span>
+                    <span className={`system-badge ${telegram.hasBotToken ? 'ok' : 'warn'}`}>
+                      {telegram.hasBotToken ? t('system.config.configured') : t('system.config.nokey')}
+                    </span>
+                  </div>
+                  {telegram.hasBotToken && !('telegram:token' in editingKeys) && (
+                    <div className="system-config-preview">
+                      <code>{telegram.botTokenPreview}</code>
+                    </div>
+                  )}
+                  <div className="system-config-input-row">
+                    <input
+                      type="password"
+                      className="system-config-input"
+                      placeholder={t('system.config.bottoken.placeholder')}
+                      value={editingKeys['telegram:token'] ?? ''}
+                      onChange={e => setEditingKeys(prev => ({ ...prev, 'telegram:token': e.target.value }))}
+                    />
+                    <button
+                      className="system-action-btn"
+                      onClick={handleSaveTelegramToken}
+                      disabled={!editingKeys['telegram:token'] || configStatus['telegram:token']?.type === 'saving'}
+                    >
+                      {t('system.config.save')}
+                    </button>
+                    <button
+                      className="system-action-btn"
+                      onClick={handleTestTelegram}
+                      disabled={configStatus['telegram:token']?.type === 'saving'}
+                    >
+                      {t('system.config.test')}
+                    </button>
+                  </div>
+                  {configStatus['telegram:token'] && (
+                    <div className={`system-config-status ${configStatus['telegram:token'].type}`}>
+                      {configStatus['telegram:token'].msg}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}
