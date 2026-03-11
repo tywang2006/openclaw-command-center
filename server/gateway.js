@@ -168,6 +168,10 @@ class GatewayClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this._backgroundRetryTimer) {
+      clearInterval(this._backgroundRetryTimer);
+      this._backgroundRetryTimer = null;
+    }
     this._stopHeartbeat();
 
     if (this._bufferCleanupTimer) {
@@ -488,6 +492,12 @@ class GatewayClient {
     this._eventListeners.push(callback);
   }
 
+  /** Remove a previously registered event listener */
+  offEvent(callback) {
+    const idx = this._eventListeners.indexOf(callback);
+    if (idx >= 0) this._eventListeners.splice(idx, 1);
+  }
+
   _handleClose(code, reason) {
     const reasonStr = reason ? reason.toString() : '';
     console.log(`[Gateway] Connection closed: code=${code} reason=${reasonStr}`);
@@ -528,7 +538,8 @@ class GatewayClient {
     this.reconnectAttempt++;
 
     if (this.reconnectAttempt > RECONNECT_MAX_ATTEMPTS) {
-      console.warn(`[Gateway] Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Giving up. Gateway features disabled.`);
+      console.warn(`[Gateway] Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Will retry every 5 minutes in background.`);
+      this._scheduleBackgroundRetry();
       return;
     }
 
@@ -548,6 +559,23 @@ class GatewayClient {
         console.error('[Gateway] Reconnect failed:', err.message);
       });
     }, delay);
+  }
+
+  /** Background retry every 5 minutes after max reconnect attempts exhausted */
+  _scheduleBackgroundRetry() {
+    if (this.shutdownRequested || this._backgroundRetryTimer) return;
+    this._backgroundRetryTimer = setInterval(() => {
+      if (this.shutdownRequested || this.connected) {
+        clearInterval(this._backgroundRetryTimer);
+        this._backgroundRetryTimer = null;
+        return;
+      }
+      console.log('[Gateway] Background retry attempt...');
+      this.reconnectAttempt = 0; // Reset so _scheduleReconnect works again if this fails
+      this.connect().catch(err => {
+        console.error('[Gateway] Background retry failed:', err.message);
+      });
+    }, 5 * 60 * 1000); // 5 minutes
   }
 
   _startHeartbeat() {

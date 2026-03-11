@@ -53,9 +53,10 @@ export function recordChat(deptId, durationMs, isError = false) {
     metrics.global.totalErrors++;
   } else {
     deptMetrics.totalResponseMs += durationMs;
-    deptMetrics.avgResponseMs = Math.round(
-      deptMetrics.totalResponseMs / (deptMetrics.messageCount - deptMetrics.errorCount)
-    );
+    const successCount = deptMetrics.messageCount - deptMetrics.errorCount;
+    deptMetrics.avgResponseMs = successCount > 0
+      ? Math.round(deptMetrics.totalResponseMs / successCount)
+      : 0;
 
     // Add to recent response times (keep last 50)
     deptMetrics.recentResponseTimes.push(durationMs);

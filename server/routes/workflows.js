@@ -37,8 +37,13 @@ function writeWorkflows(data) {
  * List all workflows
  */
 router.get('/', (req, res) => {
-  const data = readWorkflows();
-  res.json({ workflows: data.workflows, count: data.workflows.length });
+  try {
+    const data = readWorkflows();
+    res.json({ workflows: data.workflows, count: data.workflows.length });
+  } catch (err) {
+    console.error('[Workflows] GET / error:', err.message);
+    res.status(500).json({ error: 'Failed to list workflows' });
+  }
 });
 
 /**
@@ -46,10 +51,15 @@ router.get('/', (req, res) => {
  * Get a single workflow
  */
 router.get('/:id', (req, res) => {
-  const data = readWorkflows();
-  const wf = data.workflows.find(w => w.id === req.params.id);
-  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
-  res.json({ workflow: wf });
+  try {
+    const data = readWorkflows();
+    const wf = data.workflows.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+    res.json({ workflow: wf });
+  } catch (err) {
+    console.error('[Workflows] GET /:id error:', err.message);
+    res.status(500).json({ error: 'Failed to get workflow' });
+  }
 });
 
 /**
@@ -58,45 +68,50 @@ router.get('/:id', (req, res) => {
  * Body: { name, steps: [{ deptId, message, delayMs }] }
  */
 router.post('/', (req, res) => {
-  const { name, steps } = req.body;
+  try {
+    const { name, steps } = req.body;
 
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Workflow name is required' });
-  }
-  if (!Array.isArray(steps) || steps.length === 0) {
-    return res.status(400).json({ error: 'At least one step is required' });
-  }
-
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i];
-    if (!s.deptId || !s.message) {
-      return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Workflow name is required' });
     }
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return res.status(400).json({ error: 'At least one step is required' });
+    }
+
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      if (!s.deptId || !s.message) {
+        return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+      }
+    }
+
+    const data = readWorkflows();
+    const now = Date.now();
+    const workflow = {
+      id: randomUUID(),
+      name: name.trim(),
+      steps: steps.map(s => ({
+        deptId: s.deptId,
+        message: s.message.trim(),
+        delayMs: Math.max(0, parseInt(s.delayMs) || 0),
+      })),
+      createdAtMs: now,
+      updatedAtMs: now,
+      lastRunAtMs: null,
+      lastRunStatus: null,
+    };
+
+    data.workflows.push(workflow);
+    if (!writeWorkflows(data)) {
+      return res.status(500).json({ error: 'Failed to save workflow' });
+    }
+
+    console.log(`[Workflows] Created "${workflow.name}" with ${workflow.steps.length} steps`);
+    res.status(201).json({ success: true, workflow });
+  } catch (err) {
+    console.error('[Workflows] POST / error:', err.message);
+    res.status(500).json({ error: 'Failed to create workflow' });
   }
-
-  const data = readWorkflows();
-  const now = Date.now();
-  const workflow = {
-    id: randomUUID(),
-    name: name.trim(),
-    steps: steps.map(s => ({
-      deptId: s.deptId,
-      message: s.message.trim(),
-      delayMs: Math.max(0, parseInt(s.delayMs) || 0),
-    })),
-    createdAtMs: now,
-    updatedAtMs: now,
-    lastRunAtMs: null,
-    lastRunStatus: null,
-  };
-
-  data.workflows.push(workflow);
-  if (!writeWorkflows(data)) {
-    return res.status(500).json({ error: 'Failed to save workflow' });
-  }
-
-  console.log(`[Workflows] Created "${workflow.name}" with ${workflow.steps.length} steps`);
-  res.status(201).json({ success: true, workflow });
 });
 
 /**
@@ -104,34 +119,39 @@ router.post('/', (req, res) => {
  * Update a workflow
  */
 router.put('/:id', (req, res) => {
-  const data = readWorkflows();
-  const wf = data.workflows.find(w => w.id === req.params.id);
-  if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+  try {
+    const data = readWorkflows();
+    const wf = data.workflows.find(w => w.id === req.params.id);
+    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
-  const { name, steps } = req.body;
+    const { name, steps } = req.body;
 
-  if (name !== undefined) {
-    if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
-    wf.name = name.trim();
-  }
-
-  if (steps !== undefined) {
-    if (!Array.isArray(steps) || steps.length === 0) {
-      return res.status(400).json({ error: 'At least one step is required' });
+    if (name !== undefined) {
+      if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
+      wf.name = name.trim();
     }
-    wf.steps = steps.map(s => ({
-      deptId: s.deptId,
-      message: (s.message || '').trim(),
-      delayMs: Math.max(0, parseInt(s.delayMs) || 0),
-    }));
-  }
 
-  wf.updatedAtMs = Date.now();
-  if (!writeWorkflows(data)) {
-    return res.status(500).json({ error: 'Failed to update workflow' });
-  }
+    if (steps !== undefined) {
+      if (!Array.isArray(steps) || steps.length === 0) {
+        return res.status(400).json({ error: 'At least one step is required' });
+      }
+      wf.steps = steps.map(s => ({
+        deptId: s.deptId,
+        message: (s.message || '').trim(),
+        delayMs: Math.max(0, parseInt(s.delayMs) || 0),
+      }));
+    }
 
-  res.json({ success: true, workflow: wf });
+    wf.updatedAtMs = Date.now();
+    if (!writeWorkflows(data)) {
+      return res.status(500).json({ error: 'Failed to update workflow' });
+    }
+
+    res.json({ success: true, workflow: wf });
+  } catch (err) {
+    console.error('[Workflows] PUT /:id error:', err.message);
+    res.status(500).json({ error: 'Failed to update workflow' });
+  }
 });
 
 /**
@@ -139,17 +159,22 @@ router.put('/:id', (req, res) => {
  * Delete a workflow
  */
 router.delete('/:id', (req, res) => {
-  const data = readWorkflows();
-  const idx = data.workflows.findIndex(w => w.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Workflow not found' });
+  try {
+    const data = readWorkflows();
+    const idx = data.workflows.findIndex(w => w.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Workflow not found' });
 
-  const removed = data.workflows.splice(idx, 1)[0];
-  if (!writeWorkflows(data)) {
-    return res.status(500).json({ error: 'Failed to delete workflow' });
+    const removed = data.workflows.splice(idx, 1)[0];
+    if (!writeWorkflows(data)) {
+      return res.status(500).json({ error: 'Failed to delete workflow' });
+    }
+
+    console.log(`[Workflows] Deleted "${removed.name}"`);
+    res.json({ success: true, deleted: { id: removed.id, name: removed.name } });
+  } catch (err) {
+    console.error('[Workflows] DELETE /:id error:', err.message);
+    res.status(500).json({ error: 'Failed to delete workflow' });
   }
-
-  console.log(`[Workflows] Deleted "${removed.name}"`);
-  res.json({ success: true, deleted: { id: removed.id, name: removed.name } });
 });
 
 /**
