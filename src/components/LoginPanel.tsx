@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocale } from '../i18n/index'
 import { setToken } from '../utils/api'
 import './LoginPanel.css'
 
@@ -7,6 +8,7 @@ interface LoginPanelProps {
 }
 
 export default function LoginPanel({ onLogin }: LoginPanelProps) {
+  const { t } = useLocale()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -28,10 +30,10 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
         setToken(data.token)
         onLogin(data.token)
       } else {
-        setError(data.error || 'Login failed')
+        setError(data.error || t('login.error.failed'))
       }
     } catch {
-      setError('Network error')
+      setError(t('login.error.network'))
     }
     setLoading(false)
   }
@@ -46,12 +48,12 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
           className="login-input"
           value={password}
           onChange={e => setPassword(e.target.value)}
-          placeholder="Password"
+          placeholder={t('login.password')}
           autoFocus
           disabled={loading}
         />
         <button className="login-btn" type="submit" disabled={loading || !password.trim()}>
-          {loading ? '...' : 'LOGIN'}
+          {loading ? t('login.loading') : t('login.submit')}
         </button>
         {error && <div className="login-error">{error}</div>}
       </form>

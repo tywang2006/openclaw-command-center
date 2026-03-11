@@ -2,27 +2,12 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { google } from 'googleapis';
+import { BASE_PATH, readJsonFile } from '../utils.js';
 
 const router = express.Router();
 
-const CONFIG_PATH = '/root/.openclaw/workspace/command-center/integrations.json';
-const DEPARTMENTS_PATH = '/root/.openclaw/workspace/departments';
-
-/**
- * Helper: Read JSON file safely
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`[Drive] Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
+const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
+const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
 
 /**
  * Helper: Write JSON file safely

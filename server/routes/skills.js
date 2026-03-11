@@ -1,119 +1,11 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter } from '../utils.js';
 
 const router = express.Router();
 
-// Skills base path
-const SKILLS_PATH = '/root/.openclaw/workspace/skills';
-
-/**
- * Helper: Parse YAML frontmatter from SKILL.md
- * Extracts content between --- markers and parses key: value pairs
- */
-function parseFrontmatter(content) {
-  const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---/;
-  const match = content.match(frontmatterRegex);
-
-  if (!match) {
-    return { frontmatter: {}, body: content };
-  }
-
-  const frontmatterText = match[1];
-  const body = content.slice(match[0].length).trim();
-
-  const frontmatter = {};
-  const lines = frontmatterText.split('\n');
-
-  let currentKey = null;
-  let currentValue = [];
-
-  for (const line of lines) {
-    // Check if line starts a new key: value pair
-    const keyValueMatch = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
-
-    if (keyValueMatch) {
-      // Save previous key if exists
-      if (currentKey) {
-        frontmatter[currentKey] = parseValue(currentValue.join('\n').trim());
-      }
-
-      currentKey = keyValueMatch[1];
-      currentValue = [keyValueMatch[2]];
-    } else if (currentKey && line.trim()) {
-      // Continuation of previous value (multiline)
-      currentValue.push(line);
-    }
-  }
-
-  // Save last key
-  if (currentKey) {
-    frontmatter[currentKey] = parseValue(currentValue.join('\n').trim());
-  }
-
-  return { frontmatter, body };
-}
-
-/**
- * Helper: Parse YAML value (handle arrays, strings, etc.)
- */
-function parseValue(value) {
-  // Handle arrays: [item1, item2, item3]
-  const arrayMatch = value.match(/^\[(.*)\]$/);
-  if (arrayMatch) {
-    return arrayMatch[1]
-      .split(',')
-      .map(item => item.trim().replace(/^['"]|['"]$/g, ''))
-      .filter(item => item.length > 0);
-  }
-
-  // Handle boolean
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-
-  // Handle null/empty
-  if (value === 'null' || value === '') return null;
-
-  // Handle quoted strings
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
-  }
-
-  // Return as-is (string or multiline)
-  return value;
-}
-
-/**
- * Helper: Read JSON file safely
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Helper: Read text file safely
- */
-function readTextFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8');
-    }
-    return null;
-  } catch (error) {
-    console.error(`Error reading text file ${filePath}:`, error.message);
-    return null;
-  }
-}
+const SKILLS_PATH = path.join(BASE_PATH, 'skills');
 
 /**
  * Helper: Get skill data from a directory
@@ -293,6 +185,141 @@ router.get('/skills/:slug/assets', (req, res) => {
   } catch (error) {
     console.error(`Error in GET /api/skills/${req.params.slug}/assets:`, error);
     res.status(500).json({ error: 'Failed to fetch skill assets' });
+  }
+});
+
+/**
+ * POST /api/skills/:slug/execute
+ * Execute a skill by sending it to a department agent via the Gateway.
+ * Body: { deptId: string, params?: Record<string, string> }
+ */
+router.post('/skills/:slug/execute', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { deptId, params } = req.body;
+
+    if (!/^[a-z0-9_-]+$/i.test(slug)) {
+      return res.status(400).json({ error: 'Invalid skill slug' });
+    }
+    if (!deptId || typeof deptId !== 'string') {
+      return res.status(400).json({ error: 'deptId is required' });
+    }
+
+    const skillPath = path.join(SKILLS_PATH, slug);
+    if (!fs.existsSync(skillPath) || !fs.statSync(skillPath).isDirectory()) {
+      return res.status(404).json({ error: 'Skill not found' });
+    }
+
+    const skillData = getSkillData(slug, slug);
+    if (!skillData) {
+      return res.status(404).json({ error: 'Skill data not found' });
+    }
+
+    // Build the execution message
+    let message = `Execute skill: ${skillData.name}`;
+    if (skillData.summary) {
+      message += `\nDescription: ${skillData.summary}`;
+    }
+    if (params && typeof params === 'object') {
+      const paramLines = Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== '')
+        .map(([k, v]) => `  ${k}: ${v}`);
+      if (paramLines.length > 0) {
+        message += `\nParameters:\n${paramLines.join('\n')}`;
+      }
+    }
+    if (skillData.body) {
+      message += `\n\nSkill instructions:\n${skillData.body}`;
+    }
+
+    // Send through the Gateway via agent.js chat function
+    const { chat } = await import('../agent.js');
+    const result = await chat(deptId, message);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        skill: slug,
+        deptId,
+        reply: result.reply,
+      });
+    } else {
+      res.json({
+        success: false,
+        skill: slug,
+        deptId,
+        error: result.error || 'Skill execution failed',
+      });
+    }
+  } catch (error) {
+    console.error(`Error in POST /api/skills/${req.params.slug}/execute:`, error);
+    res.status(500).json({ error: 'Failed to execute skill' });
+  }
+});
+
+/**
+ * GET /api/memory/search
+ * Search across all department memories.
+ * Query: ?q=searchTerm
+ */
+router.get('/memory/search', (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      return res.status(400).json({ error: 'Query must be at least 2 characters' });
+    }
+
+    const query = q.trim().toLowerCase();
+    const deptsPath = path.join(BASE_PATH, 'departments');
+
+    if (!fs.existsSync(deptsPath)) {
+      return res.json({ results: [], count: 0 });
+    }
+
+    const results = [];
+    const entries = fs.readdirSync(deptsPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+
+      const memPath = path.join(deptsPath, entry.name, 'memory', 'MEMORY.md');
+      if (!fs.existsSync(memPath)) continue;
+
+      try {
+        const content = fs.readFileSync(memPath, 'utf8');
+        if (!content.toLowerCase().includes(query)) continue;
+
+        // Find matching lines with context
+        const lines = content.split('\n');
+        const matches = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase().includes(query)) {
+            matches.push({
+              line: i + 1,
+              text: lines[i].trim().substring(0, 200),
+            });
+            if (matches.length >= 5) break;
+          }
+        }
+
+        results.push({
+          deptId: entry.name,
+          matches,
+          totalSize: content.length,
+        });
+      } catch {
+        // Skip unreadable files
+      }
+    }
+
+    res.json({
+      query: q.trim(),
+      results,
+      count: results.length,
+    });
+  } catch (error) {
+    console.error('Error in GET /api/memory/search:', error);
+    res.status(500).json({ error: 'Failed to search memories' });
   }
 });
 

@@ -325,7 +325,8 @@ export function generateAndSave() {
   const configPath = path.join(BASE_PATH, 'departments', 'config.json');
 
   if (!fs.existsSync(configPath)) {
-    throw new Error(`Department config not found at ${configPath}`);
+    console.warn(`[LayoutGen] Department config not found at ${configPath}, skipping layout generation`);
+    return { cols: 0, rows: 0, departmentCount: 0, furnitureCount: 0, seatCount: 0, fileSize: 0 };
   }
 
   const configData = fs.readFileSync(configPath, 'utf8');
@@ -340,7 +341,8 @@ export function generateAndSave() {
     }));
 
   if (departments.length === 0) {
-    throw new Error('No departments found in config');
+    console.warn('[LayoutGen] No departments found in config, skipping layout generation');
+    return { cols: 0, rows: 0, departmentCount: 0, furnitureCount: 0, seatCount: 0, fileSize: 0 };
   }
 
   // Generate layout

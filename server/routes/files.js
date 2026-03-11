@@ -5,14 +5,14 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ── Directories ──────────────────────────────────────────────
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
@@ -145,8 +145,8 @@ async function processQueue() {
       if (['.pdf', '.docx', '.xlsx', '.pptx'].includes(job.ext)) {
         const scriptPath = path.join(__dirname, '../../skills/document-processing/doc-process.py');
         // Safe: filePath is controlled (multer destination + uuid name)
-        const { stdout } = await execAsync(
-          `python3 "${scriptPath}" "${job.filePath}"`,
+        const { stdout } = await execFileAsync(
+          'python3', [scriptPath, job.filePath],
           { timeout: 60_000 },
         );
         const parsed = JSON.parse(stdout);
@@ -265,8 +265,8 @@ router.post('/files/upload', upload.single('file'), handleMulterError, async (re
     // Extract text/content based on file type
     if (['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) {
       const scriptPath = path.join(__dirname, '../../skills/document-processing/doc-process.py');
-      const { stdout } = await execAsync(
-        `python3 "${scriptPath}" "${filePath}"`,
+      const { stdout } = await execFileAsync(
+        'python3', [scriptPath, filePath],
         { timeout: 60_000 },
       );
       const processResult = JSON.parse(stdout);
@@ -502,8 +502,8 @@ router.post('/files/convert', async (req, res) => {
       await fs.writeFile(scriptPath, CONVERT_SCRIPT);
     }
 
-    const { stdout, stderr } = await execAsync(
-      `python3 "${scriptPath}" "${filePath}" "${outputPath}" "${targetFormat}"`,
+    const { stdout, stderr } = await execFileAsync(
+      'python3', [scriptPath, filePath, outputPath, targetFormat],
       { timeout: 30_000 },
     );
 

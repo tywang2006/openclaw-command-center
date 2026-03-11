@@ -1,8 +1,10 @@
 import express from 'express';
 import fs from 'fs';
+import path from 'path';
+import { OPENCLAW_HOME } from '../utils.js';
 
 const router = express.Router();
-const OPENCLAW_CONFIG = '/root/.openclaw/openclaw.json';
+const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 
 /**
  * Helper: Read openclaw.json
@@ -268,6 +270,46 @@ router.post('/system/config/telegram/test', async (req, res) => {
   } catch (error) {
     console.error('[SystemConfig] POST /system/config/telegram/test error:', error);
     res.status(500).json({ error: 'Test failed' });
+  }
+});
+
+// ================================================
+// Feature 5: Plugin Management
+// ================================================
+
+/**
+ * PUT /system/config/plugins/:id
+ * Toggle plugin enabled state
+ * Body: { enabled: boolean }
+ */
+router.put('/system/config/plugins/:id', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const { id } = req.params;
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+
+    if (!config.plugins) config.plugins = {};
+    if (!config.plugins.entries) config.plugins.entries = {};
+
+    if (!config.plugins.entries[id]) {
+      config.plugins.entries[id] = {};
+    }
+    config.plugins.entries[id].enabled = enabled;
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true, id, enabled });
+  } catch (error) {
+    console.error('[SystemConfig] PUT /system/config/plugins/:id error:', error);
+    res.status(500).json({ error: 'Failed to update plugin config' });
   }
 });
 

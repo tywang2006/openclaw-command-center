@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, Component, type ReactNode, type ErrorInfo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useAgentState } from './hooks/useAgentState'
 import { useLocale } from './i18n/index'
 import { useMobile, useSwipeGesture } from './hooks/useMobile'
@@ -6,6 +6,27 @@ import { getToken, clearToken, setOnUnauthorized, authedFetch } from './utils/ap
 import { getNotificationPrefs, saveNotificationPrefs, requestPermission } from './utils/notifications'
 import LoginPanel from './components/LoginPanel'
 import DeptFormModal from './components/DeptFormModal'
+import OfficeCanvas from './components/OfficeCanvas'
+import ChatPanel, { type SubAgent } from './components/ChatPanel'
+import StatusBar from './components/StatusBar'
+import MobileNav from './components/MobileNav'
+import MobileDrawer from './components/MobileDrawer'
+import { BulletinIcon, MemoryIcon, ActivityIcon } from './components/Icons'
+import './App.css'
+
+// Lazy load heavy tabs that aren't needed immediately
+const BulletinTab = lazy(() => import('./components/BulletinTab'))
+const MemoryTab = lazy(() => import('./components/MemoryTab'))
+const ActivityTab = lazy(() => import('./components/ActivityTab'))
+const CronTab = lazy(() => import('./components/CronTab'))
+const DashboardTab = lazy(() => import('./components/DashboardTab'))
+const IntegrationsTab = lazy(() => import('./components/IntegrationsTab'))
+const SystemTab = lazy(() => import('./components/SystemTab'))
+const RequestsTab = lazy(() => import('./components/RequestsTab'))
+
+function TabFallback() {
+  return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: Error }> {
   constructor(props: { children: ReactNode }) {
@@ -22,12 +43,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
     if (this.state.hasError) {
       return (
         <div style={{ padding: 40, textAlign: 'center', color: '#ff5555', fontFamily: 'monospace' }}>
-          <h2>Something went wrong</h2>
+          <h2>{document.documentElement.lang === 'zh' ? '出错了' : 'Something went wrong'}</h2>
           <p style={{ color: '#888' }}>{this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false })} style={{
+          <button onClick={() => { this.setState({ hasError: false }); window.location.reload() }} style={{
             marginTop: 16, padding: '8px 24px', background: '#00d4aa', border: 'none', color: '#000', cursor: 'pointer', borderRadius: '4px', fontWeight: 600
           }}>
-            Retry
+            {document.documentElement.lang === 'zh' ? '重试' : 'Retry'}
           </button>
         </div>
       )
@@ -44,22 +65,8 @@ function Clock({ locale }: { locale: string }) {
   }, [])
   return <div className="current-time">{time.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</div>
 }
-import OfficeCanvas from './components/OfficeCanvas'
-import ChatPanel, { type SubAgent } from './components/ChatPanel'
-import BulletinTab from './components/BulletinTab'
-import MemoryTab from './components/MemoryTab'
-import ActivityTab from './components/ActivityTab'
-import CronTab from './components/CronTab'
-// SkillsTab merged into IntegrationsTab (Capabilities Dashboard)
-import DashboardTab from './components/DashboardTab'
-import IntegrationsTab from './components/IntegrationsTab'
-import StatusBar from './components/StatusBar'
-import MobileNav from './components/MobileNav'
-import MobileDrawer from './components/MobileDrawer'
-import { BulletinIcon, MemoryIcon, ActivityIcon } from './components/Icons'
-import './App.css'
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'cron' | 'dashboard' | 'integrations'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'system'
 
 export default function App() {
   const { t, locale, setLocale } = useLocale()
@@ -69,6 +76,11 @@ export default function App() {
   useEffect(() => {
     setOnUnauthorized(() => setAuthToken(null))
   }, [])
+
+  // Sync lang attribute for ErrorBoundary fallback
+  useEffect(() => {
+    document.documentElement.lang = locale
+  }, [locale])
 
   const handleLogout = () => {
     clearToken()
@@ -227,6 +239,12 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     { id: 'bulletin' as RightTab, label: t('app.tab.bulletin'), Icon: BulletinIcon },
     { id: 'memory' as RightTab, label: t('app.tab.memory'), Icon: MemoryIcon },
     { id: 'activity' as RightTab, label: t('app.tab.activity'), Icon: ActivityIcon },
+    { id: 'requests' as RightTab, label: t('app.tab.requests'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+        <path d="M3 2h10v12H3z" stroke={color} strokeWidth="1.3" fill="none" />
+        <path d="M5 5h6M5 8h4M5 11h5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    )},
     { id: 'cron' as RightTab, label: t('app.tab.cron'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
       <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
         <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.5" />
@@ -246,6 +264,12 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         <circle cx="12" cy="5" r="2" stroke={color} strokeWidth="1.3" fill="none" />
         <circle cx="12" cy="11" r="2" stroke={color} strokeWidth="1.3" fill="none" />
         <path d="M7.5 6.5l3-1M7.5 9.5l3 1" stroke={color} strokeWidth="1.3" />
+      </svg>
+    )},
+    { id: 'system' as RightTab, label: t('app.tab.system'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="2.5" stroke={color} strokeWidth="1.3" fill="none" />
+        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     )},
   ], [t])
@@ -279,7 +303,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   }, [agentState.departments.length])
 
   const tabContent = (
-    <>
+    <Suspense fallback={<TabFallback />}>
       {rightTab === 'chat' && (
         <ChatPanel
           selectedDeptId={agentState.selectedDeptId}
@@ -310,10 +334,14 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
           addActivity={agentState.addActivity}
         />
       )}
+      {rightTab === 'requests' && (
+        <RequestsTab requests={agentState.requests} />
+      )}
       {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
       {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
       {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
-    </>
+      {rightTab === 'system' && <SystemTab />}
+    </Suspense>
   )
 
   // ---- Mobile Layout ----
@@ -406,7 +434,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
           <button
             className="locale-toggle"
             onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
-            title="Toggle language"
+            title={t('app.locale.toggle')}
           >
             {locale === 'zh' ? 'EN' : '中'}
           </button>
@@ -419,14 +447,14 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
               )}
             </svg>
           </button>
-          <button className="logout-btn" onClick={onLogout} title="Logout">
+          <button className="logout-btn" onClick={onLogout} title={t('app.logout')}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M6 2H3v12h3M11 4l4 4-4 4M7 8h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <div className="gateway-status" title={gatewayStats ? `GW: ${gatewayStats.connected ? 'Connected' : 'Disconnected'}\nLatency: ${gatewayStats.latencyMs ?? '?'}ms\nPending: ${gatewayStats.pendingRequests ?? 0}\nStreams: ${gatewayStats.streamBuffers ?? 0}` : 'Gateway: unknown'}>
+          <div className="gateway-status" title={gatewayStats ? `${t('system.gateway.title')}: ${gatewayStats.connected ? t('system.gateway.connected') : t('system.gateway.disconnected')}\n${t('dashboard.gateway.latency')}: ${gatewayStats.latencyMs ?? '?'}ms\n${t('system.gateway.pending')}: ${gatewayStats.pendingRequests ?? 0}\n${t('system.gateway.streams')}: ${gatewayStats.streamBuffers ?? 0}` : `${t('system.gateway.title')}: ?`}>
             <span className={`status-dot ${gatewayStats?.connected ? 'connected' : 'disconnected'}`}></span>
-            <span>GW</span>
+            <span>{t('system.gateway.title')}</span>
           </div>
           <div className="connection-status">
             <span className={`status-dot ${agentState.connected ? 'connected' : 'disconnected'}`}></span>

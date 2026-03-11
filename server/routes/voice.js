@@ -2,12 +2,13 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
 
 const router = express.Router();
 
-const CONFIG_PATH = '/root/.openclaw/workspace/command-center/integrations.json';
-const OPENCLAW_CONFIG = '/root/.openclaw/openclaw.json';
-const UPLOAD_DIR = '/root/.openclaw/workspace/command-center/uploads';
+const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
+const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
+const UPLOAD_DIR = path.join(BASE_PATH, '..', 'command-center', 'uploads');
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -47,21 +48,6 @@ const upload = multer({
   }
 });
 
-/**
- * Helper: Read JSON file safely
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`[Voice] Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
 
 /**
  * Helper: Get OpenAI API key

@@ -1,0 +1,41 @@
+# ============================================================
+# OpenClaw Command Center — Docker Compose
+# ============================================================
+#
+# Usage:
+#   docker compose up -d          # Start
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop
+#   docker compose up -d --build  # Rebuild & restart
+#
+
+services:
+  command-center:
+    build: .
+    image: openclaw-cmd:latest
+    container_name: openclaw-cmd
+    restart: unless-stopped
+    ports:
+      - "${CMD_PORT:-5100}:5100"
+    volumes:
+      # Mount OpenClaw workspace for live config access
+      - ${OPENCLAW_HOME:-~/.openclaw}:/root/.openclaw
+      # Persist password across rebuilds
+      - cmd-auth:/app/auth
+    environment:
+      - NODE_ENV=production
+      - CMD_PORT=5100
+      - OPENCLAW_HOME=/root/.openclaw
+      # Gateway connects to host network
+      - GATEWAY_URL=ws://host.docker.internal:18789
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5100/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  cmd-auth:

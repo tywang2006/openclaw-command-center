@@ -7,6 +7,9 @@ const router = express.Router();
 
 const REPLAYS_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '../../replays');
 
+// Safe ID pattern to prevent path traversal
+const SAFE_ID = /^[a-zA-Z0-9-]+$/;
+
 // In-memory recording state
 let recording = null; // { id, startedAt, events: [] }
 
@@ -147,6 +150,9 @@ router.get('/list', (req, res) => {
  * Get a replay (full events)
  */
 router.get('/:id', (req, res) => {
+  if (!SAFE_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid replay ID' });
+  }
   ensureDir();
   const filePath = path.join(REPLAYS_DIR, `${req.params.id}.json`);
   if (!fs.existsSync(filePath)) {
@@ -166,6 +172,9 @@ router.get('/:id', (req, res) => {
  * Delete a replay
  */
 router.delete('/:id', (req, res) => {
+  if (!SAFE_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid replay ID' });
+  }
   const filePath = path.join(REPLAYS_DIR, `${req.params.id}.json`);
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Replay not found' });

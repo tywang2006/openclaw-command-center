@@ -61,8 +61,18 @@ function getStoredPassword() {
   } catch (error) {
     console.error('[Auth] Error reading password file:', error.message);
   }
-  // Default password if file doesn't exist
-  return 'openclaw';
+  // Generate random password, save hashed version, log plaintext once
+  const generated = crypto.randomBytes(16).toString('hex');
+  try {
+    const hashed = hashPassword(generated);
+    fs.writeFileSync(PASSWORD_FILE, hashed, 'utf8');
+    console.log(`[Auth] No password file found. Generated initial password: ${generated}`);
+    console.log('[Auth] This password will not be shown again. Save it now.');
+    return hashed;
+  } catch (writeErr) {
+    console.error('[Auth] CRITICAL: Failed to write generated password:', writeErr.message);
+    throw new Error('Cannot initialize auth: unable to create password file');
+  }
 }
 
 /**
@@ -142,6 +152,30 @@ export function authMiddleware(req, res, next) {
  */
 const authRouter = express.Router();
 
+// Rate limiter for login attempts
+const loginAttempts = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 5;
+
+function checkLoginRateLimit(ip) {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+  if (!record || (now - record.firstAttempt > RATE_LIMIT_WINDOW_MS)) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+    return true;
+  }
+  if (record.count >= RATE_LIMIT_MAX) return false;
+  record.count++;
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts.entries()) {
+    if (now - record.firstAttempt > RATE_LIMIT_WINDOW_MS) loginAttempts.delete(ip);
+  }
+}, 60 * 1000);
+
 /**
  * POST /api/auth/login
  * Body: { password: string }
@@ -154,6 +188,14 @@ authRouter.post('/login', (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'Password is required'
+    });
+  }
+
+  const clientIp = req.ip || req.socket.remoteAddress;
+  if (!checkLoginRateLimit(clientIp)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many login attempts. Try again in 1 minute.'
     });
   }
 

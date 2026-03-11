@@ -31,7 +31,7 @@ export const zh: Record<string, string> = {
   'chat.subagent.create.error': '网络错误，无法创建子代理',
   'chat.subagent.system': '系统',
   'chat.subagent.created': '[系统] 创建子代理「{name}」，任务: {task}',
-  'chat.message.to': '消息到 {name}... (可粘贴图片)',
+  'chat.message.to': '消息到 {name}...',
   'chat.message.subagent.to': '消息到 {name}...',
   'chat.message.select': '选择一个部门...',
   'chat.message.send': '发送消息到 {name}',
@@ -42,11 +42,16 @@ export const zh: Record<string, string> = {
   'chat.message.error.agent': '[Error] Agent not responding',
   'chat.message.you': 'YOU',
   'chat.message.images': '\n[{count} 张图片]',
+  'chat.message.docs': '\n[{count} 个文档: {names}]',
+  'chat.source.telegram': 'TG',
+  'chat.source.gateway': 'GW',
   'chat.message.subagent.prefix': '[{name}] {message}',
   'chat.message.command.prefix': '[指令] {message}',
   'chat.image.upload': '上传图片',
   'chat.image.size.limit': '图片不能超过 4MB',
   'chat.doc.upload': '上传文档 (PDF, DOCX, XLSX, PPTX, TXT, CSV)',
+  'chat.doc.unsupported': '不支持的文件类型，支持：PDF, DOCX, XLSX, PPTX, TXT, CSV, JSON, MD',
+  'chat.doc.tooLarge': '文件过大（最大 50MB）',
   'chat.drop.hint': '拖放文件到此处上传',
   'chat.upload.progress': '上传中...',
   'chat.timer.create': '创建定时任务',
@@ -330,6 +335,24 @@ export const zh: Record<string, string> = {
 
   // Capabilities Dashboard (IntegrationsTab)
   'app.tab.integrations': '能力',
+  'app.tab.system': '系统',
+
+  // SystemTab
+  'system.loading': '加载中...',
+  'system.gateway.title': '网关',
+  'system.gateway.status': '状态',
+  'system.gateway.connected': '已连接',
+  'system.gateway.disconnected': '已断开',
+  'system.gateway.auth': '认证',
+  'system.gateway.uptime': '运行时间',
+  'system.gateway.pending': '等待中',
+  'system.gateway.streams': '流',
+  'system.channels': '通道',
+  'system.running': '运行中',
+  'system.stopped': '已停止',
+  'system.disabled': '未启用',
+  'system.models.title': '模型',
+  'system.plugins.title': '插件',
   'cap.title': '系统能力',
   'cap.loading': '加载中...',
   'cap.error': '加载失败',
@@ -351,6 +374,7 @@ export const zh: Record<string, string> = {
   'cap.channel.dmPolicy': 'DM: {policy}',
   'cap.model.context': '{size} 上下文',
   'cap.model.output': '{size} 输出',
+  'cap.model.image': '+图片',
   'cap.skills.count': '共 {count} 个技能',
   'cap.skills.search': '搜索技能、标签...',
   'cap.skills.empty': '没有找到匹配的技能',
@@ -427,8 +451,11 @@ export const zh: Record<string, string> = {
   'integ.backup.running': '备份中...',
   'integ.backup.requireDrive': '需要先配置 Google Drive',
   'integ.backup.saved': '自动备份配置已保存',
+  'integ.backup.result': '已备份 {count} 个部门',
+  'integ.backup.failed': '备份失败',
 
   // Common
+  'common.networkError': '网络错误',
   'common.loading': '加载中...',
   'common.error': '错误',
   'common.success': '成功',
@@ -550,4 +577,59 @@ export const zh: Record<string, string> = {
   'cmd.help.desc': '显示所有命令',
   'cmd.help.hint': '查看可用命令列表',
   'cmd.help.title': '[系统] 可用命令:',
+
+  // LoginPanel
+  'login.password': '密码',
+  'login.submit': '登录',
+  'login.loading': '...',
+  'login.error.network': '网络错误',
+  'login.error.failed': '登录失败',
+
+  // ErrorBoundary
+  'error.title': '出错了',
+  'error.retry': '重试',
+
+  // Tooltips
+  'app.locale.toggle': '切换语言',
+  'app.logout': '退出登录',
+
+  // SkillPicker
+  'chat.toolbar.skills': '技能',
+  'skill.picker.title': '技能库',
+  'skill.picker.search': '搜索技能...',
+  'skill.picker.loading': '加载中...',
+  'skill.picker.empty': '未找到技能',
+  'skill.exec.run': '在 {dept} 执行',
+  'skill.exec.running': '执行中...',
+  'skill.exec.failed': '执行失败',
+  'skill.exec.error': '网络错误',
+
+  // Memory Search
+  'memory.search.placeholder': '搜索所有部门记忆...',
+  'memory.search.results': '{count} 条匹配',
+  'memory.search.no.results': '未找到匹配',
+  'memory.search.line': '第 {line} 行',
+
+  // 记忆角色模式
+  'memory.mode.memory': '记忆',
+  'memory.mode.persona': '角色',
+  'memory.persona.empty': '未定义角色设定',
+
+  // 工作流工具栏
+  'chat.toolbar.workflow': '工作流',
+
+  // 系统扩展
+  'system.observer.title': '记忆观察者',
+  'system.observer.desc': '运行观察/反射脚本',
+  'system.observer.run': '立即运行',
+  'system.observer.done': '观察者已完成',
+  'system.observer.failed': '观察者运行失败',
+  'system.sessions.title': '会话',
+  'system.sessions.empty': '无活跃会话',
+  'system.devices.title': '已配对设备',
+  'system.devices.empty': '无已配对设备',
+  'system.shutdown.title': '服务器控制',
+  'system.shutdown.btn': '关闭服务器',
+  'system.shutdown.confirm': '确定关闭指挥中心服务器？可以双击应用图标重新启动。',
+  'system.shutdown.done': '服务器已关闭。双击应用图标重新启动。',
 }

@@ -3,10 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { chat } from '../agent.js';
+import { OPENCLAW_HOME } from '../utils.js';
 
 const router = express.Router();
 
-const WORKFLOWS_FILE = '/root/.openclaw/cron/workflows.json';
+const WORKFLOWS_FILE = path.join(OPENCLAW_HOME, 'cron', 'workflows.json');
 
 function readWorkflows() {
   try {

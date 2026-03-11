@@ -1,11 +1,13 @@
 import express from 'express';
 import fs from 'fs';
+import path from 'path';
 import { randomUUID } from 'crypto';
 import { getGateway } from '../gateway.js';
+import { OPENCLAW_HOME } from '../utils.js';
 
 const router = express.Router();
 
-const CRON_FILE_PATH = '/root/.openclaw/cron/jobs.json';
+const CRON_FILE_PATH = path.join(OPENCLAW_HOME, 'cron', 'jobs.json');
 
 // Input validation
 const VALID_SCHEDULE_KINDS = ['every', 'cron'];

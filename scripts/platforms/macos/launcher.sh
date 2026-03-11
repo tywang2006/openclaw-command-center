@@ -13,7 +13,7 @@ OPENCLAW_HOME="${HOME}/.openclaw"
 CMD_DIR="${OPENCLAW_HOME}/workspace/command-center"
 SETUP_MARKER="${CMD_DIR}/.setup-done"
 
-# First run — open Terminal for interactive setup
+# First run — no setup marker, go straight to setup
 if [ ! -f "$SETUP_MARKER" ]; then
   osascript -e "
     tell application \"Terminal\"
@@ -24,13 +24,101 @@ if [ ! -f "$SETUP_MARKER" ]; then
   exit 0
 fi
 
-# Normal run — start server in background, open browser
+# ── Already set up — show action dialog ──
+# Detect system language for bilingual dialog
+SYS_LANG=$(defaults read NSGlobalDomain AppleLanguages 2>/dev/null | head -2 | tail -1 | tr -d ' ",' || echo "en")
+if echo "$SYS_LANG" | grep -qi "zh"; then
+  DLG_TITLE="OpenClaw 指挥中心"
+  DLG_MSG="请选择操作："
+  BTN_LAUNCH="启动"
+  BTN_REINSTALL="重装"
+  BTN_UNINSTALL="卸载"
+  CONFIRM_REINSTALL="重装将重新运行安装向导，当前配置会被覆盖。确定继续？"
+  CONFIRM_UNINSTALL="确定卸载？这将删除 ~/.openclaw/workspace/command-center 下的所有数据。"
+  UNINSTALL_DONE="已卸载。你可以将应用从"应用程序"文件夹中删除。"
+else
+  DLG_TITLE="OpenClaw Command Center"
+  DLG_MSG="Choose an action:"
+  BTN_LAUNCH="Launch"
+  BTN_REINSTALL="Reinstall"
+  BTN_UNINSTALL="Uninstall"
+  CONFIRM_REINSTALL="Reinstall will re-run the setup wizard and overwrite current config. Continue?"
+  CONFIRM_UNINSTALL="Are you sure? This will delete all data under ~/.openclaw/workspace/command-center."
+  UNINSTALL_DONE="Uninstalled. You can now remove the app from Applications."
+fi
+
+# Show 3-button dialog via osascript
+CHOICE=$(osascript -e "
+  tell application \"System Events\"
+    set btn to button returned of (display dialog \"${DLG_MSG}\" with title \"${DLG_TITLE}\" buttons {\"${BTN_UNINSTALL}\", \"${BTN_REINSTALL}\", \"${BTN_LAUNCH}\"} default button \"${BTN_LAUNCH}\")
+  end tell
+  return btn
+" 2>/dev/null)
+
+# User cancelled or closed dialog
+if [ -z "$CHOICE" ]; then
+  exit 0
+fi
+
+# ── Handle: Uninstall ──
+if [ "$CHOICE" = "$BTN_UNINSTALL" ]; then
+  # Confirm
+  CONFIRM=$(osascript -e "
+    tell application \"System Events\"
+      set btn to button returned of (display dialog \"${CONFIRM_UNINSTALL}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"OK\"} default button \"Cancel\" with icon caution)
+    end tell
+    return btn
+  " 2>/dev/null)
+
+  if [ "$CONFIRM" = "OK" ]; then
+    # Kill running server
+    CMD_PORT="${CMD_PORT:-5100}"
+    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    # Remove data
+    rm -rf "$CMD_DIR"
+    osascript -e "display dialog \"${UNINSTALL_DONE}\" with title \"${DLG_TITLE}\" buttons {\"OK\"} default button \"OK\"" 2>/dev/null
+  fi
+  exit 0
+fi
+
+# ── Handle: Reinstall ──
+if [ "$CHOICE" = "$BTN_REINSTALL" ]; then
+  CONFIRM=$(osascript -e "
+    tell application \"System Events\"
+      set btn to button returned of (display dialog \"${CONFIRM_REINSTALL}\" with title \"${DLG_TITLE}\" buttons {\"Cancel\", \"OK\"} default button \"Cancel\" with icon caution)
+    end tell
+    return btn
+  " 2>/dev/null)
+
+  if [ "$CONFIRM" = "OK" ]; then
+    # Kill running server
+    CMD_PORT="${CMD_PORT:-5100}"
+    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    # Remove setup marker to trigger fresh setup
+    rm -f "$SETUP_MARKER"
+    # Run setup in Terminal
+    osascript -e "
+      tell application \"Terminal\"
+        activate
+        do script \"bash '${RESOURCES}/setup.sh' && exit\"
+      end tell
+    "
+  fi
+  exit 0
+fi
+
+# ── Handle: Launch ──
 export OPENCLAW_HOME
 export CMD_PORT="${CMD_PORT:-5100}"
 
 # Source .env if present
 if [ -f "${CMD_DIR}/.env" ]; then
   set -a; . "${CMD_DIR}/.env"; set +a
+fi
+
+# Auto-pair device if needed (idempotent — skips if already paired)
+if [ -f "${CMD_DIR}/scripts/auto-pair.js" ]; then
+  "${NODE}" "${CMD_DIR}/scripts/auto-pair.js" --openclaw-home "$OPENCLAW_HOME" >/dev/null 2>&1 || true
 fi
 
 # Ensure OpenClaw Gateway is running

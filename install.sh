@@ -70,6 +70,7 @@ MSG_ZH=(
   [step_fail]="失败"
   [retry_prompt]="操作失败。[r]重试 [s]跳过 [a]中止"
   [retry_r]="重试中..."
+  [retry_abort]="[r]重试 [a]中止"
   [skip_prompt]="按 s 跳过此步骤，按回车继续"
   [abort_msg]="安装已中止。"
   [prereqs]="检查系统依赖"
@@ -129,6 +130,7 @@ MSG_ZH=(
   [configure_env_keep]=".env 已存在，保留"
   [configure_dept]="配置部门"
   [configure_dept_migrate]="检测到旧格式，正在迁移..."
+  [configure_dept_migrate_fail]="迁移失败"
   [configure_dept_create]="创建默认部门配置..."
   [configure_dept_ok]="部门配置完成"
   [build_start]="构建并启动"
@@ -150,6 +152,8 @@ MSG_ZH=(
   [health_ok]="服务运行正常"
   [health_fail]="健康检查失败 — 服务可能仍在启动中"
   [health_hint]="查看日志：pm2 logs openclaw-cmd"
+  [health_gw_ok]="Gateway: 已连接"
+  [health_gw_fail]="Gateway: %s"
   [done_title]="安装完成！"
   [done_url]="访问地址"
   [done_password]="访问密码"
@@ -163,6 +167,18 @@ MSG_ZH=(
   [root_warn_hint]="建议使用普通用户安装。按回车继续..."
   [spinner_ok]="完成"
   [spinner_fail]="失败"
+  [banner_subtitle]="指挥中心交互式安装程序"
+  [git_not_found]="未找到 git（可选）"
+  [git_clone_fail]="git clone 失败"
+  [git_pull_fail]="git pull 失败，使用现有代码"
+  [pkg_not_found]="未找到 package.json：%s"
+  [layout_fail]="布局生成失败（使用默认）"
+  [install_hint]="请先安装 OpenClaw："
+  [gw_not_running]="Gateway 未运行。启动命令："
+  [openclaw_not_found]="未找到 openclaw CLI，无法验证 Gateway"
+  [nginx_conf_not_found]="未找到 Nginx 标准配置文件"
+  [nginx_no_inject]="未找到 Nginx 配置注入点"
+  [mode_label]="模式"
 )
 
 # --- English ---
@@ -182,6 +198,7 @@ MSG_EN=(
   [step_fail]="Failed"
   [retry_prompt]="Operation failed. [r]etry [s]kip [a]bort"
   [retry_r]="Retrying..."
+  [retry_abort]="[r]etry [a]bort"
   [skip_prompt]="Press 's' to skip, Enter to continue"
   [abort_msg]="Installation aborted."
   [prereqs]="Check Prerequisites"
@@ -241,6 +258,7 @@ MSG_EN=(
   [configure_env_keep]=".env already exists, keeping"
   [configure_dept]="Configuring departments"
   [configure_dept_migrate]="Old format detected, migrating..."
+  [configure_dept_migrate_fail]="Migration failed"
   [configure_dept_create]="Creating default department config..."
   [configure_dept_ok]="Department config ready"
   [build_start]="Build & Start"
@@ -262,6 +280,8 @@ MSG_EN=(
   [health_ok]="Service is running"
   [health_fail]="Health check failed — service may still be starting"
   [health_hint]="Check logs: pm2 logs openclaw-cmd"
+  [health_gw_ok]="Gateway: connected"
+  [health_gw_fail]="Gateway: %s"
   [done_title]="Installation Complete!"
   [done_url]="Access URL"
   [done_password]="Password"
@@ -275,6 +295,18 @@ MSG_EN=(
   [root_warn_hint]="Consider installing as a regular user. Press Enter to continue..."
   [spinner_ok]="OK"
   [spinner_fail]="FAIL"
+  [banner_subtitle]="Command Center Interactive Installer"
+  [git_not_found]="git not found (optional)"
+  [git_clone_fail]="git clone failed"
+  [git_pull_fail]="git pull failed, using existing code"
+  [pkg_not_found]="package.json not found: %s"
+  [layout_fail]="Layout generation failed (using fallback)"
+  [install_hint]="Install OpenClaw first:"
+  [gw_not_running]="Gateway not running. Start with:"
+  [openclaw_not_found]="openclaw CLI not found, cannot verify gateway"
+  [nginx_conf_not_found]="Nginx config not found at standard locations"
+  [nginx_no_inject]="Could not find injection point in Nginx config"
+  [mode_label]="Mode"
 )
 
 # ============================================================
@@ -383,7 +415,7 @@ run_step() {
         esac
       else
         echo ""
-        echo -ne "  ${YELLOW}[r]$(t retry_r | cut -c1-3) [a]bort: ${NC}"
+        echo -ne "  ${YELLOW}$(t retry_abort): ${NC}"
         read -r choice
         case "$choice" in
           a|A) err "$(t abort_msg)"; exit 1 ;;
@@ -411,7 +443,7 @@ show_banner() {
         |_|
 BANNER
   echo -e "${NC}"
-  echo -e "  ${DIM}Command Center Interactive Installer v${VERSION}${NC}"
+  echo -e "  ${DIM}$(t banner_subtitle) v${VERSION}${NC}"
   echo -e "  ${DIM}$(printf '%.0s─' {1..50})${NC}"
   echo ""
 }
@@ -515,7 +547,7 @@ do_prereqs() {
   if command -v git &>/dev/null; then
     log "git $(git --version | awk '{print $3}')"
   else
-    warn "git not found (optional)"
+    warn "$(t git_not_found)"
   fi
 
   # pm2
@@ -558,19 +590,19 @@ do_install_deps() {
       info "$(t install_deps_clone)"
       mkdir -p "$(dirname "$CMD_DIR")"
       git clone https://github.com/openclaw/command-center.git "$CMD_DIR" 2>/dev/null || {
-        warn "git clone failed"
+        warn "$(t git_clone_fail)"
       }
     fi
   else
     # Existing install — update if git available
     if [[ -d "${CMD_DIR}/.git" ]] && command -v git &>/dev/null; then
       info "$(t install_deps_update)"
-      (cd "$CMD_DIR" && git pull --rebase 2>/dev/null) || warn "git pull failed, using existing code"
+      (cd "$CMD_DIR" && git pull --rebase 2>/dev/null) || warn "$(t git_pull_fail)"
     fi
   fi
 
   if [[ ! -f "${CMD_DIR}/package.json" ]]; then
-    err "package.json not found at ${CMD_DIR}"
+    err "$(printf "$(t pkg_not_found)" "${CMD_DIR}")"
     return 1
   fi
 
@@ -663,7 +695,7 @@ ENVEOF
     " 2>/dev/null || echo "no")
     if [[ "$needs_migrate" == "yes" ]]; then
       info "$(t configure_dept_migrate)"
-      node "${CMD_DIR}/scripts/migrate-config.js" 2>/dev/null || warn "Migration failed"
+      node "${CMD_DIR}/scripts/migrate-config.js" 2>/dev/null || warn "$(t configure_dept_migrate_fail)"
     fi
     log "$(t configure_dept_ok)"
   else
@@ -710,7 +742,7 @@ do_build_start() {
 
   # Generate layout
   info "$(t build_layout)"
-  node "${CMD_DIR}/scripts/gen-layout.js" &>/dev/null || warn "Layout generation failed (using fallback)"
+  node "${CMD_DIR}/scripts/gen-layout.js" &>/dev/null || warn "$(t layout_fail)"
 
   # Check port conflict
   if command -v ss &>/dev/null; then
@@ -782,9 +814,9 @@ do_health_check() {
       });
     " 2>/dev/null || echo "unknown")
     if [[ "$gw_status" == "connected" ]]; then
-      log "Gateway: ${GREEN}connected${NC}"
+      log "$(t health_gw_ok)"
     else
-      warn "Gateway: ${YELLOW}${gw_status}${NC}"
+      warn "$(printf "$(t health_gw_fail)" "$gw_status")"
     fi
     return 0
   else
@@ -802,8 +834,10 @@ do_health_check() {
 do_warn_overwrite() {
   if [[ -d "${OPENCLAW_HOME}" ]] && [[ -f "${OPENCLAW_HOME}/openclaw.json" ]]; then
     echo ""
+    local _warn_msg
+    _warn_msg="$(t warn_overwrite_msg)"
     echo -e "  ${RED_BG}                                                ${NC}"
-    echo -e "  ${RED_BG}   $(t warn_overwrite_msg)$(printf '%*s' $((35 - ${#MSG_EN[warn_overwrite_msg]})) '')${NC}"
+    echo -e "  ${RED_BG}   ${_warn_msg}$(printf '%*s' $((35 - ${#_warn_msg})) '')${NC}"
     echo -e "  ${RED_BG}                                                ${NC}"
     echo ""
     echo -e "  $(t warn_overwrite_path): ${YELLOW}${OPENCLAW_HOME}${NC}"
@@ -903,7 +937,7 @@ do_check_openclaw() {
   if [[ ! -f "$config_path" ]]; then
     err "$(printf "$(t check_openclaw_fail)" "$config_path")"
     echo ""
-    echo -e "  ${DIM}Install OpenClaw first: npm install -g openclaw && openclaw setup --wizard${NC}"
+    echo -e "  ${DIM}$(t install_hint) npm install -g openclaw && openclaw setup --wizard${NC}"
     return 1
   fi
   log "$(t check_openclaw_ok)"
@@ -942,10 +976,10 @@ do_check_verify_gateway() {
       fi
     done
     warn "$(t verify_gateway_dead)"
-    warn "Gateway not running. Start it with: openclaw gateway start"
+    warn "$(t gw_not_running) openclaw gateway start"
     return 0  # non-fatal for existing mode
   else
-    warn "openclaw CLI not found, cannot verify gateway"
+    warn "$(t openclaw_not_found)"
     return 0
   fi
 }
@@ -961,7 +995,7 @@ do_nginx_setup() {
     nginx_conf="/etc/nginx/conf.d/default.conf"
   fi
   if [[ ! -f "$nginx_conf" ]]; then
-    warn "Nginx config file not found at standard locations"
+    warn "$(t nginx_conf_not_found)"
     return 0
   fi
 
@@ -1021,7 +1055,7 @@ NGINXEOF
     cp /tmp/nginx_cmd_new.conf "$nginx_conf"
     rm -f /tmp/nginx_cmd_new.conf
   else
-    warn "Could not find injection point in Nginx config"
+    warn "$(t nginx_no_inject)"
     return 0
   fi
 
@@ -1091,7 +1125,7 @@ main() {
   select_mode
   show_banner
 
-  echo -e "  ${BOLD}Mode: ${TEAL}${INSTALL_MODE}${NC}"
+  echo -e "  ${BOLD}$(t mode_label): ${TEAL}${INSTALL_MODE}${NC}"
   echo ""
 
   if [[ "$INSTALL_MODE" == "beginner" ]]; then

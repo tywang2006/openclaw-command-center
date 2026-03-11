@@ -5,6 +5,8 @@ import { useToast } from './Toast'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
 import ImageModal from './ImageModal'
+import SkillPicker from './SkillPicker'
+import WorkflowEditor from './WorkflowEditor'
 import './ChatPanel.css'
 
 export interface SubAgent {
@@ -125,6 +127,10 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const [exporting, setExporting] = useState(false)
   const [driveConfigured, setDriveConfigured] = useState(false)
 
+  // Skill picker & Workflow
+  const [showSkillPicker, setShowSkillPicker] = useState(false)
+  const [showWorkflow, setShowWorkflow] = useState(false)
+
   const addImageFromFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) return
     if (file.size > 4 * 1024 * 1024) {
@@ -142,11 +148,11 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     const allowedTypes = ['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.csv', '.json', '.md']
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
     if (!allowedTypes.includes(ext)) {
-      showToast('Unsupported file type. Allowed: PDF, DOCX, XLSX, PPTX, TXT, CSV, JSON, MD')
+      showToast(t('chat.doc.unsupported'))
       return
     }
     if (file.size > 50 * 1024 * 1024) {
-      showToast('File too large (max 50MB)')
+      showToast(t('chat.doc.tooLarge'))
       return
     }
     setPendingDocs(prev => [...prev, { file, name: file.name, size: file.size }])
@@ -314,7 +320,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         showToast(t('email.failed', { error: data.error || '' }))
       }
     } catch {
-      showToast(t('email.failed', { error: 'Network error' }))
+      showToast(t('email.failed', { error: t('common.networkError') }))
     }
     setEmailSending(false)
   }
@@ -389,7 +395,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
         showToast(t('drive.failed', { error: data.error || '' }))
       }
     } catch {
-      showToast(t('drive.failed', { error: 'Network error' }))
+      showToast(t('drive.failed', { error: t('common.networkError') }))
     }
     setExporting(false)
     setShowExportMenu(false)
@@ -541,7 +547,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           })
         })
         .catch(() => {
-          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('dept.cmd.failed', { error: 'Network error' }), timestamp: Date.now(), source: 'app' })
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('dept.cmd.failed', { error: t('common.networkError') }), timestamp: Date.now(), source: 'app' })
         })
       return true
     }
@@ -572,7 +578,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           }
         })
         .catch(() => {
-          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.broadcast.failed', { error: 'Network error' }), timestamp: Date.now(), source: 'app' })
+          addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.broadcast.failed', { error: t('common.networkError') }), timestamp: Date.now(), source: 'app' })
         })
       return true
     }
@@ -680,7 +686,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       displayText += t('chat.message.images', { count: images.length })
     }
     if (uploadedDocs.length) {
-      displayText += `\n[${uploadedDocs.length} document(s): ${uploadedDocs.map(d => d.name).join(', ')}]`
+      displayText += t('chat.message.docs', { count: uploadedDocs.length, names: uploadedDocs.map(d => d.name).join(', ') })
     }
     
     addActivity({
@@ -1096,11 +1102,11 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
                 {msg.role === 'user' ? (
                   <>
                     <span className="chat-msg-sender you">
-                      {msg.fromName || 'YOU'}
+                      {msg.fromName || t('chat.message.you')}
                     </span>
                     {msg.source && msg.source !== 'app' && (
                       <span className={`chat-msg-source ${msg.source}`}>
-                        {msg.source === 'telegram' ? 'TG' : msg.source === 'gateway' ? 'TG' : msg.source}
+                        {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
                       </span>
                     )}
                   </>
@@ -1112,7 +1118,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
                     </span>
                     {msg.source && msg.source !== 'app' && (
                       <span className={`chat-msg-source ${msg.source}`}>
-                        {msg.source === 'telegram' ? 'TG' : msg.source === 'gateway' ? 'TG' : msg.source}
+                        {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
                       </span>
                     )}
                   </>
@@ -1423,6 +1429,25 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             </svg>
             <span>{t('chat.toolbar.timer')}</span>
           </button>
+          <button
+            className="chat-toolbar-btn"
+            onClick={() => { setShowSkillPicker(true); setShowToolbar(false) }}
+          >
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+              <path d="M8 1l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+            </svg>
+            <span>{t('chat.toolbar.skills')}</span>
+          </button>
+          <button
+            className="chat-toolbar-btn"
+            onClick={() => { setShowWorkflow(true); setShowToolbar(false) }}
+          >
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+              <path d="M2 3h5v3H2zM9 3h5v3H9zM5.5 10h5v3h-5z" stroke="currentColor" strokeWidth="1.3" fill="none" />
+              <path d="M4.5 6v2h3.5v2M11.5 6v2H8v2" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+            <span>{t('chat.toolbar.workflow')}</span>
+          </button>
         </div>
       )}
 
@@ -1525,6 +1550,31 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
           {sending ? '...' : <SendIcon size={16} color="#00d4aa" />}
         </button>
       </div>
+
+      {/* Skill picker modal */}
+      <SkillPicker
+        open={showSkillPicker}
+        onClose={() => setShowSkillPicker(false)}
+        selectedDeptId={selectedDeptId}
+        deptName={dept?.name || selectedDeptId || ''}
+        onExecuted={(skillName, reply) => {
+          addActivity({
+            deptId: selectedDeptId || 'system',
+            role: 'user',
+            text: `[Skill] ${skillName}`,
+            timestamp: Date.now(),
+          })
+          addActivity({
+            deptId: selectedDeptId || 'system',
+            role: 'assistant',
+            text: reply,
+            timestamp: Date.now(),
+          })
+        }}
+      />
+
+      {/* Workflow editor modal */}
+      {showWorkflow && <WorkflowEditor onClose={() => setShowWorkflow(false)} />}
 
       {/* Fullscreen image modal */}
       {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}

@@ -13,6 +13,37 @@
   position: relative;
 }
 
+/* Ambient glow + corner vignette */
+.app::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    /* Top-center teal ambient light */
+    radial-gradient(
+      ellipse 80% 40% at 50% -5%,
+      rgba(0, 212, 170, 0.08) 0%,
+      transparent 100%
+    ),
+    /* Bottom-right warm accent */
+    radial-gradient(
+      ellipse 50% 50% at 95% 95%,
+      rgba(232, 168, 56, 0.04) 0%,
+      transparent 100%
+    ),
+    /* Corner vignette */
+    radial-gradient(
+      ellipse at 50% 50%,
+      transparent 60%,
+      rgba(0, 0, 0, 0.35) 100%
+    );
+}
+
 /* Subtle CRT scanline overlay */
 .app::after {
   content: '';
@@ -43,6 +74,7 @@
   border-bottom: 2px solid var(--border-color);
   flex-shrink: 0;
   z-index: 10;
+  box-shadow: 0 1px 8px rgba(0, 212, 170, 0.06);
 }
 
 .header-title h1 {
@@ -156,7 +188,19 @@
   overflow: hidden;
   gap: 8px;
   padding: 8px;
-  background: var(--bg-primary);
+  background:
+    /* Teal accent dots — sparse, pixel feel */
+    radial-gradient(circle 1.5px at center, rgba(0, 212, 170, 0.12) 0%, transparent 100%),
+    /* Pixel grid — fine hairlines */
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    /* Base */
+    var(--bg-primary);
+  background-size:
+    48px 48px,
+    24px 24px,
+    24px 24px,
+    100% 100%;
 }
 
 /* ---- Left panel (Pixel Office) ---- */
@@ -235,12 +279,12 @@
 }
 
 .right-tab {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 2px;
+  padding: 8px 8px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -256,7 +300,16 @@
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* Hide label for inactive tabs - icon only */
+.right-tab span {
+  display: none;
+}
+
+/* Show label only on active tab */
+.right-tab.active span {
+  display: inline;
 }
 
 .right-tab:hover {

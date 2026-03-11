@@ -8,6 +8,11 @@ import { BASE_PATH, readJsonFile, readTextFile } from '../utils.js';
 
 const router = express.Router();
 
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // Input validation
 const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,8 +38,14 @@ function validateSubId(id) {
  */
 router.get('/departments', (req, res) => {
   try {
-    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
-    const statusPath = path.join(BASE_PATH, 'departments', 'status.json');
+    const deptBaseDir = path.join(BASE_PATH, 'departments');
+    const configPath = path.join(deptBaseDir, 'config.json');
+    const statusPath = path.join(deptBaseDir, 'status.json');
+
+    // Ensure departments directory exists (fresh installs won't have it)
+    if (!fs.existsSync(deptBaseDir)) {
+      fs.mkdirSync(deptBaseDir, { recursive: true });
+    }
 
     const config = readJsonFile(configPath) || { departments: {} };
     const status = readJsonFile(statusPath) || { agents: {} };
@@ -820,7 +831,7 @@ router.post('/departments/:id/export', async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${deptName} Conversation Export</title>
+  <title>${escapeHtml(deptName)} Conversation Export</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -862,8 +873,8 @@ router.post('/departments/:id/export', async (req, res) => {
 </head>
 <body>
   <div class="header">
-    <h1>${deptName} Conversation Export</h1>
-    <p><strong>Export Date:</strong> ${timestamp}</p>
+    <h1>${escapeHtml(deptName)} Conversation Export</h1>
+    <p><strong>Export Date:</strong> ${escapeHtml(timestamp)}</p>
   </div>
 `;
 
@@ -872,9 +883,9 @@ router.post('/departments/:id/export', async (req, res) => {
         const roleClass = msg.role;
         const time = new Date(msg.timestamp).toLocaleString();
 
-        content += `  <div class="message ${roleClass}">
-    <div class="message-header">${role} <span class="message-time">(${time})</span></div>
-    <div class="message-text">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+        content += `  <div class="message ${escapeHtml(roleClass)}">
+    <div class="message-header">${escapeHtml(role)} <span class="message-time">(${escapeHtml(time)})</span></div>
+    <div class="message-text">${escapeHtml(msg.text)}</div>
   </div>
 `;
       }
@@ -918,7 +929,14 @@ router.post('/departments', (req, res) => {
       return res.status(400).json({ success: false, error: 'Name is required' });
     }
 
-    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    const deptBaseDir = path.join(BASE_PATH, 'departments');
+    const configPath = path.join(deptBaseDir, 'config.json');
+
+    // Ensure departments directory exists (fresh installs won't have it)
+    if (!fs.existsSync(deptBaseDir)) {
+      fs.mkdirSync(deptBaseDir, { recursive: true });
+    }
+
     const config = readJsonFile(configPath) || { departments: {} };
 
     if (config.departments[id]) {

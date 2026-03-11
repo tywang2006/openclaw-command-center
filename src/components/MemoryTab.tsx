@@ -5,6 +5,11 @@ import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
 import './MemoryTab.css'
 
+interface SearchResult {
+  deptId: string
+  matches: { line: number; text: string }[]
+}
+
 interface MemoryTabProps {
   selectedDeptId: string | null
   memories: Map<string, string>
@@ -26,6 +31,16 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
   const [versionLoading, setVersionLoading] = useState(false)
   const [driveSaving, setDriveSaving] = useState(false)
   const [driveConfigured, setDriveConfigured] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchDone, setSearchDone] = useState(false)
+  const [viewMode, setViewMode] = useState<'memory' | 'persona'>('memory')
+  const [personaContent, setPersonaContent] = useState<string | null>(null)
+  const [personaEdit, setPersonaEdit] = useState('')
+  const [personaLoading, setPersonaLoading] = useState(false)
+  const [editingPersona, setEditingPersona] = useState(false)
+  const [personaSaving, setPersonaSaving] = useState(false)
   const { t } = useLocale()
 
   const selectedDept = departments.find(d => d.id === selectedDeptId)
@@ -70,10 +85,72 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setVersionContent(null)
   }, [selectedDeptId])
 
+  // Reset view mode when dept changes
+  useEffect(() => {
+    setViewMode('memory')
+    setPersonaContent(null)
+    setEditingPersona(false)
+  }, [selectedDeptId])
+
+  // Fetch persona when switching to persona view
+  useEffect(() => {
+    if (viewMode !== 'persona' || !selectedDeptId) return
+    if (personaContent !== null) return
+    setPersonaLoading(true)
+    authedFetch(`/api/departments/${selectedDeptId}/persona`)
+      .then(r => r.json())
+      .then(d => {
+        setPersonaContent(d.content || '')
+        setPersonaEdit(d.content || '')
+      })
+      .catch(() => {
+        setPersonaContent('')
+        setPersonaEdit('')
+      })
+      .finally(() => setPersonaLoading(false))
+  }, [viewMode, selectedDeptId, personaContent])
+
+  const handleSavePersona = useCallback(async () => {
+    if (!selectedDeptId) return
+    setPersonaSaving(true)
+    try {
+      const res = await authedFetch(`/api/departments/${selectedDeptId}/persona`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: personaEdit }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setPersonaContent(personaEdit)
+        setEditingPersona(false)
+        setSaveMsg(t('memory.saved'))
+        setTimeout(() => setSaveMsg(null), 2000)
+      }
+    } catch {
+      setSaveMsg(t('memory.save.failed'))
+    }
+    setPersonaSaving(false)
+  }, [selectedDeptId, personaEdit, t])
+
   // Check drive status
   useEffect(() => {
     authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch(() => {})
   }, [])
+
+  const handleSearch = useCallback(async () => {
+    if (searchQuery.trim().length < 2) return
+    setSearching(true)
+    setSearchDone(false)
+    try {
+      const res = await authedFetch(`/api/memory/search?q=${encodeURIComponent(searchQuery.trim())}`)
+      const data = await res.json()
+      setSearchResults(data.results || [])
+    } catch {
+      setSearchResults([])
+    }
+    setSearching(false)
+    setSearchDone(true)
+  }, [searchQuery])
 
   const handleEdit = useCallback(() => {
     setEditing(true)
@@ -186,7 +263,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         setSaveMsg(t('drive.failed', { error: data.error || '' }))
       }
     } catch {
-      setSaveMsg(t('drive.failed', { error: 'Network error' }))
+      setSaveMsg(t('drive.failed', { error: t('common.networkError') }))
     }
     setDriveSaving(false)
   }, [selectedDeptId, memoryContent, t])
@@ -194,10 +271,51 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
   if (!selectedDeptId) {
     return (
       <div className="memory-tab empty">
-        <div className="empty-message">
-          <div className="empty-icon"><MemoryIcon size={32} color="#a0a0b0" /></div>
-          <p>{t('memory.empty.icon')}</p>
+        <div className="memory-search-bar">
+          <input
+            className="memory-search-input"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
+            placeholder={t('memory.search.placeholder')}
+          />
+          <button className="mem-btn" onClick={handleSearch} disabled={searching || searchQuery.trim().length < 2}>
+            {searching ? '...' : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M11 11l4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
         </div>
+        {searchDone && searchResults.length > 0 ? (
+          <div className="memory-search-results">
+            <p className="memory-search-count">{t('memory.search.results', { count: searchResults.length })}</p>
+            {searchResults.map(r => (
+              <div key={r.deptId} className="memory-search-dept">
+                <div className="memory-search-dept-header">
+                  <DeptIcon deptId={r.deptId} size={14} />
+                  <span>{departments.find(d => d.id === r.deptId)?.name || r.deptId}</span>
+                </div>
+                {r.matches.map((m, i) => (
+                  <div key={i} className="memory-search-match">
+                    <span className="memory-search-line">{t('memory.search.line', { line: m.line })}</span>
+                    <span className="memory-search-text">{m.text}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : searchDone ? (
+          <div className="empty-message">
+            <p>{t('memory.search.no.results')}</p>
+          </div>
+        ) : (
+          <div className="empty-message">
+            <div className="empty-icon"><MemoryIcon size={32} color="#a0a0b0" /></div>
+            <p>{t('memory.empty.icon')}</p>
+          </div>
+        )}
       </div>
     )
   }
@@ -207,8 +325,29 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
       <div className="memory-header">
         <DeptIcon deptId={selectedDeptId} size={18} />
         <h2>{selectedDept?.name || selectedDeptId}</h2>
+        <div className="memory-mode-toggle">
+          <button className={`mode-btn ${viewMode === 'memory' ? 'active' : ''}`} onClick={() => setViewMode('memory')}>{t('memory.mode.memory')}</button>
+          <button className={`mode-btn ${viewMode === 'persona' ? 'active' : ''}`} onClick={() => setViewMode('persona')}>{t('memory.mode.persona')}</button>
+        </div>
         <div className="memory-actions">
-          {!editing ? (
+          {viewMode === 'persona' ? (
+            !editingPersona ? (
+              <button className="mem-btn" onClick={() => { setEditingPersona(true); setPersonaEdit(personaContent || '') }} title={t('memory.edit')}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.3" />
+                </svg>
+              </button>
+            ) : (
+              <>
+                <button className="mem-btn save" onClick={handleSavePersona} disabled={personaSaving}>
+                  {personaSaving ? '...' : t('memory.save')}
+                </button>
+                <button className="mem-btn cancel" onClick={() => { setEditingPersona(false); setPersonaEdit(personaContent || '') }}>
+                  {t('memory.cancel')}
+                </button>
+              </>
+            )
+          ) : !editing ? (
             <>
               {driveConfigured && (
                 <button className="mem-btn" onClick={handleSaveToDrive} disabled={driveSaving} title={t('drive.save')}>
@@ -286,7 +425,23 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
           )}
         </div>
       )}
-      {loading ? (
+      {viewMode === 'persona' ? (
+        personaLoading ? (
+          <div className="empty-message"><p>{t('memory.loading')}</p></div>
+        ) : editingPersona ? (
+          <textarea
+            className="memory-editor"
+            value={personaEdit}
+            onChange={e => setPersonaEdit(e.target.value)}
+            spellCheck={false}
+            autoFocus
+          />
+        ) : personaContent ? (
+          <pre className="memory-content">{personaContent}</pre>
+        ) : (
+          <div className="empty-message"><p>{t('memory.persona.empty')}</p></div>
+        )
+      ) : loading ? (
         <div className="empty-message"><p>{t('memory.loading')}</p></div>
       ) : editing ? (
         <textarea

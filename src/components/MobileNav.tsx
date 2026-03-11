@@ -2,7 +2,7 @@ import type { Department } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import './MobileNav.css'
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'cron' | 'dashboard' | 'integrations'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'system'
 
 interface MobileNavProps {
   activeTab: RightTab

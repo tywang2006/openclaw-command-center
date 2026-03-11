@@ -60,6 +60,9 @@ t() {
       oc_gateway_ok)     echo "Gateway 已启动" ;;
       oc_gateway_fail)   echo "Gateway 启动失败（可稍后手动启动: openclaw gateway）" ;;
       oc_skip)           echo "跳过 OpenClaw 安装（AI 功能将不可用）" ;;
+      device_paired)     echo "设备已配对" ;;
+      device_pair_fail)  echo "设备配对失败（可稍后手动配置）" ;;
+      dept_created)      echo "部门配置已创建" ;;
       yes_no)            echo "[Y/n]" ;;
       *)                 echo "$key" ;;
     esac
@@ -92,6 +95,9 @@ t() {
       oc_gateway_ok)     echo "Gateway started" ;;
       oc_gateway_fail)   echo "Gateway failed to start (run manually later: openclaw gateway)" ;;
       oc_skip)           echo "Skipping OpenClaw install (AI features will be unavailable)" ;;
+      device_paired)     echo "Device paired with Gateway" ;;
+      device_pair_fail)  echo "Device pairing failed (configure manually later)" ;;
+      dept_created)      echo "Department config created" ;;
       yes_no)            echo "[Y/n]" ;;
       *)                 echo "$key" ;;
     esac
@@ -224,6 +230,53 @@ if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ]; then
     fi
   else
     log "$(t oc_gateway_ok)"
+  fi
+fi
+
+echo ""
+
+# ================================================================
+# Step 1b: Auto-pair device + create departments config
+# ================================================================
+
+# Auto-pair command-center device so Gateway accepts our connection
+if $HAS_OPENCLAW || [ -d "${OPENCLAW_HOME}" ]; then
+  "${NODE}" "$APP_DIR/scripts/auto-pair.js" --openclaw-home "$OPENCLAW_HOME" 2>/dev/null && \
+    log "$(t device_paired)" || warn "$(t device_pair_fail)"
+
+  # Create default departments config if missing
+  DEPT_CONFIG="${OPENCLAW_HOME}/workspace/departments/config.json"
+  if [ ! -f "$DEPT_CONFIG" ]; then
+    mkdir -p "$(dirname "$DEPT_CONFIG")"
+    cat > "$DEPT_CONFIG" << 'DEPTEOF'
+{
+  "departments": {
+    "general": {
+      "name": "General",
+      "agent": "Assistant",
+      "icon": "bolt",
+      "color": "#fbbf24",
+      "hue": 45,
+      "order": 0
+    }
+  },
+  "defaultDepartment": "general",
+  "groupId": ""
+}
+DEPTEOF
+    mkdir -p "${OPENCLAW_HOME}/workspace/departments/general/memory"
+    mkdir -p "${OPENCLAW_HOME}/workspace/departments/bulletin/requests"
+    mkdir -p "${OPENCLAW_HOME}/workspace/departments/personas"
+    log "$(t dept_created)"
+  fi
+
+  # Restart Gateway to pick up new paired device (if it was running)
+  if $GATEWAY_RUNNING 2>/dev/null; then
+    # Give Gateway a moment to restart with new paired.json
+    if command -v openclaw >/dev/null 2>&1; then
+      openclaw gateway restart >/dev/null 2>&1 || true
+      sleep 2
+    fi
   fi
 fi
 

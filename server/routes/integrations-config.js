@@ -3,11 +3,19 @@ import fs from 'fs';
 import path from 'path';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
+import {
+  getEncryptionKey,
+  encryptSensitiveFields,
+  decryptSensitiveFields,
+  migratePlaintextFields,
+} from '../crypto.js';
+import { recordAudit } from './audit.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
 
 const router = express.Router();
 
-const CONFIG_PATH = '/root/.openclaw/workspace/command-center/integrations.json';
-const OPENCLAW_CONFIG = '/root/.openclaw/openclaw.json';
+const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
+const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const VALID_SERVICES = ['gmail', 'drive', 'voice', 'webhook'];
 
 // Default configuration structure
@@ -20,26 +28,25 @@ const DEFAULT_CONFIG = {
 };
 
 /**
- * Helper: Read JSON file safely
+ * Helper: Write JSON file safely with optional backup rotation
  */
-function readJsonFile(filePath) {
+function writeJsonFile(filePath, data, { backup = false } = {}) {
   try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
+    if (backup && fs.existsSync(filePath)) {
+      const dir = path.dirname(filePath);
+      const base = path.basename(filePath, '.json');
+      // Rotate: .bak.3 → delete, .bak.2 → .bak.3, .bak.1 → .bak.2
+      for (let i = 3; i >= 1; i--) {
+        const bakPath = path.join(dir, `${base}.bak.${i}`);
+        if (i === 3 && fs.existsSync(bakPath)) {
+          fs.unlinkSync(bakPath);
+        } else if (fs.existsSync(bakPath)) {
+          fs.renameSync(bakPath, path.join(dir, `${base}.bak.${i + 1}`));
+        }
+      }
+      // Current → .bak.1
+      fs.copyFileSync(filePath, path.join(dir, `${base}.bak.1`));
     }
-    return null;
-  } catch (error) {
-    console.error(`[IntegrationsConfig] Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
-
-/**
- * Helper: Write JSON file safely
- */
-function writeJsonFile(filePath, data) {
-  try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     return true;
   } catch (error) {
@@ -49,7 +56,7 @@ function writeJsonFile(filePath, data) {
 }
 
 /**
- * Helper: Get config with defaults
+ * Helper: Get config with defaults — decrypts sensitive fields on read
  */
 function getConfig() {
   let config = readJsonFile(CONFIG_PATH);
@@ -63,7 +70,29 @@ function getConfig() {
       config[service] = DEFAULT_CONFIG[service];
     }
   }
+
+  // Auto-migrate any legacy plaintext credentials → encrypted
+  const key = getEncryptionKey();
+  const migrated = migratePlaintextFields(config, key);
+  if (migrated > 0) {
+    console.log(`[Crypto] Migrated ${migrated} plaintext credential(s) to encrypted storage`);
+    writeJsonFile(CONFIG_PATH, config, { backup: true });
+  }
+
+  // Decrypt for in-memory use
+  decryptSensitiveFields(config, key);
   return config;
+}
+
+/**
+ * Helper: Encrypt sensitive fields and write config to disk with backup
+ */
+function saveConfig(config) {
+  // Deep clone to avoid mutating the in-memory copy
+  const toWrite = JSON.parse(JSON.stringify(config));
+  const key = getEncryptionKey();
+  encryptSensitiveFields(toWrite, key);
+  return writeJsonFile(CONFIG_PATH, toWrite, { backup: true });
 }
 
 /**
@@ -196,11 +225,12 @@ router.put('/integrations/config/:service', (req, res) => {
     config[service] = { ...config[service], ...updates };
 
     // Write back to file
-    const success = writeJsonFile(CONFIG_PATH, config);
+    const success = saveConfig(config);
     if (!success) {
       return res.status(500).json({ error: 'Failed to save configuration' });
     }
 
+    recordAudit({ action: 'credential.update', target: service, details: { fields: Object.keys(updates) }, ip: req.ip });
     const masked = maskSensitiveFields(config);
     res.json({ success: true, config: masked[service] });
   } catch (error) {
@@ -346,7 +376,7 @@ router.delete('/integrations/config/:service', (req, res) => {
     const config = getConfig();
     config[service] = DEFAULT_CONFIG[service];
 
-    const success = writeJsonFile(CONFIG_PATH, config);
+    const success = saveConfig(config);
     if (!success) {
       return res.status(500).json({ error: 'Failed to reset configuration' });
     }
@@ -424,7 +454,7 @@ router.put('/integrations/autobackup', (req, res) => {
       config.autoBackup.time = time;
     }
 
-    if (!writeJsonFile(CONFIG_PATH, config)) {
+    if (!saveConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -484,14 +514,14 @@ async function runAutoBackup() {
       config.drive.folderId = folderId;
     }
 
-    const deptConfigPath = '/root/.openclaw/workspace/departments/config.json';
+    const deptConfigPath = path.join(BASE_PATH, 'departments', 'config.json');
     const deptConfig = readJsonFile(deptConfigPath);
     const departments = deptConfig?.departments || {};
     const deptIds = Object.values(departments).map(d => d.id);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const files = [];
 
-    const DEPARTMENTS_PATH = '/root/.openclaw/workspace/departments';
+    const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
 
     for (const id of deptIds) {
       const deptPath = `${DEPARTMENTS_PATH}/${id}`;
@@ -524,7 +554,7 @@ async function runAutoBackup() {
     // Update lastRun
     if (!config.autoBackup) config.autoBackup = { ...DEFAULT_CONFIG.autoBackup };
     config.autoBackup.lastRun = new Date().toISOString();
-    writeJsonFile(CONFIG_PATH, config);
+    saveConfig(config);
 
     console.log(`[AutoBackup] Completed: ${files.length} departments backed up`);
     return { success: true, files };

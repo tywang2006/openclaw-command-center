@@ -31,7 +31,7 @@ export const en: Record<string, string> = {
   'chat.subagent.create.error': 'Network error, unable to create sub-agent',
   'chat.subagent.system': 'System',
   'chat.subagent.created': '[System] Created sub-agent "{name}" with task: {task}',
-  'chat.message.to': 'Message to {name}... (paste images)',
+  'chat.message.to': 'Message to {name}...',
   'chat.message.subagent.to': 'Message to {name}...',
   'chat.message.select': 'Select a department...',
   'chat.message.send': 'Send message to {name}',
@@ -42,11 +42,16 @@ export const en: Record<string, string> = {
   'chat.message.error.agent': '[Error] Agent not responding',
   'chat.message.you': 'YOU',
   'chat.message.images': '\n[{count} images]',
+  'chat.message.docs': '\n[{count} document(s): {names}]',
+  'chat.source.telegram': 'TG',
+  'chat.source.gateway': 'GW',
   'chat.message.subagent.prefix': '[{name}] {message}',
   'chat.message.command.prefix': '[Command] {message}',
   'chat.image.upload': 'Upload Image',
   'chat.image.size.limit': 'Image cannot exceed 4MB',
   'chat.doc.upload': 'Upload Document (PDF, DOCX, XLSX, PPTX, TXT, CSV)',
+  'chat.doc.unsupported': 'Unsupported file type. Allowed: PDF, DOCX, XLSX, PPTX, TXT, CSV, JSON, MD',
+  'chat.doc.tooLarge': 'File too large (max 50MB)',
   'chat.drop.hint': 'Drop files here to upload',
   'chat.upload.progress': 'Uploading...',
   'chat.timer.create': 'Create Timer',
@@ -330,6 +335,24 @@ export const en: Record<string, string> = {
 
   // Capabilities Dashboard (IntegrationsTab)
   'app.tab.integrations': 'Capabilities',
+  'app.tab.system': 'System',
+
+  // SystemTab
+  'system.loading': 'Loading...',
+  'system.gateway.title': 'Gateway',
+  'system.gateway.status': 'Status',
+  'system.gateway.connected': 'Connected',
+  'system.gateway.disconnected': 'Disconnected',
+  'system.gateway.auth': 'Auth',
+  'system.gateway.uptime': 'Uptime',
+  'system.gateway.pending': 'Pending',
+  'system.gateway.streams': 'Streams',
+  'system.channels': 'Channels',
+  'system.running': 'Running',
+  'system.stopped': 'Stopped',
+  'system.disabled': 'Disabled',
+  'system.models.title': 'Models',
+  'system.plugins.title': 'Plugins',
   'cap.title': 'System Capabilities',
   'cap.loading': 'Loading...',
   'cap.error': 'Failed to load',
@@ -351,6 +374,7 @@ export const en: Record<string, string> = {
   'cap.channel.dmPolicy': 'DM: {policy}',
   'cap.model.context': '{size} context',
   'cap.model.output': '{size} output',
+  'cap.model.image': '+image',
   'cap.skills.count': '{count} skills total',
   'cap.skills.search': 'Search skills, tags...',
   'cap.skills.empty': 'No matching skills found',
@@ -427,8 +451,11 @@ export const en: Record<string, string> = {
   'integ.backup.running': 'Backing up...',
   'integ.backup.requireDrive': 'Requires Google Drive to be configured',
   'integ.backup.saved': 'Auto backup config saved',
+  'integ.backup.result': 'Backed up {count} departments',
+  'integ.backup.failed': 'Backup failed',
 
   // Common
+  'common.networkError': 'Network error',
   'common.loading': 'Loading...',
   'common.error': 'Error',
   'common.success': 'Success',
@@ -550,4 +577,59 @@ export const en: Record<string, string> = {
   'cmd.help.desc': 'Show all commands',
   'cmd.help.hint': 'View available commands',
   'cmd.help.title': '[System] Available commands:',
+
+  // LoginPanel
+  'login.password': 'Password',
+  'login.submit': 'LOGIN',
+  'login.loading': '...',
+  'login.error.network': 'Network error',
+  'login.error.failed': 'Login failed',
+
+  // ErrorBoundary
+  'error.title': 'Something went wrong',
+  'error.retry': 'Retry',
+
+  // Tooltips
+  'app.locale.toggle': 'Toggle language',
+  'app.logout': 'Logout',
+
+  // SkillPicker
+  'chat.toolbar.skills': 'Skills',
+  'skill.picker.title': 'Skills',
+  'skill.picker.search': 'Search skills...',
+  'skill.picker.loading': 'Loading...',
+  'skill.picker.empty': 'No skills found',
+  'skill.exec.run': 'Execute on {dept}',
+  'skill.exec.running': 'Executing...',
+  'skill.exec.failed': 'Execution failed',
+  'skill.exec.error': 'Network error',
+
+  // Memory Search
+  'memory.search.placeholder': 'Search across all departments...',
+  'memory.search.results': '{count} matches',
+  'memory.search.no.results': 'No matches found',
+  'memory.search.line': 'Line {line}',
+
+  // Memory Persona Mode
+  'memory.mode.memory': 'Memory',
+  'memory.mode.persona': 'Persona',
+  'memory.persona.empty': 'No persona defined',
+
+  // Workflow Toolbar
+  'chat.toolbar.workflow': 'Workflow',
+
+  // SystemTab Extensions
+  'system.observer.title': 'Memory Observer',
+  'system.observer.desc': 'Run observer/reflector scripts',
+  'system.observer.run': 'Run Now',
+  'system.observer.done': 'Observer completed',
+  'system.observer.failed': 'Observer failed',
+  'system.sessions.title': 'Sessions',
+  'system.sessions.empty': 'No active sessions',
+  'system.devices.title': 'Paired Devices',
+  'system.devices.empty': 'No paired devices',
+  'system.shutdown.title': 'Server Control',
+  'system.shutdown.btn': 'Shut Down Server',
+  'system.shutdown.confirm': 'Shut down the Command Center server? You can restart by double-clicking the app.',
+  'system.shutdown.done': 'Server has been shut down. Double-click the app to restart.',
 }

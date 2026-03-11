@@ -1,26 +1,11 @@
 import express from 'express';
-import fs from 'fs';
 import nodemailer from 'nodemailer';
+import path from 'path';
+import { BASE_PATH, readJsonFile } from '../utils.js';
 
 const router = express.Router();
 
-const CONFIG_PATH = '/root/.openclaw/workspace/command-center/integrations.json';
-
-/**
- * Helper: Read JSON file safely
- */
-function readJsonFile(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    }
-    return null;
-  } catch (error) {
-    console.error(`[Email] Error reading JSON file ${filePath}:`, error.message);
-    return null;
-  }
-}
+const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 
 /**
  * Helper: Get Gmail configuration

@@ -1,0 +1,11 @@
+node_modules
+dist
+logs
+*.log
+.env
+.auth_password
+.git
+.gitignore
+tsconfig.tsbuildinfo
+*.run
+*.tar.gz

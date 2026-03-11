@@ -16,15 +16,32 @@ import documentsRoutes from './routes/documents.js';
 import filesRoutes from './routes/files.js';
 import integrationsConfigRoutes, { checkAutoBackup } from './routes/integrations-config.js';
 import systemConfigRoutes from './routes/system-config.js';
+import systemExtrasRoutes from './routes/system-extras.js';
 import emailRoutes from './routes/email.js';
 import driveRoutes from './routes/drive.js';
 import voiceRoutes from './routes/voice.js';
+import searchRoutes from './routes/search.js';
+import auditRoutes, { recordAudit } from './routes/audit.js';
+import notificationsRoutes, { notifyError, notifyWarning, notifyInfo } from './routes/notifications.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
 import { BASE_PATH } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Ensure minimum directory structure exists (for fresh installs)
+const requiredDirs = [
+  path.join(BASE_PATH, 'departments'),
+  path.join(BASE_PATH, 'departments', 'bulletin'),
+  path.join(BASE_PATH, 'agents', 'main', 'sessions'),
+];
+for (const dir of requiredDirs) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`[Bootstrap] Created missing directory: ${dir}`);
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -37,9 +54,17 @@ const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS headers for development
+// CORS headers — restrict to configured origins
+const CORS_ORIGIN = process.env.CORS_ORIGIN || `http://localhost:${PORT}`;
+const allowedOrigins = CORS_ORIGIN.split(',').map(o => o.trim());
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.header('Access-Control-Allow-Origin', allowedOrigins[0]);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
@@ -60,6 +85,19 @@ app.use((req, res, next) => {
 // Authentication routes (must be BEFORE authMiddleware)
 app.use('/api/auth', authRouter);
 
+// Health check (no auth required)
+const healthHandler = (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    wsClients: wss.clients.size,
+    gateway: getGateway().stats,
+  });
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
+
 // Apply authentication middleware to all API routes
 app.use('/api', authMiddleware);
 
@@ -75,29 +113,39 @@ app.use('/api', documentsRoutes);
 app.use('/api', filesRoutes);
 app.use('/api', integrationsConfigRoutes);
 app.use('/api', systemConfigRoutes);
+app.use('/api', systemExtrasRoutes);
 app.use('/api', emailRoutes);
 app.use('/api', driveRoutes);
 app.use('/api', voiceRoutes);
+app.use('/api', searchRoutes);
+app.use('/api', auditRoutes);
+app.use('/api', notificationsRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    wsClients: wss.clients.size,
-    gateway: getGateway().stats,
-  });
+// Global Express error handler
+app.use((err, req, res, next) => {
+  console.error('[Server] Unhandled Express error:', err.stack || err.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Serve static files in production under /cmd/
 const distPath = path.join(__dirname, '../dist');
-app.use('/cmd', express.static(distPath));
+app.use('/cmd', express.static(distPath, {
+  maxAge: '1y',                // hashed assets cache forever
+  immutable: true,
+  setHeaders(res, filePath) {
+    // index.html must never be cached — it references hashed assets
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
 
 // SPA fallback - serve index.html for /cmd/* routes
 app.get('/cmd/*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(indexPath);
   } else {
     res.status(404).json({
@@ -201,8 +249,11 @@ const watcher = createWatcher(wss);
 const gateway = getGateway();
 gateway.connect().then(() => {
   console.log('[Gateway] Connected to OpenClaw Gateway');
+  notifyInfo('gateway', 'Gateway Connected', 'Successfully connected to OpenClaw Gateway');
 }).catch(err => {
-  console.error('[Gateway] Initial connection failed (will retry):', err.message);
+  console.warn('[Gateway] Initial connection failed:', err.message);
+  console.warn('[Gateway] AI features will be unavailable until Gateway connection is fixed.');
+  notifyWarning('gateway', 'Gateway Not Connected', err.message + ' — AI features unavailable');
 });
 
 // Load department config for session-key-to-department mapping
@@ -369,6 +420,15 @@ function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled Promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught exception:', err);
+  setTimeout(() => process.exit(1), 1000);
+});
 
 // Start server
 server.listen(PORT, HOST, () => {

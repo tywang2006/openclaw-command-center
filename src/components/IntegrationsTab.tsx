@@ -201,7 +201,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       const data = await res.json()
       setTestResult({ ok: data.success, msg: data.success ? t('integ.test.success') : t('integ.test.failed', { error: data.error || '' }) })
     } catch (err) {
-      setTestResult({ ok: false, msg: t('integ.test.failed', { error: 'Network error' }) })
+      setTestResult({ ok: false, msg: t('integ.test.failed', { error: t('common.networkError') }) })
     }
     setConfigTesting(false)
   }
@@ -326,7 +326,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
         if (d2) setModelConfig(d2)
       }
     } catch {
-      setSysTestResult({ ok: false, msg: t('sys.models.test.failed', { error: 'Network error' }) })
+      setSysTestResult({ ok: false, msg: t('sys.models.test.failed', { error: t('common.networkError') }) })
     }
     setSysSaving(false)
   }
@@ -343,7 +343,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       const data = await res.json()
       setSysTestResult({ ok: data.success, msg: data.success ? t('sys.models.test.success') : t('sys.models.test.failed', { error: data.error || '' }) })
     } catch {
-      setSysTestResult({ ok: false, msg: t('sys.models.test.failed', { error: 'Network error' }) })
+      setSysTestResult({ ok: false, msg: t('sys.models.test.failed', { error: t('common.networkError') }) })
     }
     setSysTesting(false)
   }
@@ -390,7 +390,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       const data = await res.json()
       setSysTestResult({ ok: data.success, msg: data.success ? t('sys.telegram.test.success', { name: data.message || '' }) : t('sys.telegram.test.failed', { error: data.error || '' }) })
     } catch {
-      setSysTestResult({ ok: false, msg: t('sys.telegram.test.failed', { error: 'Network error' }) })
+      setSysTestResult({ ok: false, msg: t('sys.telegram.test.failed', { error: t('common.networkError') }) })
     }
     setSysTesting(false)
   }
@@ -428,7 +428,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       const data = await res.json()
       setSysTestResult({ ok: data.success, msg: data.success ? t('sys.skills.test.success') : t('sys.skills.test.failed', { error: data.error || '' }) })
     } catch {
-      setSysTestResult({ ok: false, msg: t('sys.skills.test.failed', { error: 'Network error' }) })
+      setSysTestResult({ ok: false, msg: t('sys.skills.test.failed', { error: t('common.networkError') }) })
     }
     setSkillTesting(null)
   }
@@ -464,15 +464,15 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       const res = await authedFetch('/api/integrations/autobackup/run', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        setSysTestResult({ ok: true, msg: `Backed up ${data.files?.length || 0} departments` })
+        setSysTestResult({ ok: true, msg: t('integ.backup.result', { count: data.files?.length || 0 }) })
         const r2 = await authedFetch('/api/integrations/autobackup')
         const d2 = await r2.json()
         if (d2) setAutoBackupConfig(d2)
       } else {
-        setSysTestResult({ ok: false, msg: data.error || 'Backup failed' })
+        setSysTestResult({ ok: false, msg: data.error || t('integ.backup.failed') })
       }
     } catch {
-      setSysTestResult({ ok: false, msg: 'Network error' })
+      setSysTestResult({ ok: false, msg: t('common.networkError') })
     }
     setBackupRunning(false)
   }
@@ -759,7 +759,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 <span>{m.provider}</span>
                 <span>{t('cap.model.context', { size: m.contextWindowFormatted })}</span>
                 <span>{t('cap.model.output', { size: m.maxTokensFormatted })}</span>
-                {m.input.includes('image') && <span>+image</span>}
+                {m.input.includes('image') && <span>{t('cap.model.image')}</span>}
               </div>
             </div>
           ))}
@@ -1078,7 +1078,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                           })}
                         />
                         <button className="cap-skill-row-btn" onClick={() => handleModelsTest(provId)} disabled={sysTesting}>
-                          Test
+                          {t('integ.test')}
                         </button>
                       </div>
                     </div>
@@ -1194,7 +1194,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                         onClick={() => handleSkillKeyTest(sk.slug)}
                         disabled={skillTesting === sk.slug}
                       >
-                        Test
+                        {t('integ.test')}
                       </button>
                       <button className="cap-skill-row-btn"
                         onClick={() => handleSkillKeySave(sk.slug)}

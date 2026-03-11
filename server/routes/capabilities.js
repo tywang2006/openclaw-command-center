@@ -1,11 +1,12 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, readTextFile, parseFrontmatter } from '../utils.js';
 
 const router = express.Router();
 
-const OPENCLAW_CONFIG = '/root/.openclaw/openclaw.json';
-const SKILLS_PATH = '/root/.openclaw/workspace/skills';
+const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
+const SKILLS_PATH = path.join(BASE_PATH, 'skills');
 
 // Static plugin descriptions (plugins have no SKILL.md)
 const PLUGIN_INFO = {
@@ -20,58 +21,6 @@ const CHANNEL_NAMES = {
   telegram: 'Telegram',
   whatsapp: 'WhatsApp',
 };
-
-/** Parse YAML frontmatter from SKILL.md */
-function parseFrontmatter(content) {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return { frontmatter: {}, body: content };
-
-  const body = content.slice(match[0].length).trim();
-  const frontmatter = {};
-  let currentKey = null;
-  let currentValue = [];
-
-  for (const line of match[1].split('\n')) {
-    const kv = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
-    if (kv) {
-      if (currentKey) frontmatter[currentKey] = parseValue(currentValue.join('\n').trim());
-      currentKey = kv[1];
-      currentValue = [kv[2]];
-    } else if (currentKey && line.trim()) {
-      currentValue.push(line);
-    }
-  }
-  if (currentKey) frontmatter[currentKey] = parseValue(currentValue.join('\n').trim());
-
-  return { frontmatter, body };
-}
-
-function parseValue(value) {
-  const arr = value.match(/^\[(.*)\]$/);
-  if (arr) return arr[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  if (value === 'null' || value === '') return null;
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
-    return value.slice(1, -1);
-  return value;
-}
-
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function readText(filePath) {
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
-}
 
 /** Format context window size for display */
 function formatSize(n) {
@@ -88,7 +37,7 @@ function formatSize(n) {
  */
 router.get('/system/capabilities', (req, res) => {
   try {
-    const config = readJson(OPENCLAW_CONFIG);
+    const config = readJsonFile(OPENCLAW_CONFIG);
     if (!config) {
       return res.status(500).json({ error: 'Cannot read openclaw.json' });
     }
@@ -141,11 +90,11 @@ router.get('/system/capabilities', (req, res) => {
         .map(d => d.name);
 
       for (const slug of dirs) {
-        const skillMd = readText(path.join(SKILLS_PATH, slug, 'SKILL.md'));
+        const skillMd = readTextFile(path.join(SKILLS_PATH, slug, 'SKILL.md'));
         if (!skillMd) continue;
 
         const { frontmatter } = parseFrontmatter(skillMd);
-        const meta = readJson(path.join(SKILLS_PATH, slug, '_meta.json'));
+        const meta = readJsonFile(path.join(SKILLS_PATH, slug, '_meta.json'));
         const hasAssets = fs.existsSync(path.join(SKILLS_PATH, slug, 'assets'));
 
         skills.push({

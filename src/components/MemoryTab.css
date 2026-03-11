@@ -14,11 +14,12 @@
 
 .memory-tab.empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 300px;
-  overflow: hidden;
-  padding: 24px;
+  overflow-y: auto;
+  padding: 12px;
 }
 
 .empty-message {
@@ -235,6 +236,108 @@
 
 .memory-version-preview .mem-btn.save {
   align-self: flex-end;
+}
+
+/* ---- Mode Toggle ---- */
+.memory-mode-toggle {
+  display: flex;
+  gap: 0;
+  border: 2px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  padding: 2px 8px;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  background: var(--bg-primary);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.mode-btn.active {
+  background: var(--accent-muted);
+  color: var(--accent-color);
+}
+
+.mode-btn:hover:not(.active) {
+  color: var(--text-primary);
+}
+
+/* ---- Memory Search ---- */
+.memory-search-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.memory-search-input {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  outline: none;
+}
+
+.memory-search-input:focus {
+  border-color: var(--accent-color);
+}
+
+.memory-search-results {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memory-search-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.memory-search-dept {
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  padding: 6px 8px;
+}
+
+.memory-search-dept-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-color);
+  margin-bottom: 4px;
+}
+
+.memory-search-match {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 10px;
+}
+
+.memory-search-line {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.memory-search-text {
+  color: var(--text-secondary);
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 /* ---- Mobile Responsive ---- */
