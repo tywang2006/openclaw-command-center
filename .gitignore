@@ -16,3 +16,5 @@ uploads/
 release/
 outputs/
 notifications.json
+chaoagent.md
+replays/

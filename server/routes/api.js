@@ -4,7 +4,7 @@ import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
 import { chat, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
 import { generateAndSave } from '../layout-generator.js';
-import { BASE_PATH, readJsonFile, readTextFile } from '../utils.js';
+import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 
@@ -958,7 +958,7 @@ router.post('/departments', (req, res) => {
       ...(telegramTopicId !== undefined ? { telegramTopicId } : {})
     };
 
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 
     // Create department directory structure
     const deptDir = path.join(BASE_PATH, 'departments', id);
@@ -1011,7 +1011,7 @@ router.put('/departments/:id', (req, res) => {
     if (telegramTopicId !== undefined) config.departments[id].telegramTopicId = telegramTopicId;
     if (order !== undefined) config.departments[id].order = order;
 
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 
     // Rebuild layout if hue or order changed (affects visual layout)
     if (hue !== undefined || order !== undefined) {
@@ -1050,7 +1050,7 @@ router.delete('/departments/:id', (req, res) => {
     }
 
     delete config.departments[id];
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 
     // Rebuild layout after department deletion
     try {

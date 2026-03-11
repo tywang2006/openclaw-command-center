@@ -17,11 +17,6 @@ const ALLOWED_DIRS = [
   path.resolve(path.join(__dirname, '../../departments')),
 ];
 
-function isAllowedPath(filePath) {
-  const resolved = path.resolve(filePath);
-  return ALLOWED_DIRS.some(dir => resolved.startsWith(dir + path.sep) || resolved === dir);
-}
-
 // Document processing endpoint
 router.post('/documents/process', async (req, res) => {
   try {
@@ -31,11 +26,10 @@ router.post('/documents/process', async (req, res) => {
       return res.status(400).json({ error: 'filePath is required' });
     }
 
-    if (!isAllowedPath(filePath)) {
+    const resolvedPath = path.resolve(filePath);
+    if (!ALLOWED_DIRS.some(dir => resolvedPath.startsWith(dir + path.sep) || resolvedPath === dir)) {
       return res.status(403).json({ error: 'Access denied: file path is outside allowed directories' });
     }
-
-    const resolvedPath = path.resolve(filePath);
 
     // Check if file exists
     try {
@@ -54,7 +48,8 @@ router.post('/documents/process', async (req, res) => {
     const result = JSON.parse(stdout);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Documents] Process error:', err.message);
+    res.status(500).json({ error: 'Document processing failed' });
   }
 });
 

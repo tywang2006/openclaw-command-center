@@ -42,7 +42,7 @@ Express + ws (port 5100)
 ### Gateway 连接信息
 
 - **WebSocket URL**: `ws://127.0.0.1:18789`
-- **认证 Token**: `231f8798242b198b234e1b384c370d234db76ffc1d7bc043`
+- **认证 Token**: `(see ~/.openclaw/openclaw.json gateway.auth.token)`
 - **Agent ID**: `main`
 - **协议**: JSON-RPC 2.0 over WebSocket
 
@@ -69,7 +69,7 @@ Express + ws (port 5100)
     "scopes": ["operator.admin"],
     "caps": ["tool-events"],
     "auth": {
-      "token": "231f8798242b198b234e1b384c370d234db76ffc1d7bc043"
+      "token": "<REDACTED — see ~/.openclaw/openclaw.json>"
     }
   }
 }
@@ -213,8 +213,8 @@ Express + ws (port 5100)
 
 ### Telegram 集成
 
-- **Bot Token**: `8102890327:AAGMn9Ft2GA2T2ODOuZWDFqs1kI2BN6HWwc`
-- **Group ID**: `-1003570960670`
+- **Bot Token**: `(see ~/.openclaw/openclaw.json channels.telegram.botToken)`
+- **Group ID**: `(see ~/.openclaw/openclaw.json channels.telegram.groupId)`
 - **Topic 映射**: config.json 中 key = topic ID, dept.id = 部门ID
 - **双向通信**: 用户发消息 → AI 自动回复 → 回复发回 Telegram
 - **失败提示**: API 失败时发中文错误说明到 Telegram
@@ -258,7 +258,7 @@ Express + ws (port 5100)
 
 - **Provider**: Moonshot
 - **Base URL**: `https://api.moonshot.ai/v1`
-- **API Key**: `sk-dWw5MdEUz6D2bkhOpOeqtraC69xfIm5xDb1Kq8M7bY6mFS5g`
+- **API Key**: `(see ~/.openclaw/openclaw.json models.providers.moonshot.apiKey)`
 - **Model**: `kimi-k2.5` (256K context, 8192 max tokens)
 - **注意**: temperature 只能为 1 (不能设其他值)
 

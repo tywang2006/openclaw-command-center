@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { getGateway } from '../gateway.js';
+import { safeWriteFileSync } from '../utils.js';
 import { OPENCLAW_HOME } from '../utils.js';
 
 const router = express.Router();
@@ -35,7 +36,7 @@ function readCronJobs() {
  */
 function writeCronJobs(data) {
   try {
-    fs.writeFileSync(CRON_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+    safeWriteFileSync(CRON_FILE_PATH, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
     console.error('Error writing cron jobs file:', error.message);

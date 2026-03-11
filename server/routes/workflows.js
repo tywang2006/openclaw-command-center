@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { chat } from '../agent.js';
-import { OPENCLAW_HOME } from '../utils.js';
+import { OPENCLAW_HOME, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 
@@ -24,7 +24,7 @@ function writeWorkflows(data) {
   try {
     const dir = path.dirname(WORKFLOWS_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(WORKFLOWS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    safeWriteFileSync(WORKFLOWS_FILE, JSON.stringify(data, null, 2));
     return true;
   } catch (err) {
     console.error('[Workflows] Write error:', err.message);

@@ -73,7 +73,7 @@ if [ "$CHOICE" = "$BTN_UNINSTALL" ]; then
   if [ "$CONFIRM" = "OK" ]; then
     # Kill running server
     CMD_PORT="${CMD_PORT:-5100}"
-    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
     # Remove data
     rm -rf "$CMD_DIR"
     osascript -e "display dialog \"${UNINSTALL_DONE}\" with title \"${DLG_TITLE}\" buttons {\"OK\"} default button \"OK\"" 2>/dev/null
@@ -93,7 +93,7 @@ if [ "$CHOICE" = "$BTN_REINSTALL" ]; then
   if [ "$CONFIRM" = "OK" ]; then
     # Kill running server
     CMD_PORT="${CMD_PORT:-5100}"
-    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+    lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
     # Remove setup marker to trigger fresh setup
     rm -f "$SETUP_MARKER"
     # Run setup in Terminal
@@ -130,7 +130,7 @@ if command -v openclaw >/dev/null 2>&1; then
 fi
 
 # Kill any existing Command Center instance on our port
-lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
+lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -15 2>/dev/null || true; sleep 1; lsof -ti:"${CMD_PORT}" 2>/dev/null | xargs kill -9 2>/dev/null || true
 
 # Start server
 cd "$CMD_DIR"

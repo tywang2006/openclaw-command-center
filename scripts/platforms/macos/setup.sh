@@ -310,7 +310,12 @@ else
     pw1="chaoclaw"
   fi
 fi
-printf '%s' "$pw1" > "$CMD_DIR/.auth_password"
+"${NODE}" -e "
+  const c = require('crypto');
+  const s = c.randomBytes(16).toString('hex');
+  const h = c.scryptSync(process.argv[1], s, 64).toString('hex');
+  process.stdout.write(s + ':' + h);
+" "$pw1" > "$CMD_DIR/.auth_password"
 log "$(t password_ok)"
 
 # ================================================================

@@ -25,6 +25,8 @@ import auditRoutes, { recordAudit } from './routes/audit.js';
 import notificationsRoutes, { notifyError, notifyWarning, notifyInfo } from './routes/notifications.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { BASE_PATH } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,8 +49,14 @@ const app = express();
 const server = http.createServer(app);
 
 // Configuration
-const HOST = '0.0.0.0';
+const HOST = process.env.CMD_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false,  // CSP breaks inline styles in React
+  crossOriginEmbedderPolicy: false,
+}));
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -62,8 +70,6 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.header('Access-Control-Allow-Origin', allowedOrigins[0]);
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -100,6 +106,21 @@ app.get('/api/health', healthHandler);
 
 // Apply authentication middleware to all API routes
 app.use('/api', authMiddleware);
+
+// Rate limiting for resource-intensive endpoints (LLM calls, email, file ops)
+const heavyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down' },
+});
+app.use('/api/departments/:id/chat', heavyLimiter);
+app.use('/api/departments/:id/broadcast', heavyLimiter);
+app.use('/api/email/send', heavyLimiter);
+app.use('/api/voice/transcribe', heavyLimiter);
+app.use('/api/drive/upload', heavyLimiter);
+app.use('/api/drive/backup', heavyLimiter);
 
 // API routes
 app.use('/api', apiRoutes);

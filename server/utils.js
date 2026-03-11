@@ -28,6 +28,15 @@ export function readJsonFile(filePath) {
 }
 
 /**
+ * Atomically write file (write to tmp, then rename)
+ */
+export function safeWriteFileSync(filePath, data) {
+  const tmp = filePath + '.tmp.' + process.pid;
+  fs.writeFileSync(tmp, data, 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
+/**
  * Safely read text file
  */
 export function readTextFile(filePath) {

@@ -43,15 +43,14 @@ router.post('/system/observer', async (req, res) => {
         results.output.push({
           script: 'observer.sh',
           success: true,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
+          lines: stdout.trim().split('\n').length,
         });
       } catch (error) {
         console.error('[SystemExtras] observer.sh failed:', error.message);
         results.output.push({
           script: 'observer.sh',
           success: false,
-          error: error.message,
+          error: 'Script execution failed',
         });
         results.success = false;
       }
@@ -74,15 +73,14 @@ router.post('/system/observer', async (req, res) => {
         results.output.push({
           script: 'reflector.sh',
           success: true,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
+          lines: stdout.trim().split('\n').length,
         });
       } catch (error) {
         console.error('[SystemExtras] reflector.sh failed:', error.message);
         results.output.push({
           script: 'reflector.sh',
           success: false,
-          error: error.message,
+          error: 'Script execution failed',
         });
         results.success = false;
       }
@@ -97,7 +95,7 @@ router.post('/system/observer', async (req, res) => {
     res.json(results);
   } catch (error) {
     console.error('[SystemExtras] POST /system/observer error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Observer execution failed' });
   }
 });
 
