@@ -75,6 +75,20 @@ function getApiKey() {
 }
 
 /**
+ * GET /voice/status
+ * Return whether voice transcription is available (API key configured)
+ */
+router.get('/voice/status', (req, res) => {
+  try {
+    const apiKey = getApiKey();
+    res.json({ configured: !!apiKey });
+  } catch (error) {
+    console.error('[Voice] Error in GET /voice/status:', error);
+    res.status(500).json({ error: 'Failed to check voice status' });
+  }
+});
+
+/**
  * POST /voice/transcribe
  * Transcribe audio file using OpenAI Whisper API
  * Multipart form data: audio file + optional language parameter

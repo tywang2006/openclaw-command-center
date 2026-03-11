@@ -126,6 +126,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [driveConfigured, setDriveConfigured] = useState(false)
+  const [voiceConfigured, setVoiceConfigured] = useState(false)
 
   // Skill picker & Workflow
   const [showSkillPicker, setShowSkillPicker] = useState(false)
@@ -405,10 +406,11 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     autoResizeTextarea()
   }, [text, autoResizeTextarea])
 
-  // Check email and drive status
+  // Check email, drive, and voice status
   useEffect(() => {
     authedFetch('/api/email/status').then(r => r.json()).then(d => setEmailConfigured(d.configured && d.enabled)).catch(() => {})
     authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch(() => {})
+    authedFetch('/api/voice/status').then(r => r.json()).then(d => setVoiceConfigured(d.configured)).catch(() => {})
   }, [])
 
   const dept = departments.find(d => d.id === selectedDeptId)
@@ -1525,22 +1527,24 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             e.target.value = ''
           }}
         />
-        <button
-          className={`chat-btn mic-btn ${recording ? 'recording' : ''}`}
-          onClick={recording ? stopRecording : startRecording}
-          disabled={transcribing}
-          title={recording ? t('voice.stop') : t('voice.record')}
-        >
-          {transcribing ? (
-            <span style={{ fontSize: 10 }}>{t('voice.transcribing')}</span>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="5.5" y="1" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M3 7.5a5 5 0 0 0 10 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              <path d="M8 13v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
-          )}
-        </button>
+        {voiceConfigured && (
+          <button
+            className={`chat-btn mic-btn ${recording ? 'recording' : ''}`}
+            onClick={recording ? stopRecording : startRecording}
+            disabled={transcribing}
+            title={recording ? t('voice.stop') : t('voice.record')}
+          >
+            {transcribing ? (
+              <span style={{ fontSize: 10 }}>{t('voice.transcribing')}</span>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="5.5" y="1" width="5" height="9" rx="2.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M3 7.5a5 5 0 0 0 10 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <path d="M8 13v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+        )}
         <button
           className="chat-btn send-btn"
           onClick={sendMessage}
