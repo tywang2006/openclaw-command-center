@@ -70,7 +70,7 @@ fi
 
 echo ""
 echo -e "${TEAL}${BOLD}============================================================${NC}"
-echo -e "${TEAL}${BOLD} OpenClaw Command Center — Multi-Platform Builder${NC}"
+echo -e "${TEAL}${BOLD} ChaoClaw Command Center — Multi-Platform Builder${NC}"
 echo -e "${TEAL}${BOLD}============================================================${NC}"
 echo -e " Version:      ${BOLD}${VERSION}${NC}"
 echo -e " Node.js:      ${BOLD}v${NODE_VERSION}${NC}"

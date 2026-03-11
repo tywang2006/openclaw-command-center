@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>OpenClaw Command Center</string>
+    <string>ChaoClaw Command Center</string>
     <key>CFBundleDisplayName</key>
-    <string>OpenClaw Command Center</string>
+    <string>ChaoClaw Command Center</string>
     <key>CFBundleIdentifier</key>
-    <string>com.openclaw.command-center</string>
+    <string>com.chaoclaw.command-center</string>
     <key>CFBundleVersion</key>
     <string>__VERSION__</string>
     <key>CFBundleShortVersionString</key>

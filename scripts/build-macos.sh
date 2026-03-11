@@ -34,7 +34,7 @@ build_macos_arch() {
     return
   fi
 
-  local app_name="OpenClaw Command Center.app"
+  local app_name="ChaoClaw Command Center.app"
   local work_dir=$(mktemp -d)
   local app_dir="${work_dir}/${app_name}"
 
@@ -70,7 +70,7 @@ build_macos_arch() {
 
   # ── DMG (primary) ──
   if $HAS_GENISOIMAGE; then
-    local dmg_name="OpenClaw-Cmd-${VERSION}-macos-${arch}.dmg"
+    local dmg_name="ChaoClaw-Cmd-${VERSION}-macos-${arch}.dmg"
     local dmg_stage="${work_dir}/dmg-root"
     mkdir -p "$dmg_stage"
 
@@ -83,7 +83,7 @@ build_macos_arch() {
     # Step 1: genisoimage → uncompressed HFS+ hybrid ISO
     local raw_iso="${work_dir}/raw.iso"
     genisoimage \
-      -V "OpenClaw Command Center" \
+      -V "ChaoClaw Command Center" \
       -D -R -apple -no-pad \
       -o "$raw_iso" \
       "$dmg_stage" 2>/dev/null
@@ -111,7 +111,7 @@ build_macos_arch() {
   fi
 
   # ── tar.gz (always produce as fallback) ──
-  local tgz_name="OpenClaw-Cmd-${VERSION}-macos-${arch}.tar.gz"
+  local tgz_name="ChaoClaw-Cmd-${VERSION}-macos-${arch}.tar.gz"
   cd "$work_dir"
   tar czf "${OUTPUT_DIR}/${tgz_name}" "${app_name}"
   cd - >/dev/null

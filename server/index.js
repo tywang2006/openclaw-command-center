@@ -249,7 +249,7 @@ const watcher = createWatcher(wss);
 const gateway = getGateway();
 gateway.connect().then(() => {
   console.log('[Gateway] Connected to OpenClaw Gateway');
-  notifyInfo('gateway', 'Gateway Connected', 'Successfully connected to OpenClaw Gateway');
+  notifyInfo('gateway', 'Gateway Connected', 'Successfully connected to ChaoClaw Gateway');
 }).catch(err => {
   console.warn('[Gateway] Initial connection failed:', err.message);
   console.warn('[Gateway] AI features will be unavailable until Gateway connection is fixed.');
@@ -433,13 +433,13 @@ process.on('uncaughtException', (err) => {
 // Start server
 server.listen(PORT, HOST, () => {
   console.log('='.repeat(60));
-  console.log('OpenClaw Command Center Backend');
+  console.log('ChaoClaw Command Center Backend');
   console.log('='.repeat(60));
   console.log(`HTTP Server: http://${HOST}:${PORT}`);
   console.log(`WebSocket:   ws://${HOST}:${PORT}/ws`);
   console.log(`API Base:    http://${HOST}:${PORT}/api`);
   console.log('='.repeat(60));
-  console.log('Watching OpenClaw workspace for changes...');
+  console.log('Watching ChaoClaw workspace for changes...');
   console.log('Press Ctrl+C to stop');
   console.log('='.repeat(60));
 });

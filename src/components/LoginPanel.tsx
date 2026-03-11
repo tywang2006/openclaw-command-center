@@ -41,7 +41,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
   return (
     <div className="login-overlay">
       <form className="login-panel" onSubmit={handleSubmit}>
-        <div className="login-title">OpenClaw</div>
+        <div className="login-title">ChaoClaw</div>
         <div className="login-subtitle">Command Center</div>
         <input
           type="password"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# OpenClaw Command Center — macOS First-Run Setup
+# ChaoClaw Command Center — macOS First-Run Setup
 # Runs in Terminal on first launch.
 # Compatible with macOS default bash 3.2 (no associative arrays).
 #
@@ -33,9 +33,9 @@ t() {
   local key="$1"
   if [ "$LANG_CODE" = "zh" ]; then
     case "$key" in
-      title)             echo "OpenClaw 指挥中心 — 首次设置" ;;
+      title)             echo "ChaoClaw 指挥中心 — 首次设置" ;;
       copying)           echo "正在安装文件..." ;;
-      password_prompt)   echo "设置访问密码（最少6位，留空使用默认: openclaw）" ;;
+      password_prompt)   echo "设置访问密码（最少6位，留空使用默认: chaoclaw）" ;;
       password_confirm)  echo "确认密码" ;;
       password_mismatch) echo "两次密码不一致，使用默认密码" ;;
       password_ok)       echo "密码已设置" ;;
@@ -48,18 +48,18 @@ t() {
       url)               echo "访问地址" ;;
       password_label)    echo "密码" ;;
       relaunch)          echo "请关闭此窗口，然后重新双击应用图标启动" ;;
-      oc_checking)       echo "检查 OpenClaw..." ;;
-      oc_found)          echo "OpenClaw 已安装" ;;
-      oc_not_found)      echo "未检测到 OpenClaw" ;;
-      oc_install_ask)    echo "是否安装 OpenClaw？(需要它来驱动 AI 功能)" ;;
-      oc_installing)     echo "正在安装 OpenClaw..." ;;
-      oc_install_ok)     echo "OpenClaw 安装成功" ;;
-      oc_install_fail)   echo "OpenClaw 安装失败，请稍后手动安装: npm install -g openclaw" ;;
-      oc_init)           echo "初始化 OpenClaw..." ;;
-      oc_gateway_start)  echo "启动 OpenClaw Gateway..." ;;
+      oc_checking)       echo "检查 ChaoClaw..." ;;
+      oc_found)          echo "ChaoClaw 已安装" ;;
+      oc_not_found)      echo "未检测到 ChaoClaw" ;;
+      oc_install_ask)    echo "是否安装 ChaoClaw？(需要它来驱动 AI 功能)" ;;
+      oc_installing)     echo "正在安装 ChaoClaw..." ;;
+      oc_install_ok)     echo "ChaoClaw 安装成功" ;;
+      oc_install_fail)   echo "ChaoClaw 安装失败，请稍后手动安装: npm install -g openclaw" ;;
+      oc_init)           echo "初始化 ChaoClaw..." ;;
+      oc_gateway_start)  echo "启动 ChaoClaw Gateway..." ;;
       oc_gateway_ok)     echo "Gateway 已启动" ;;
       oc_gateway_fail)   echo "Gateway 启动失败（可稍后手动启动: openclaw gateway）" ;;
-      oc_skip)           echo "跳过 OpenClaw 安装（AI 功能将不可用）" ;;
+      oc_skip)           echo "跳过 ChaoClaw 安装（AI 功能将不可用）" ;;
       device_paired)     echo "设备已配对" ;;
       device_pair_fail)  echo "设备配对失败（可稍后手动配置）" ;;
       dept_created)      echo "部门配置已创建" ;;
@@ -68,9 +68,9 @@ t() {
     esac
   else
     case "$key" in
-      title)             echo "OpenClaw Command Center — First-Run Setup" ;;
+      title)             echo "ChaoClaw Command Center — First-Run Setup" ;;
       copying)           echo "Installing files..." ;;
-      password_prompt)   echo "Set access password (min 6 chars, empty for default: openclaw)" ;;
+      password_prompt)   echo "Set access password (min 6 chars, empty for default: chaoclaw)" ;;
       password_confirm)  echo "Confirm password" ;;
       password_mismatch) echo "Passwords don't match, using default" ;;
       password_ok)       echo "Password set" ;;
@@ -83,18 +83,18 @@ t() {
       url)               echo "Access URL" ;;
       password_label)    echo "Password" ;;
       relaunch)          echo "Close this window and double-click the app icon to launch" ;;
-      oc_checking)       echo "Checking OpenClaw..." ;;
-      oc_found)          echo "OpenClaw installed" ;;
-      oc_not_found)      echo "OpenClaw not detected" ;;
-      oc_install_ask)    echo "Install OpenClaw? (required for AI features)" ;;
-      oc_installing)     echo "Installing OpenClaw..." ;;
-      oc_install_ok)     echo "OpenClaw installed successfully" ;;
-      oc_install_fail)   echo "OpenClaw install failed. Install manually later: npm install -g openclaw" ;;
-      oc_init)           echo "Initializing OpenClaw..." ;;
-      oc_gateway_start)  echo "Starting OpenClaw Gateway..." ;;
+      oc_checking)       echo "Checking ChaoClaw..." ;;
+      oc_found)          echo "ChaoClaw installed" ;;
+      oc_not_found)      echo "ChaoClaw not detected" ;;
+      oc_install_ask)    echo "Install ChaoClaw? (required for AI features)" ;;
+      oc_installing)     echo "Installing ChaoClaw..." ;;
+      oc_install_ok)     echo "ChaoClaw installed successfully" ;;
+      oc_install_fail)   echo "ChaoClaw install failed. Install manually later: npm install -g openclaw" ;;
+      oc_init)           echo "Initializing ChaoClaw..." ;;
+      oc_gateway_start)  echo "Starting ChaoClaw Gateway..." ;;
       oc_gateway_ok)     echo "Gateway started" ;;
       oc_gateway_fail)   echo "Gateway failed to start (run manually later: openclaw gateway)" ;;
-      oc_skip)           echo "Skipping OpenClaw install (AI features will be unavailable)" ;;
+      oc_skip)           echo "Skipping ChaoClaw install (AI features will be unavailable)" ;;
       device_paired)     echo "Device paired with Gateway" ;;
       device_pair_fail)  echo "Device pairing failed (configure manually later)" ;;
       dept_created)      echo "Department config created" ;;
@@ -108,12 +108,11 @@ t() {
 echo ""
 printf "${TEAL}${BOLD}"
 cat << 'BANNER'
-    ___                    ____ _
-   / _ \ _ __   ___ _ __ / ___| | __ ___      __
-  | | | | '_ \ / _ \ '_ \ |   | |/ _` \ \ /\ / /
-  | |_| | |_) |  __/ | | | |___| | (_| |\ V  V /
-   \___/| .__/ \___|_| |_|\____|_|\__,_| \_/\_/
-        |_|
+    ____ _                  ____ _
+   / ___| |__   __ _  ___ / ___| | __ ___      __
+  | |   | '_ \ / _` |/ _ \ |   | |/ _` \ \ /\ / /
+  | |___| | | | (_| | (_) | |___| | (_| |\ V  V /
+   \____|_| |_|\__,_|\___/ \____|_|\__,_| \_/\_/
 BANNER
 printf "${NC}\n"
 
@@ -141,7 +140,7 @@ CMD_DIR="${OPENCLAW_HOME}/workspace/command-center"
 CMD_PORT="${CMD_PORT:-5100}"
 
 # ================================================================
-# Step 1: Check & install OpenClaw
+# Step 1: Check & install ChaoClaw
 # ================================================================
 info "$(t oc_checking)"
 
@@ -192,14 +191,14 @@ else
   esac
 fi
 
-# Initialize OpenClaw if freshly installed (no config exists)
+# Initialize ChaoClaw if freshly installed (no config exists)
 if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ] && [ ! -f "${OPENCLAW_HOME}/openclaw.json" ]; then
   echo ""
   info "$(t oc_init)"
   "$OPENCLAW_BIN" init 2>/dev/null || "$OPENCLAW_BIN" doctor --fix 2>/dev/null || true
 fi
 
-# Start Gateway if OpenClaw is available but Gateway isn't running
+# Start Gateway if ChaoClaw is available but Gateway isn't running
 if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ]; then
   GATEWAY_RUNNING=false
   if curl -s --max-time 2 "http://127.0.0.1:18789" >/dev/null 2>&1; then
@@ -302,13 +301,13 @@ info "$(t password_prompt)"
 printf "  > "
 read -r -s pw1; echo ""
 if [ -z "$pw1" ] || [ ${#pw1} -lt 6 ]; then
-  pw1="openclaw"
+  pw1="chaoclaw"
 else
   printf "  %s: " "$(t password_confirm)"
   read -r -s pw2; echo ""
   if [ "$pw1" != "$pw2" ]; then
     warn "$(t password_mismatch)"
-    pw1="openclaw"
+    pw1="chaoclaw"
   fi
 fi
 printf '%s' "$pw1" > "$CMD_DIR/.auth_password"
@@ -366,7 +365,7 @@ open "http://localhost:${CMD_PORT}/cmd/" 2>/dev/null || true
 # ================================================================
 # Done
 # ================================================================
-PASSWORD=$(cat "$CMD_DIR/.auth_password" 2>/dev/null || echo "openclaw")
+PASSWORD=$(cat "$CMD_DIR/.auth_password" 2>/dev/null || echo "chaoclaw")
 echo ""
 printf "  ${TEAL}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 printf "  ${TEAL}${BOLD}  %s${NC}\n" "$(t done)"

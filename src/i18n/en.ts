@@ -1,6 +1,6 @@
 export const en: Record<string, string> = {
   // App.tsx
-  'app.title': 'OpenClaw Office',
+  'app.title': 'ChaoClaw Office',
   'app.tab.chat': 'Chat',
   'app.tab.bulletin': 'Bulletin',
   'app.tab.memory': 'Memory',
@@ -419,7 +419,7 @@ export const en: Record<string, string> = {
   'sys.telegram.requireMention': 'Require @mention',
   'sys.telegram.streaming': 'Streaming',
   'sys.telegram.groupPolicy': 'Group Policy',
-  'sys.telegram.restart.warn': 'Telegram changes require OpenClaw restart',
+  'sys.telegram.restart.warn': 'Telegram changes require ChaoClaw restart',
   'sys.telegram.test.success': 'Bot verified: {name}',
   'sys.telegram.test.failed': 'Bot test failed: {error}',
   'sys.skills.title': 'Skill API Keys',
@@ -488,7 +488,7 @@ export const en: Record<string, string> = {
   'integ.drive.hasKey': 'Key uploaded',
   'integ.voice.title': 'Voice Input (Whisper)',
   'integ.voice.apiKey': 'API Key Override',
-  'integ.voice.fromOpenclaw': 'Using OpenClaw skill API key',
+  'integ.voice.fromOpenclaw': 'Using ChaoClaw skill API key',
   'integ.status.configured': 'Configured',
   'integ.status.notConfigured': 'Not Configured',
   'integ.enabled': 'Enabled',

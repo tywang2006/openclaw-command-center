@@ -28,7 +28,7 @@ fi
 # Detect system language for bilingual dialog
 SYS_LANG=$(defaults read NSGlobalDomain AppleLanguages 2>/dev/null | head -2 | tail -1 | tr -d ' ",' || echo "en")
 if echo "$SYS_LANG" | grep -qi "zh"; then
-  DLG_TITLE="OpenClaw 指挥中心"
+  DLG_TITLE="ChaoClaw 指挥中心"
   DLG_MSG="请选择操作："
   BTN_LAUNCH="启动"
   BTN_REINSTALL="重装"
@@ -37,7 +37,7 @@ if echo "$SYS_LANG" | grep -qi "zh"; then
   CONFIRM_UNINSTALL="确定卸载？这将删除 ~/.openclaw/workspace/command-center 下的所有数据。"
   UNINSTALL_DONE="已卸载。你可以将应用从"应用程序"文件夹中删除。"
 else
-  DLG_TITLE="OpenClaw Command Center"
+  DLG_TITLE="ChaoClaw Command Center"
   DLG_MSG="Choose an action:"
   BTN_LAUNCH="Launch"
   BTN_REINSTALL="Reinstall"
