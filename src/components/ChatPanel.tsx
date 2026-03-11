@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Department, Activity } from '../hooks/useAgentState'
+import { useStreamingTexts } from '../hooks/useAgentState'
 import { DeptIcon, SendIcon } from './Icons'
 import { useToast } from './Toast'
 import { useLocale } from '../i18n/index'
@@ -22,13 +23,13 @@ interface ChatPanelProps {
   activities: Activity[]
   addActivity: (a: Activity) => void
   onSubAgentsChange?: (deptId: string, subs: SubAgent[]) => void
-  streamingTexts?: Map<string, string>
   prefillMessage?: string | null
   onPrefillConsumed?: () => void
   onOpenDeptForm?: (prefill?: { name: string }) => void
 }
 
-export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange, streamingTexts, prefillMessage, onPrefillConsumed, onOpenDeptForm }: ChatPanelProps) {
+export default function ChatPanel({ selectedDeptId, departments, activities, addActivity, onSubAgentsChange, prefillMessage, onPrefillConsumed, onOpenDeptForm }: ChatPanelProps) {
+  const streamingTexts = useStreamingTexts()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
 

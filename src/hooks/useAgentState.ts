@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from 'react'
 import { authedFetch, getToken } from '../utils/api'
 
 export interface Department {
@@ -54,8 +54,27 @@ export interface AgentState {
   connected: boolean
   /** Active tool states per department */
   toolStates: Map<string, ToolState>
-  /** Streaming text per department (F14) */
-  streamingTexts: Map<string, string>
+}
+
+// Streaming texts store — decoupled from main state to avoid per-chunk re-renders
+let _streamingTexts = new Map<string, string>()
+let _streamingVersion = 0
+const _streamingListeners = new Set<() => void>()
+
+function _notifyStreamListeners() {
+  _streamingVersion++
+  for (const fn of _streamingListeners) fn()
+}
+
+export function getStreamingSnapshot() { return _streamingTexts }
+function subscribeStreaming(cb: () => void) {
+  _streamingListeners.add(cb)
+  return () => { _streamingListeners.delete(cb) }
+}
+
+/** Hook for components that need streaming text — only re-renders when streaming changes */
+export function useStreamingTexts(): Map<string, string> {
+  return useSyncExternalStore(subscribeStreaming, getStreamingSnapshot)
 }
 
 function parseDepartment(d: any): Department {
@@ -84,7 +103,6 @@ export function useAgentState() {
     selectedDeptId: null,
     connected: false,
     toolStates: new Map(),
-    streamingTexts: new Map(),
   })
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -103,11 +121,13 @@ export function useAgentState() {
 
     const token = getToken()
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/cmd/ws${token ? `?token=${token}` : ''}`
+    const wsUrl = `${protocol}//${window.location.host}/cmd/ws`
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      console.log('[WS] Connected')
+      console.log('[WS] Connected, sending auth')
+      // Authenticate via first message instead of URL query param
+      ws.send(JSON.stringify({ type: 'auth', token }))
       reconnectDelayRef.current = 1000
       reconnectCountRef.current = 0
       if (mountedRef.current) {
@@ -236,15 +256,10 @@ export function useAgentState() {
       case 'activity:new':
         if (mountedRef.current) {
           // Clear streaming text for this dept when final message arrives (F14)
-          if (data?.deptId) {
-            setState(prev => {
-              if (prev.streamingTexts.has(data.deptId)) {
-                const streamingTexts = new Map(prev.streamingTexts)
-                streamingTexts.delete(data.deptId)
-                return { ...prev, streamingTexts }
-              }
-              return prev
-            })
+          if (data?.deptId && _streamingTexts.has(data.deptId)) {
+            _streamingTexts = new Map(_streamingTexts)
+            _streamingTexts.delete(data.deptId)
+            _notifyStreamListeners()
           }
           // Handle both single-message format (from telegram.js/gateway events)
           // and multi-message format (from watcher.js session files)
@@ -285,12 +300,10 @@ export function useAgentState() {
 
       case 'chat:stream':
         if (mountedRef.current && data?.deptId && data?.chunk) {
-          setState(prev => {
-            const streamingTexts = new Map(prev.streamingTexts)
-            const existing = streamingTexts.get(data.deptId) || ''
-            streamingTexts.set(data.deptId, existing + data.chunk)
-            return { ...prev, streamingTexts }
-          })
+          _streamingTexts = new Map(_streamingTexts)
+          const existing = _streamingTexts.get(data.deptId) || ''
+          _streamingTexts.set(data.deptId, existing + data.chunk)
+          _notifyStreamListeners()
         }
         break
 

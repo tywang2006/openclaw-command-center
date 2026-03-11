@@ -28,13 +28,22 @@ function TabFallback() {
   return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: Error }> {
-  constructor(props: { children: ReactNode }) {
+interface ErrorBoundaryProps { children: ReactNode; resetKey?: string }
+interface ErrorBoundaryState { hasError: boolean; error?: Error }
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props)
     this.state = { hasError: false }
   }
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error }
+  }
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    // Auto-reset when resetKey changes (e.g. switching tabs)
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: undefined })
+    }
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info)
@@ -45,7 +54,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
         <div style={{ padding: 40, textAlign: 'center', color: '#ff5555', fontFamily: 'monospace' }}>
           <h2>{document.documentElement.lang === 'zh' ? '出错了' : 'Something went wrong'}</h2>
           <p style={{ color: '#888' }}>{this.state.error?.message}</p>
-          <button onClick={() => { this.setState({ hasError: false }); window.location.reload() }} style={{
+          <button onClick={() => this.setState({ hasError: false, error: undefined })} style={{
             marginTop: 16, padding: '8px 24px', background: '#00d4aa', border: 'none', color: '#000', cursor: 'pointer', borderRadius: '4px', fontWeight: 600
           }}>
             {document.documentElement.lang === 'zh' ? '重试' : 'Retry'}
@@ -303,45 +312,46 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   }, [agentState.departments.length])
 
   const tabContent = (
-    <Suspense fallback={<TabFallback />}>
-      {rightTab === 'chat' && (
-        <ChatPanel
-          selectedDeptId={agentState.selectedDeptId}
-          departments={agentState.departments}
-          activities={agentState.activities}
-          addActivity={agentState.addActivity}
-          onSubAgentsChange={handleSubAgentsChange}
-          streamingTexts={agentState.streamingTexts}
-          prefillMessage={chatPrefill}
-          onPrefillConsumed={() => setChatPrefill(null)}
-          onOpenDeptForm={() => { setEditDeptData(null); setShowDeptForm(true) }}
-        />
-      )}
-      {rightTab === 'bulletin' && (
-        <BulletinTab bulletin={agentState.bulletin} />
-      )}
-      {rightTab === 'memory' && (
-        <MemoryTab
-          selectedDeptId={agentState.selectedDeptId}
-          memories={agentState.memories}
-          departments={agentState.departments}
-        />
-      )}
-      {rightTab === 'activity' && (
-        <ActivityTab
-          activities={agentState.activities}
-          departments={agentState.departments}
-          addActivity={agentState.addActivity}
-        />
-      )}
-      {rightTab === 'requests' && (
-        <RequestsTab requests={agentState.requests} />
-      )}
-      {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
-      {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
-      {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
-      {rightTab === 'system' && <SystemTab />}
-    </Suspense>
+    <ErrorBoundary resetKey={rightTab}>
+      <Suspense fallback={<TabFallback />}>
+        {rightTab === 'chat' && (
+          <ChatPanel
+            selectedDeptId={agentState.selectedDeptId}
+            departments={agentState.departments}
+            activities={agentState.activities}
+            addActivity={agentState.addActivity}
+            onSubAgentsChange={handleSubAgentsChange}
+            prefillMessage={chatPrefill}
+            onPrefillConsumed={() => setChatPrefill(null)}
+            onOpenDeptForm={() => { setEditDeptData(null); setShowDeptForm(true) }}
+          />
+        )}
+        {rightTab === 'bulletin' && (
+          <BulletinTab bulletin={agentState.bulletin} />
+        )}
+        {rightTab === 'memory' && (
+          <MemoryTab
+            selectedDeptId={agentState.selectedDeptId}
+            memories={agentState.memories}
+            departments={agentState.departments}
+          />
+        )}
+        {rightTab === 'activity' && (
+          <ActivityTab
+            activities={agentState.activities}
+            departments={agentState.departments}
+            addActivity={agentState.addActivity}
+          />
+        )}
+        {rightTab === 'requests' && (
+          <RequestsTab requests={agentState.requests} />
+        )}
+        {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
+        {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
+        {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
+        {rightTab === 'system' && <SystemTab />}
+      </Suspense>
+    </ErrorBoundary>
   )
 
   // ---- Mobile Layout ----

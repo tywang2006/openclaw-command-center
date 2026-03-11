@@ -197,50 +197,70 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
+  let authenticated = false;
 
-  // Extract token from URL query parameter
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const token = url.searchParams.get('token');
+  // Auth via first message — client must send { type: 'auth', token } within 5s
+  const authTimeout = setTimeout(() => {
+    if (!authenticated) {
+      console.log(`[WebSocket] Auth timeout for ${clientIp}`);
+      ws.close(1008, 'Auth timeout');
+    }
+  }, 5000);
 
-  // Validate token for WebSocket connection
-  if (!validateToken(token)) {
-    console.log(`[WebSocket] Unauthorized connection attempt from ${clientIp}`);
-    ws.close(1008, 'Unauthorized'); // Policy Violation
-    return;
-  }
+  ws.on('message', function onFirstMessage(raw) {
+    if (authenticated) return;
 
-  console.log(`[WebSocket] Client connected from ${clientIp}`);
-  console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
-
-  // Send initial state immediately upon connection
-  try {
-    const initialState = getInitialState();
-    const gatewayStats = getGateway().stats;
-    ws.send(JSON.stringify({
-      event: 'connected',
-      data: {
-        ...initialState,
-        gateway: gatewayStats,
-      },
-      timestamp: new Date().toISOString()
-    }));
-    console.log(`[WebSocket] Sent initial state to ${clientIp}`);
-  } catch (error) {
-    console.error('[WebSocket] Error sending initial state:', error);
-  }
-
-  // Handle incoming messages from client (no echo — just log for debugging)
-  ws.on('message', (message) => {
     try {
-      const str = message.toString();
-      if (str.length > 1000) return; // Ignore oversized messages
-      console.log(`[WebSocket] Received from ${clientIp}: ${str.substring(0, 100)}`);
-    } catch (error) {
-      console.error('[WebSocket] Error processing message:', error);
+      const str = raw.toString();
+      if (str.length > 1000) { ws.close(1008, 'Message too large'); return; }
+      const msg = JSON.parse(str);
+
+      if (msg.type !== 'auth' || !validateToken(msg.token)) {
+        console.log(`[WebSocket] Unauthorized connection from ${clientIp}`);
+        ws.close(1008, 'Unauthorized');
+        return;
+      }
+
+      authenticated = true;
+      clearTimeout(authTimeout);
+      ws.removeListener('message', onFirstMessage);
+
+      console.log(`[WebSocket] Client authenticated from ${clientIp}`);
+      console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
+
+      // Send initial state after successful auth
+      try {
+        const initialState = getInitialState();
+        const gatewayStats = getGateway().stats;
+        ws.send(JSON.stringify({
+          event: 'connected',
+          data: {
+            ...initialState,
+            gateway: gatewayStats,
+          },
+          timestamp: new Date().toISOString()
+        }));
+      } catch (error) {
+        console.error('[WebSocket] Error sending initial state:', error);
+      }
+
+      // Set up normal message handler
+      ws.on('message', (message) => {
+        try {
+          const s = message.toString();
+          if (s.length > 1000) return;
+          console.log(`[WebSocket] Received from ${clientIp}: ${s.substring(0, 100)}`);
+        } catch (error) {
+          console.error('[WebSocket] Error processing message:', error);
+        }
+      });
+    } catch {
+      ws.close(1008, 'Invalid auth message');
     }
   });
 
   ws.on('close', () => {
+    clearTimeout(authTimeout);
     console.log(`[WebSocket] Client disconnected from ${clientIp}`);
     console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
   });

@@ -91,6 +91,9 @@ class GatewayClient {
     // Accumulate streaming text per runId: Map<runId, { sessionKey, chunks, userMessage }>
     this._streamBuffers = new Map();
 
+    // Recently resolved request IDs — prevents late agent events from being broadcast as duplicates
+    this._resolvedRequests = new Set();
+
     // Track connection time for uptime
     this._connectedAt = null;
 
@@ -172,6 +175,7 @@ class GatewayClient {
       this._bufferCleanupTimer = null;
     }
     this._streamBuffers.clear();
+    this._resolvedRequests.clear();
 
     for (const [, req] of this.pendingRequests) {
       clearTimeout(req.timer);
@@ -307,6 +311,7 @@ class GatewayClient {
     if (frame.error) {
       clearTimeout(req.timer);
       this.pendingRequests.delete(frame.id);
+      this._markResolved(frame.id);
       console.error(`[Gateway] Request ${frame.id} error:`, frame.error.message || frame.error.code);
       req.reject(new Error(frame.error.message || `Gateway error: ${frame.error.code}`));
       return;
@@ -316,6 +321,7 @@ class GatewayClient {
     if (req.raw) {
       clearTimeout(req.timer);
       this.pendingRequests.delete(frame.id);
+      this._markResolved(frame.id);
       req.resolve(frame.payload || {});
       return;
     }
@@ -330,6 +336,7 @@ class GatewayClient {
     // Final response — extract text and usage data
     clearTimeout(req.timer);
     this.pendingRequests.delete(frame.id);
+    this._markResolved(frame.id);
 
     let text = '';
     const payloads = frame.payload?.result?.payloads;
@@ -365,8 +372,8 @@ class GatewayClient {
     const bufferId = runId || requestId;
     if (!bufferId) return;
 
-    // Skip events from our OWN requests (already handled in _handleResponse)
-    if (requestId && this.pendingRequests.has(requestId)) return;
+    // Skip events from our OWN requests (pending or recently resolved)
+    if (requestId && (this.pendingRequests.has(requestId) || this._resolvedRequests.has(requestId))) return;
 
     // Stream start — initialize buffer
     if (status === 'started' || (stream && !this._streamBuffers.has(bufferId))) {
@@ -464,6 +471,13 @@ class GatewayClient {
         }
       }
     }
+  }
+
+  /** Track a resolved requestId to prevent late agent events from being broadcast */
+  _markResolved(requestId) {
+    this._resolvedRequests.add(requestId);
+    // Auto-expire after 30s to prevent unbounded growth
+    setTimeout(() => this._resolvedRequests.delete(requestId), 30000);
   }
 
   /**
