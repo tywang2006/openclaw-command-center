@@ -107,14 +107,13 @@ build_macos_arch() {
       echo "  WARN: genisoimage failed for ${arch}"
     fi
 
-    rm -rf "$dmg_stage" "$raw_iso"
+    rm -rf "$dmg_stage"
+    rm -f "$raw_iso"
   fi
 
   # ── tar.gz (always produce as fallback) ──
   local tgz_name="ChaoClaw-Cmd-${VERSION}-macos-${arch}.tar.gz"
-  cd "$work_dir"
-  tar czf "${OUTPUT_DIR}/${tgz_name}" "${app_name}"
-  cd - >/dev/null
+  tar czf "${OUTPUT_DIR}/${tgz_name}" -C "$work_dir" "${app_name}"
 
   local size=$(du -h "${OUTPUT_DIR}/${tgz_name}" | cut -f1)
   echo "  OK: ${tgz_name} (${size})"

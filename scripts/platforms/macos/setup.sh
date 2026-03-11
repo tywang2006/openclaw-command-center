@@ -167,22 +167,21 @@ else
       ;;
     *)
       info "$(t oc_installing)"
-      # Use bundled node's npm to install globally
-      NPM_DIR="$(dirname "$NODE")"
-      if "$NODE" "${NPM_DIR}/../lib/node_modules/npm/bin/npm-cli.js" install -g openclaw 2>/dev/null; then
-        log "$(t oc_install_ok)"
-        HAS_OPENCLAW=true
-        OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
+      # Try system npm first (most reliable), then bundled node's npm as fallback
+      if command -v npm >/dev/null 2>&1; then
+        if npm install -g openclaw 2>/dev/null; then
+          log "$(t oc_install_ok)"
+          HAS_OPENCLAW=true
+          OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
+        else
+          warn "$(t oc_install_fail)"
+        fi
       else
-        # Fallback: try system npm
-        if command -v npm >/dev/null 2>&1; then
-          if npm install -g openclaw 2>/dev/null; then
-            log "$(t oc_install_ok)"
-            HAS_OPENCLAW=true
-            OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
-          else
-            warn "$(t oc_install_fail)"
-          fi
+        # Fallback: use bundled node to run npx
+        if "$NODE" -e "require('child_process').execSync('npx -y openclaw --version',{stdio:'inherit'})" 2>/dev/null; then
+          log "$(t oc_install_ok)"
+          HAS_OPENCLAW=true
+          OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || echo "")"
         else
           warn "$(t oc_install_fail)"
         fi
@@ -201,7 +200,7 @@ fi
 # Start Gateway if ChaoClaw is available but Gateway isn't running
 if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ]; then
   GATEWAY_RUNNING=false
-  if curl -s --max-time 2 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+  if (echo | nc -w 1 127.0.0.1 18789 >/dev/null 2>&1); then
     GATEWAY_RUNNING=true
   fi
 
@@ -215,7 +214,7 @@ if $HAS_OPENCLAW && [ -n "$OPENCLAW_BIN" ]; then
     # Wait up to 10 seconds for Gateway to be ready
     i=0
     while [ $i -lt 20 ]; do
-      if curl -s --max-time 1 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+      if (echo | nc -w 1 127.0.0.1 18789 >/dev/null 2>&1); then
         log "$(t oc_gateway_ok) (pid: $GATEWAY_PID)"
         GATEWAY_RUNNING=true
         break
@@ -310,6 +309,7 @@ else
     pw1="chaoclaw"
   fi
 fi
+PLAIN_PW="$pw1"
 "${NODE}" -e "
   const c = require('crypto');
   const s = c.randomBytes(16).toString('hex');
@@ -370,14 +370,13 @@ open "http://localhost:${CMD_PORT}/cmd/" 2>/dev/null || true
 # ================================================================
 # Done
 # ================================================================
-PASSWORD=$(cat "$CMD_DIR/.auth_password" 2>/dev/null || echo "chaoclaw")
 echo ""
 printf "  ${TEAL}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 printf "  ${TEAL}${BOLD}  %s${NC}\n" "$(t done)"
 printf "  ${TEAL}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 echo ""
 printf "  ${BOLD}%s:${NC}  ${GREEN}http://localhost:${CMD_PORT}/cmd/${NC}\n" "$(t url)"
-printf "  ${BOLD}%s:${NC}  ${CYAN}${PASSWORD}${NC}\n" "$(t password_label)"
+printf "  ${BOLD}%s:${NC}  ${CYAN}%s${NC}\n" "$(t password_label)" "$PLAIN_PW"
 echo ""
 printf "  ${DIM}%s${NC}\n" "$(t relaunch)"
 echo ""

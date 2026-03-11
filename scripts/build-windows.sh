@@ -30,7 +30,7 @@ echo "  Building Windows x64..."
 
 # ── Portable directory ──
 WORK_DIR=$(mktemp -d)
-WIN_DIR="${WORK_DIR}/OpenClaw-Cmd-${VERSION}-win-x64"
+WIN_DIR="${WORK_DIR}/ChaoClaw-Cmd-${VERSION}-win-x64"
 mkdir -p "$WIN_DIR"
 
 # Node binary
@@ -50,7 +50,7 @@ cp "${PLATFORMS_DIR}/launcher.bat" "${WIN_DIR}/"
 cp "${PLATFORMS_DIR}/setup.ps1" "${WIN_DIR}/"
 
 # ── Portable ZIP ──
-ZIP_NAME="OpenClaw-Cmd-${VERSION}-win-x64-portable.zip"
+ZIP_NAME="ChaoClaw-Cmd-${VERSION}-win-x64-portable.zip"
 cd "$WORK_DIR"
 zip -r -q "${OUTPUT_DIR}/${ZIP_NAME}" "$(basename "$WIN_DIR")"
 cd - >/dev/null
@@ -65,7 +65,7 @@ if command -v makensis &>/dev/null; then
   NSIS_STAGE="${WORK_DIR}/nsis-stage"
   cp -r "$WIN_DIR" "$NSIS_STAGE"
 
-  NSIS_OUT="OpenClaw-Cmd-Setup-${VERSION}-win-x64.exe"
+  NSIS_OUT="ChaoClaw-Cmd-Setup-${VERSION}-win-x64.exe"
 
   makensis -V2 \
     -DVERSION="${VERSION}" \

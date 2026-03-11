@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# OpenClaw Command Center — Multi-Platform Build Orchestrator
+# ChaoClaw Command Center — Multi-Platform Build Orchestrator
 #
 # Usage:
 #   bash scripts/build-all.sh --all              # Build everything
@@ -139,7 +139,7 @@ cp -r "$PROJECT_DIR/dist" "$STAGING_DIR/dist"
 
 # Copy scripts (gen-layout, migrate-config, etc.)
 mkdir -p "$STAGING_DIR/scripts"
-for f in gen-layout.js migrate-config.js; do
+for f in gen-layout.js migrate-config.js auto-pair.js; do
   [[ -f "$PROJECT_DIR/scripts/$f" ]] && cp "$PROJECT_DIR/scripts/$f" "$STAGING_DIR/scripts/"
 done
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# OpenClaw Command Center — macOS .app launcher
-# Lives at: OpenClaw Command Center.app/Contents/MacOS/launcher
+# ChaoClaw Command Center — macOS .app launcher
+# Lives at: ChaoClaw Command Center.app/Contents/MacOS/launcher
 # Compatible with macOS default bash 3.2.
 #
 
@@ -121,9 +121,9 @@ if [ -f "${CMD_DIR}/scripts/auto-pair.js" ]; then
   "${NODE}" "${CMD_DIR}/scripts/auto-pair.js" --openclaw-home "$OPENCLAW_HOME" >/dev/null 2>&1 || true
 fi
 
-# Ensure OpenClaw Gateway is running
+# Ensure ChaoClaw Gateway is running
 if command -v openclaw >/dev/null 2>&1; then
-  if ! curl -s --max-time 1 "http://127.0.0.1:18789" >/dev/null 2>&1; then
+  if ! (echo | nc -w 1 127.0.0.1 18789 >/dev/null 2>&1); then
     nohup openclaw gateway >/dev/null 2>&1 &
     sleep 2
   fi

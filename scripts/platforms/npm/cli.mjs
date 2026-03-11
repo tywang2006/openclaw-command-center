@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * OpenClaw Command Center — CLI Entry Point
+ * ChaoClaw Command Center — CLI Entry Point
  *
  * Usage:
- *   openclaw-cmd start   — Start the server (first run auto-triggers setup)
- *   openclaw-cmd setup   — Interactive setup (language, password, layout)
- *   openclaw-cmd stop    — Stop PM2 process
- *   openclaw-cmd status  — Show service status
+ *   chaoclaw-cmd start   — Start the server (first run auto-triggers setup)
+ *   chaoclaw-cmd setup   — Interactive setup (language, password, layout)
+ *   chaoclaw-cmd stop    — Stop PM2 process
+ *   chaoclaw-cmd status  — Show service status
  */
 
 import { execSync, spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,9 +41,9 @@ const info = (msg) => console.log(`  ${CYAN}[ii]${NC} ${msg}`);
 // i18n
 const msgs = {
   zh: {
-    title: 'OpenClaw 指挥中心',
+    title: 'ChaoClaw 指挥中心',
     copying: '正在安装文件...',
-    password_prompt: '设置访问密码（最少6位，留空使用默认: openclaw）',
+    password_prompt: '设置访问密码（最少6位，留空使用默认: chaoclaw）',
     password_confirm: '确认密码',
     password_mismatch: '两次密码不一致，使用默认密码',
     password_ok: '密码已设置',
@@ -58,9 +59,9 @@ const msgs = {
     status_stopped: '服务未运行',
   },
   en: {
-    title: 'OpenClaw Command Center',
+    title: 'ChaoClaw Command Center',
     copying: 'Installing files...',
-    password_prompt: 'Set access password (min 6 chars, empty for default: openclaw)',
+    password_prompt: 'Set access password (min 6 chars, empty for default: chaoclaw)',
     password_confirm: 'Confirm password',
     password_mismatch: 'Passwords don\'t match, using default',
     password_ok: 'Password set',
@@ -91,14 +92,19 @@ function hasPm2() {
   try { execSync('pm2 -v', { stdio: 'ignore' }); return true; } catch { return false; }
 }
 
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(pw, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
 function banner() {
   console.log(`
-${TEAL}${BOLD}    ___                    ____ _
-   / _ \\ _ __   ___ _ __ / ___| | __ ___      __
-  | | | | '_ \\ / _ \\ '_ \\ |   | |/ _\` \\ \\ /\\ / /
-  | |_| | |_) |  __/ | | | |___| | (_| |\\ V  V /
-   \\___/| .__/ \\___|_| |_|\\____|_|\\__,_| \\_/\\_/
-        |_|${NC}
+${TEAL}${BOLD}    ____ _                  ____ _
+   / ___| |__   __ _  ___ / ___| | __ ___      __
+  | |   | '_ \\ / _\` |/ _ \\ |   | |/ _\` \\ \\ /\\ / /
+  | |___| | | | (_| | (_) | |___| | (_| |\\ V  V /
+   \\____|_| |_|\\__,_|\\___/ \\____|_|\\__,_| \\_/\\_/${NC}
 `);
 }
 
@@ -138,6 +144,7 @@ async function setup() {
   log(t('copying'));
 
   // Password
+  let plainPw = 'chaoclaw';
   const authFile = path.join(CMD_DIR, '.auth_password');
   if (fs.existsSync(authFile)) {
     log(t('password_keep'));
@@ -146,12 +153,13 @@ async function setup() {
     info(t('password_prompt'));
     let pw1 = await ask('  > ');
     if (!pw1 || pw1.length < 6) {
-      pw1 = 'openclaw';
+      pw1 = 'chaoclaw';
     } else {
       const pw2 = await ask(`  ${t('password_confirm')}: `);
-      if (pw1 !== pw2) { warn(t('password_mismatch')); pw1 = 'openclaw'; }
+      if (pw1 !== pw2) { warn(t('password_mismatch')); pw1 = 'chaoclaw'; }
     }
-    fs.writeFileSync(authFile, pw1);
+    plainPw = pw1;
+    fs.writeFileSync(authFile, hashPassword(pw1));
     log(t('password_ok'));
   }
 
@@ -181,12 +189,15 @@ async function setup() {
   // Mark setup done
   fs.writeFileSync(path.join(CMD_DIR, '.setup-done'), '');
   log(t('done'));
+
+  return plainPw;
 }
 
 async function start() {
+  let plainPw = 'chaoclaw';
   const setupDone = path.join(CMD_DIR, '.setup-done');
   if (!fs.existsSync(setupDone)) {
-    await setup();
+    plainPw = await setup();
   }
 
   if (!hasPm2()) {
@@ -207,9 +218,6 @@ async function start() {
 
   // Wait & print info
   await new Promise(r => setTimeout(r, 3000));
-  const pw = fs.existsSync(path.join(CMD_DIR, '.auth_password'))
-    ? fs.readFileSync(path.join(CMD_DIR, '.auth_password'), 'utf8')
-    : 'openclaw';
 
   console.log('');
   console.log(`  ${TEAL}${BOLD}${'━'.repeat(50)}${NC}`);
@@ -217,7 +225,7 @@ async function start() {
   console.log(`  ${TEAL}${BOLD}${'━'.repeat(50)}${NC}`);
   console.log('');
   console.log(`  ${BOLD}${t('url')}:${NC}  ${GREEN}http://localhost:${CMD_PORT}/cmd/${NC}`);
-  console.log(`  ${BOLD}${t('password_label')}:${NC}  ${CYAN}${pw}${NC}`);
+  console.log(`  ${BOLD}${t('password_label')}:${NC}  ${CYAN}${plainPw}${NC}`);
   console.log('');
 }
 
@@ -252,7 +260,7 @@ switch (command) {
   case 'stop':   stop(); break;
   case 'status': status(); break;
   default:
-    console.log(`Usage: openclaw-cmd <start|setup|stop|status>`);
+    console.log(`Usage: chaoclaw-cmd <start|setup|stop|status>`);
     console.log('');
     console.log('  start   Start the server (runs setup on first use)');
     console.log('  setup   Interactive configuration');

@@ -1,13 +1,13 @@
-; OpenClaw Command Center — NSIS Installer Script
+; ChaoClaw Command Center — NSIS Installer Script
 ; Compiled on Linux: makensis installer.nsi
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 
 ; ── Config ──
-!define PRODUCT_NAME "OpenClaw Command Center"
-!define PRODUCT_PUBLISHER "OpenClaw"
-!define PRODUCT_WEB_SITE "https://github.com/openclaw"
+!define PRODUCT_NAME "ChaoClaw Command Center"
+!define PRODUCT_PUBLISHER "ChaoClaw"
+!define PRODUCT_WEB_SITE "https://github.com/chaoclaw"
 ; VERSION is injected by build script: makensis -DVERSION=x.x.x
 !ifndef VERSION
   !define VERSION "1.0.0"
@@ -19,9 +19,9 @@
 !endif
 
 Name "${PRODUCT_NAME} ${VERSION}"
-OutFile "${OUTDIR}\OpenClaw-Cmd-Setup-${VERSION}-win-x64.exe"
-InstallDir "$PROGRAMFILES\OpenClaw Command Center"
-InstallDirRegKey HKLM "Software\OpenClaw\CommandCenter" "InstallDir"
+OutFile "${OUTDIR}\ChaoClaw-Cmd-Setup-${VERSION}-win-x64.exe"
+InstallDir "$PROGRAMFILES\ChaoClaw Command Center"
+InstallDirRegKey HKLM "Software\ChaoClaw\CommandCenter" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
@@ -53,32 +53,32 @@ Section "Install"
   File /r "${STAGE_DIR}\*.*"
 
   ; Registry
-  WriteRegStr HKLM "Software\OpenClaw\CommandCenter" "InstallDir" "$INSTDIR"
-  WriteRegStr HKLM "Software\OpenClaw\CommandCenter" "Version" "${VERSION}"
+  WriteRegStr HKLM "Software\ChaoClaw\CommandCenter" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "Software\ChaoClaw\CommandCenter" "Version" "${VERSION}"
 
   ; Uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   ; Add/Remove Programs entry
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "DisplayName" "${PRODUCT_NAME}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "Publisher" "${PRODUCT_PUBLISHER}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "DisplayVersion" "${VERSION}"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "NoRepair" 1
 
   ; Get install size
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd" \
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd" \
     "EstimatedSize" $0
 
   ; Start Menu shortcuts
@@ -107,7 +107,7 @@ Section "Uninstall"
   RMDir /r "$SMPROGRAMS\${PRODUCT_NAME}"
 
   ; Remove registry
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenClawCmd"
-  DeleteRegKey HKLM "Software\OpenClaw\CommandCenter"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ChaoClawCmd"
+  DeleteRegKey HKLM "Software\ChaoClaw\CommandCenter"
 
 SectionEnd

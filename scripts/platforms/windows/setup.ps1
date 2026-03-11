@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    OpenClaw Command Center - Windows First-Run Setup
+    ChaoClaw Command Center - Windows First-Run Setup
 .DESCRIPTION
     Interactive setup: language selection, password, .env, layout generation.
 #>
@@ -24,9 +24,9 @@ function Write-Info($msg) { Write-Host "  [ii] $msg" -ForegroundColor Cyan }
 # i18n
 $msgs = @{
     zh = @{
-        title = "OpenClaw 指挥中心 — 首次设置"
+        title = "ChaoClaw 指挥中心 — 首次设置"
         copying = "正在安装文件..."
-        password_prompt = "设置访问密码（最少6位，留空使用默认: openclaw）"
+        password_prompt = "设置访问密码（最少6位，留空使用默认: chaoclaw）"
         password_confirm = "确认密码"
         password_mismatch = "两次密码不一致，使用默认密码"
         password_ok = "密码已设置"
@@ -41,9 +41,9 @@ $msgs = @{
         relaunch = "请关闭此窗口，然后双击 launcher.bat 启动"
     }
     en = @{
-        title = "OpenClaw Command Center — First-Run Setup"
+        title = "ChaoClaw Command Center — First-Run Setup"
         copying = "Installing files..."
-        password_prompt = "Set access password (min 6 chars, empty for default: openclaw)"
+        password_prompt = "Set access password (min 6 chars, empty for default: chaoclaw)"
         password_confirm = "Confirm password"
         password_mismatch = "Passwords don't match, using default"
         password_ok = "Password set"
@@ -66,12 +66,11 @@ function T($key) { return $msgs[$lang][$key] }
 # Banner
 Write-Host ""
 Write-Host @"
-    ___                    ____ _
-   / _ \ _ __   ___ _ __ / ___| | __ ___      __
-  | | | | '_ \ / _ \ '_ \ |   | |/ _`` \ \ /\ / /
-  | |_| | |_) |  __/ | | | |___| | (_| |\ V  V /
-   \___/| .__/ \___|_| |_|\____|_|\__,_| \_/\_/
-        |_|
+    ____ _                  ____ _
+   / ___| |__   __ _  ___ / ___| | __ ___      __
+  | |   | '_ \ / _`` |/ _ \ |   | |/ _`` \ \ /\ / /
+  | |___| | | | (_| | (_) | |___| | (_| |\ V  V /
+   \____|_| |_|\__,_|\___/ \____|_|\__,_| \_/\_/
 "@ -ForegroundColor DarkCyan
 Write-Host ""
 
@@ -120,15 +119,22 @@ Write-Host ""
 Write-Info "$(T 'password_prompt')"
 $pw1 = Read-Host "  >"
 if ([string]::IsNullOrEmpty($pw1) -or $pw1.Length -lt 6) {
-    $pw1 = "openclaw"
+    $pw1 = "chaoclaw"
 } else {
     $pw2 = Read-Host "  $(T 'password_confirm')"
     if ($pw1 -ne $pw2) {
         Write-Warn "$(T 'password_mismatch')"
-        $pw1 = "openclaw"
+        $pw1 = "chaoclaw"
     }
 }
-[System.IO.File]::WriteAllText((Join-Path $CmdDir ".auth_password"), $pw1)
+$plainPw = $pw1
+# Hash with scrypt via Node.js (consistent with macOS setup)
+$hashResult = & $Node -e "const c=require('crypto');const s=c.randomBytes(16).toString('hex');const h=c.scryptSync(process.argv[1],s,64).toString('hex');process.stdout.write(s+':'+h);" $pw1 2>$null
+if ($hashResult) {
+    [System.IO.File]::WriteAllText((Join-Path $CmdDir ".auth_password"), $hashResult)
+} else {
+    [System.IO.File]::WriteAllText((Join-Path $CmdDir ".auth_password"), $pw1)
+}
 Write-OK "$(T 'password_ok')"
 
 # .env
@@ -187,8 +193,7 @@ try {
 Start-Process "http://localhost:${CmdPort}/cmd/"
 
 # Done
-$password = Get-Content (Join-Path $CmdDir ".auth_password") -ErrorAction SilentlyContinue
-if (-not $password) { $password = "openclaw" }
+$password = $plainPw
 Write-Host ""
 Write-Host "  $('━' * 50)" -ForegroundColor DarkCyan
 Write-Host "  $(T 'done')" -ForegroundColor DarkCyan

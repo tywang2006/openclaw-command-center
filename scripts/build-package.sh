@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build a self-extracting .run installer for OpenClaw Command Center.
+# Build a self-extracting .run installer for ChaoClaw Command Center.
 #
 # Prerequisites: makeself, node >= 18, npm
 # Usage:         bash scripts/build-package.sh
@@ -24,7 +24,7 @@ STAGE_DIR="${WORK_DIR}/${PKG_NAME}"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "============================================================"
-echo " OpenClaw Command Center — Package Builder"
+echo " ChaoClaw Command Center — Package Builder"
 echo "============================================================"
 echo " Version:  ${VERSION}"
 echo " Arch:     ${ARCH}"
@@ -62,6 +62,7 @@ cp -r "$PROJECT_DIR/dist" "$STAGE_DIR/dist"
 mkdir -p "$STAGE_DIR/scripts"
 cp "$PROJECT_DIR/scripts/gen-layout.js" "$STAGE_DIR/scripts/"
 cp "$PROJECT_DIR/scripts/migrate-config.js" "$STAGE_DIR/scripts/"
+[[ -f "$PROJECT_DIR/scripts/auto-pair.js" ]] && cp "$PROJECT_DIR/scripts/auto-pair.js" "$STAGE_DIR/scripts/"
 [[ -f "$PROJECT_DIR/scripts/deploy.sh" ]] && cp "$PROJECT_DIR/scripts/deploy.sh" "$STAGE_DIR/scripts/"
 
 # Copy package files
@@ -91,7 +92,7 @@ echo "[4/5] Creating setup script..."
 cat > "$STAGE_DIR/setup.sh" << 'SETUP_EOF'
 #!/usr/bin/env bash
 #
-# OpenClaw Command Center — Post-extraction setup
+# ChaoClaw Command Center — Post-extraction setup
 # This runs automatically after the .run file self-extracts.
 #
 
@@ -116,13 +117,13 @@ declare -A MSG_ZH MSG_EN
 LANG_CODE="${LANG_CODE:-}"
 
 MSG_ZH=(
-  [title]="OpenClaw 指挥中心安装程序"
+  [title]="ChaoClaw 指挥中心安装程序"
   [lang_select]="请选择语言 / Select Language"
   [checking]="检查环境..."
   [node_missing]="未找到 Node.js >= 18，请先安装"
   [pm2_missing]="正在安装 pm2..."
   [copying]="正在复制文件..."
-  [password_prompt]="设置访问密码（最少6位，留空使用默认: openclaw）"
+  [password_prompt]="设置访问密码（最少6位，留空使用默认: chaoclaw）"
   [password_confirm]="确认密码"
   [password_mismatch]="两次密码不一致，使用默认密码"
   [password_ok]="密码已设置"
@@ -139,13 +140,13 @@ MSG_ZH=(
   [commands]="常用命令"
 )
 MSG_EN=(
-  [title]="OpenClaw Command Center Installer"
+  [title]="ChaoClaw Command Center Installer"
   [lang_select]="Select Language / 请选择语言"
   [checking]="Checking environment..."
   [node_missing]="Node.js >= 18 not found, please install first"
   [pm2_missing]="Installing pm2..."
   [copying]="Copying files..."
-  [password_prompt]="Set access password (min 6 chars, empty for default: openclaw)"
+  [password_prompt]="Set access password (min 6 chars, empty for default: chaoclaw)"
   [password_confirm]="Confirm password"
   [password_mismatch]="Passwords don't match, using default"
   [password_ok]="Password set"
@@ -198,12 +199,11 @@ EXTRACT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo ""
 echo -e "${TEAL}${BOLD}"
 cat << 'BANNER'
-    ___                    ____ _
-   / _ \ _ __   ___ _ __ / ___| | __ ___      __
-  | | | | '_ \ / _ \ '_ \ |   | |/ _` \ \ /\ / /
-  | |_| | |_) |  __/ | | | |___| | (_| |\ V  V /
-   \___/| .__/ \___|_| |_|\____|_|\__,_| \_/\_/
-        |_|
+    ____ _                  ____ _
+   / ___| |__   __ _  ___ / ___| | __ ___      __
+  | |   | '_ \ / _` |/ _ \ |   | |/ _` \ \ /\ / /
+  | |___| | | | (_| | (_) | |___| | (_| |\ V  V /
+   \____|_| |_|\__,_|\___/ \____|_|\__,_| \_/\_/
 BANNER
 echo -e "${NC}"
 
@@ -278,22 +278,29 @@ else
   echo -ne "  > "
   read -r -s pw1; echo ""
   if [[ -z "$pw1" ]] || [[ ${#pw1} -lt 6 ]]; then
-    pw1="openclaw"
+    pw1="chaoclaw"
   else
     echo -ne "  $(t password_confirm): "
     read -r -s pw2; echo ""
     if [[ "$pw1" != "$pw2" ]]; then
       warn "$(t password_mismatch)"
-      pw1="openclaw"
+      pw1="chaoclaw"
     fi
   fi
-  printf '%s' "$pw1" > "$CMD_DIR/.auth_password"
+  PLAIN_PW="$pw1"
+  # Hash with scrypt
+  node -e "
+    const c = require('crypto');
+    const s = c.randomBytes(16).toString('hex');
+    const h = c.scryptSync(process.argv[1], s, 64).toString('hex');
+    process.stdout.write(s + ':' + h);
+  " "$pw1" > "$CMD_DIR/.auth_password"
   log "$(t password_ok)"
 fi
 
 # ── Step 4: .env ──
 info "$(t env_create)"
-# Extract auth token from OpenClaw config
+# Extract auth token from ChaoClaw config
 OC_TOKEN=""
 if [[ -f "${OPENCLAW_HOME}/openclaw.json" ]]; then
   OC_TOKEN=$(node -e "
@@ -335,7 +342,7 @@ else
 fi
 
 # ── Done ──
-PASSWORD=$(cat "$CMD_DIR/.auth_password" 2>/dev/null || echo "openclaw")
+PASSWORD="${PLAIN_PW:-chaoclaw}"
 echo ""
 echo -e "  ${TEAL}${BOLD}$(printf '%.0s━' {1..50})${NC}"
 echo -e "  ${TEAL}${BOLD}  $(t done)${NC}"
@@ -374,7 +381,7 @@ makeself \
   --nox11 \
   "$STAGE_DIR" \
   "${PROJECT_DIR}/${PKG_NAME}.run" \
-  "OpenClaw Command Center v${VERSION}" \
+  "ChaoClaw Command Center v${VERSION}" \
   "./setup.sh"
 
 echo ""

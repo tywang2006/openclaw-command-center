@@ -1,5 +1,5 @@
 @echo off
-REM OpenClaw Command Center — Windows Launcher
+REM ChaoClaw Command Center — Windows Launcher
 REM Starts the server and opens the browser.
 
 setlocal enabledelayedexpansion
@@ -28,7 +28,7 @@ if not exist "%SETUP_MARKER%" (
 )
 
 REM Normal run — start server + open browser
-title OpenClaw Command Center
+title ChaoClaw Command Center
 
 REM Kill existing on port
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%CMD_PORT% " ^| findstr "LISTENING"') do (
@@ -38,7 +38,7 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%CMD_PORT% " ^| findstr "LI
 cd /d "%CMD_DIR%"
 
 echo.
-echo  Starting OpenClaw Command Center...
+echo  Starting ChaoClaw Command Center...
 echo  Port: %CMD_PORT%
 echo.
 

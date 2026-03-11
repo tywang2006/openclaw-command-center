@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# OpenClaw Command Center — Quick Deploy
+# ChaoClaw Command Center — Quick Deploy
 # Usage: bash scripts/deploy.sh
 # Builds frontend + restarts PM2 process
 # ============================================================
@@ -21,7 +21,7 @@ err()  { echo -e "${RED}[x]${NC} $*"; exit 1; }
 cd "$INSTALL_DIR" || err "Project not found at ${INSTALL_DIR}"
 
 echo -e "${CYAN}============================================================${NC}"
-echo -e "${CYAN} OpenClaw Command Center — Deploy${NC}"
+echo -e "${CYAN} ChaoClaw Command Center — Deploy${NC}"
 echo -e "${CYAN}============================================================${NC}"
 
 # ── Build ────────────────────────────────────────────────────

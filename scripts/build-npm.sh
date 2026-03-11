@@ -38,12 +38,12 @@ node -e "
   const pkg = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/package.json', 'utf8'));
 
   const publishPkg = {
-    name: 'openclaw-cmd',
+    name: 'chaoclaw-cmd',
     version: '${VERSION}',
-    description: 'OpenClaw Command Center — visual management dashboard for OpenClaw agents',
+    description: 'ChaoClaw Command Center — visual management dashboard for ChaoClaw agents',
     type: 'module',
     bin: {
-      'openclaw-cmd': './bin/cli.mjs'
+      'chaoclaw-cmd': './bin/cli.mjs'
     },
     files: [
       'bin/',
@@ -56,11 +56,11 @@ node -e "
     engines: {
       node: '>=18.0.0'
     },
-    keywords: ['openclaw', 'command-center', 'agent', 'dashboard'],
+    keywords: ['chaoclaw', 'command-center', 'agent', 'dashboard'],
     license: 'MIT',
     repository: {
       type: 'git',
-      url: 'https://github.com/openclaw/command-center'
+      url: 'https://github.com/chaoclaw/command-center'
     }
   };
 
