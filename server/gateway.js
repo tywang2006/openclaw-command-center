@@ -19,19 +19,44 @@ const MAX_PROTOCOL = 5;
 
 /**
  * Resolve auth token with fallback chain for forward compatibility.
- * Checks env var first, then reads from openclaw.json with multiple field names.
+ * Priority:
+ *   1. OPENCLAW_AUTH_TOKEN env var
+ *   2. openclaw.json → gateway.auth.token (Gateway shared secret)
+ *   3. paired.json → device with clientId "gateway-client" + clientMode "backend"
+ *   4. openclaw.json → legacy fields (authToken, token, auth.token)
  */
 function resolveAuthToken() {
   if (process.env.OPENCLAW_AUTH_TOKEN) return process.env.OPENCLAW_AUTH_TOKEN;
+
+  const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
+
+  // Try openclaw.json → gateway.auth.token first (most common)
   try {
-    const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
     const configPath = path.join(home, 'openclaw.json');
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      // Try multiple field names for forward compatibility
-      return config.authToken || config.token || config.auth?.token || '';
+      if (config.gateway?.auth?.token) return config.gateway.auth.token;
+      // Legacy field names
+      if (config.authToken || config.token || config.auth?.token) {
+        return config.authToken || config.token || config.auth?.token;
+      }
     }
   } catch {}
+
+  // Try paired.json — find our device's token
+  try {
+    const pairedPath = path.join(home, 'devices', 'paired.json');
+    if (fs.existsSync(pairedPath)) {
+      const devices = JSON.parse(fs.readFileSync(pairedPath, 'utf8'));
+      for (const entry of Object.values(devices)) {
+        if (entry.clientId === 'gateway-client' && entry.clientMode === 'backend') {
+          const token = entry.tokens?.operator?.token;
+          if (token) return token;
+        }
+      }
+    }
+  } catch {}
+
   return '';
 }
 

@@ -348,15 +348,22 @@ export function generateAndSave() {
   // Generate layout
   const layout = generateLayout(departments);
 
-  // Save to file
-  const outputPath = path.join(BASE_PATH, 'command-center', 'public', 'assets', 'default-layout.json');
-  const outputDir = path.dirname(outputPath);
+  // Save to both public/ (for next build) and dist/ (for current runtime)
+  const jsonData = JSON.stringify(layout, null, 2);
+  const cmdBase = path.join(BASE_PATH, 'command-center');
+  const outputPaths = [
+    path.join(cmdBase, 'public', 'assets', 'default-layout.json'),
+    path.join(cmdBase, 'dist', 'assets', 'default-layout.json'),
+  ];
 
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  for (const outputPath of outputPaths) {
+    const outputDir = path.dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    fs.writeFileSync(outputPath, jsonData);
+    console.log(`[LayoutGen] Layout saved to ${outputPath}`);
   }
-
-  fs.writeFileSync(outputPath, JSON.stringify(layout, null, 2));
 
   // Calculate stats
   const chairCount = layout.furniture.filter(f =>
@@ -364,9 +371,8 @@ export function generateAndSave() {
     f.type === 'ASSET_NEW_110' || f.type === 'ASSET_NEW_111'
   ).length;
 
-  const fileSize = fs.statSync(outputPath).size;
+  const fileSize = jsonData.length;
 
-  console.log(`[LayoutGen] Layout saved to ${outputPath}`);
   console.log(`[LayoutGen] Grid: ${layout.cols}x${layout.rows}, Departments: ${departments.length}, Furniture: ${layout.furniture.length}, Seats: ${chairCount}`);
 
   return {
