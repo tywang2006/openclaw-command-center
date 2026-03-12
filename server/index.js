@@ -8,13 +8,13 @@ import { createWatcher, getInitialState } from './watcher.js';
 import apiRoutes from './routes/api.js';
 import skillsRoutes from './routes/skills.js';
 import cronRoutes from './routes/cron.js';
-import metricsRoutes, { recordPermission } from './routes/metrics.js';
+import metricsRoutes, { recordPermission, flushMetrics } from './routes/metrics.js';
 import workflowsRoutes from './routes/workflows.js';
 import replayRoutes, { isRecording, addReplayEvent } from './routes/replay.js';
 import capabilitiesRoutes from './routes/capabilities.js';
 import documentsRoutes from './routes/documents.js';
 import filesRoutes from './routes/files.js';
-import integrationsConfigRoutes, { checkAutoBackup } from './routes/integrations-config.js';
+import integrationsConfigRoutes, { syncAutoBackupCronJob } from './routes/integrations-config.js';
 import systemConfigRoutes from './routes/system-config.js';
 import systemExtrasRoutes from './routes/system-extras.js';
 import emailRoutes from './routes/email.js';
@@ -197,6 +197,7 @@ app.get('/cmd', (req, res) => {
 
 // WebSocket server — accept both /ws and /cmd/ws
 const wss = new WebSocketServer({ noServer: true });
+app.locals.wss = wss; // Expose to routes for broadcasting
 
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
@@ -447,13 +448,13 @@ gateway.onEvent((event) => {
   }
 });
 
-// Auto backup scheduler — check every 60 seconds
-const autoBackupInterval = setInterval(checkAutoBackup, 60000);
+// Sync auto backup config to OpenClaw cron on startup
+syncAutoBackupCronJob();
 
 // Graceful shutdown
 function gracefulShutdown(signal) {
   console.log(`[Server] ${signal} received, shutting down gracefully...`);
-  clearInterval(autoBackupInterval);
+  flushMetrics();
   getGateway().disconnect();
   watcher.close();
 

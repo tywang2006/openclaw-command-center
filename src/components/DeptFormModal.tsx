@@ -7,7 +7,29 @@ import './DeptFormModal.css'
 interface DeptFormModalProps {
   open: boolean
   onClose: () => void
-  editDept?: { id: string; name: string; agent?: string; icon: string; color: string; hue: number; telegramTopicId?: number; order: number } | null
+  editDept?: { id: string; name: string; agent?: string; icon: string; color: string; hue: number; telegramTopicId?: number; order: number; skills?: string[]; apiGroups?: string[] } | null
+}
+
+const CORE_API_GROUPS = ['dept-mgmt', 'search', 'bulletin', 'system']
+const OPTIONAL_API_GROUPS = [
+  { id: 'email', label: 'Email' },
+  { id: 'drive', label: 'Google Drive' },
+  { id: 'sheets', label: 'Google Sheets' },
+  { id: 'subagents', label: 'Sub-agents' },
+  { id: 'export', label: 'Export' },
+  { id: 'cron', label: 'Cron Jobs' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'files', label: 'Files' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'auto-backup', label: 'Auto Backup' },
+  { id: 'skills-api', label: 'Skills API' },
+  { id: 'external-tools', label: 'External Tools' },
+]
+
+interface SkillItem {
+  slug: string
+  name: string
+  tags?: string[]
 }
 
 const PRESET_COLORS = [
@@ -39,6 +61,15 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Skills & API groups
+  const [skills, setSkills] = useState<string[]>(['*'])
+  const [apiGroups, setApiGroups] = useState<string[]>(['*'])
+  const [availableSkills, setAvailableSkills] = useState<SkillItem[]>([])
+  const [skillsLoading, setSkillsLoading] = useState(false)
+  const [skillSearch, setSkillSearch] = useState('')
+  const [showApiSection, setShowApiSection] = useState(false)
+  const [showSkillSection, setShowSkillSection] = useState(false)
+
   useEffect(() => {
     if (editDept) {
       setId(editDept.id)
@@ -48,6 +79,8 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
       setColor(editDept.color)
       setHue(editDept.hue)
       setTopicId(editDept.telegramTopicId !== undefined ? String(editDept.telegramTopicId) : '')
+      setSkills(editDept.skills || ['*'])
+      setApiGroups(editDept.apiGroups || ['*'])
     } else {
       setId('')
       setName('')
@@ -56,9 +89,29 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
       setColor('#fbbf24')
       setHue(45)
       setTopicId('')
+      setSkills(['*'])
+      setApiGroups(['*'])
     }
     setError('')
+    setShowApiSection(false)
+    setShowSkillSection(false)
   }, [editDept, open])
+
+  // Load available skills when skill section is opened
+  useEffect(() => {
+    if (showSkillSection && availableSkills.length === 0 && !skillsLoading) {
+      setSkillsLoading(true)
+      authedFetch('/api/skills')
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data.skills)) {
+            setAvailableSkills(data.skills.map((s: any) => ({ slug: s.slug, name: s.name || s.slug, tags: s.tags || [] })))
+          }
+        })
+        .catch(() => {})
+        .finally(() => setSkillsLoading(false))
+    }
+  }, [showSkillSection])
 
   const handleNameChange = (v: string) => {
     setName(v)
@@ -77,7 +130,7 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
     setSaving(true)
     setError('')
     try {
-      const body: any = { name, agent: agent || name, icon, color, hue }
+      const body: any = { name, agent: agent || name, icon, color, hue, skills, apiGroups }
       if (topicId) body.telegramTopicId = parseInt(topicId, 10)
 
       let res
@@ -168,6 +221,134 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
           <div className="dept-field">
             <label>{t('dept.field.topicId')}</label>
             <input value={topicId} onChange={e => setTopicId(e.target.value.replace(/\D/g, ''))} placeholder={t('dept.field.topicIdPlaceholder')} />
+          </div>
+
+          {/* API Groups Section (collapsible) */}
+          <div className="dept-section">
+            <button className="dept-section-toggle" onClick={() => setShowApiSection(!showApiSection)}>
+              <span className="dept-section-arrow">{showApiSection ? '▾' : '▸'}</span>
+              <span>{t('dept.field.apiGroups')}</span>
+              <span className="dept-section-badge">
+                {apiGroups[0] === '*' ? 'ALL' : apiGroups.length}
+              </span>
+            </button>
+            {showApiSection && (
+              <div className="dept-section-content">
+                <div className="dept-tags-row">
+                  {CORE_API_GROUPS.map(g => (
+                    <span key={g} className="dept-tag core">{g}</span>
+                  ))}
+                  <span className="dept-tag-hint">{t('dept.field.apiGroups.core')}</span>
+                </div>
+                <div className="dept-check-row">
+                  <label className="dept-check">
+                    <input
+                      type="checkbox"
+                      checked={apiGroups[0] === '*'}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setApiGroups(['*'])
+                        } else {
+                          setApiGroups([])
+                        }
+                      }}
+                    />
+                    <span>{t('dept.field.apiGroups.selectAll')}</span>
+                  </label>
+                </div>
+                {apiGroups[0] !== '*' && (
+                  <div className="dept-check-grid">
+                    {OPTIONAL_API_GROUPS.map(g => (
+                      <label key={g.id} className="dept-check">
+                        <input
+                          type="checkbox"
+                          checked={apiGroups.includes(g.id)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setApiGroups(prev => [...prev, g.id])
+                            } else {
+                              setApiGroups(prev => prev.filter(x => x !== g.id))
+                            }
+                          }}
+                        />
+                        <span>{g.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Skills Section (collapsible) */}
+          <div className="dept-section">
+            <button className="dept-section-toggle" onClick={() => setShowSkillSection(!showSkillSection)}>
+              <span className="dept-section-arrow">{showSkillSection ? '▾' : '▸'}</span>
+              <span>{t('dept.field.skills')}</span>
+              <span className="dept-section-badge">
+                {skills[0] === '*' ? 'ALL' : skills.length}
+              </span>
+            </button>
+            {showSkillSection && (
+              <div className="dept-section-content">
+                <label className="dept-check">
+                  <input
+                    type="checkbox"
+                    checked={skills[0] === '*'}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSkills(['*'])
+                      } else {
+                        setSkills([])
+                      }
+                    }}
+                  />
+                  <span>{t('dept.field.skills.all')}</span>
+                </label>
+                {skills[0] !== '*' && (
+                  <>
+                    <input
+                      className="dept-skill-search"
+                      value={skillSearch}
+                      onChange={e => setSkillSearch(e.target.value)}
+                      placeholder={t('dept.field.skills.search')}
+                    />
+                    <div className="dept-skill-list">
+                      {skillsLoading ? (
+                        <div className="dept-skill-loading">{t('dept.field.skills.loading')}</div>
+                      ) : (
+                        (() => {
+                          const filtered = availableSkills.filter(s =>
+                            !skillSearch || s.slug.includes(skillSearch.toLowerCase()) || s.name.toLowerCase().includes(skillSearch.toLowerCase())
+                          )
+                          return filtered.length === 0 ? (
+                            <div className="dept-skill-loading">{t('dept.field.skills.empty')}</div>
+                          ) : (
+                            filtered.map(s => (
+                              <label key={s.slug} className="dept-check dept-skill-item">
+                                <input
+                                  type="checkbox"
+                                  checked={skills.includes(s.slug)}
+                                  onChange={e => {
+                                    if (e.target.checked) {
+                                      setSkills(prev => [...prev, s.slug])
+                                    } else {
+                                      setSkills(prev => prev.filter(x => x !== s.slug))
+                                    }
+                                  }}
+                                />
+                                <span className="dept-skill-name">{s.name}</span>
+                                {s.tags?.[0] && <span className="dept-skill-tag">{s.tags[0]}</span>}
+                              </label>
+                            ))
+                          )
+                        })()
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {error && <div className="dept-error">{error}</div>}

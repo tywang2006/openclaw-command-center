@@ -158,6 +158,10 @@
 .new-sub-form .sub-name-input {
   flex: 0 0 80px;
 }
+.new-sub-form .sub-skills-input {
+  flex: 0 0 120px;
+  font-size: 11px;
+}
 
 .new-sub-form input {
   flex: 1;

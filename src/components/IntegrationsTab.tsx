@@ -126,6 +126,8 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null)
   const [oauthCode, setOauthCode] = useState('')
   const [oauthLoading, setOauthLoading] = useState(false)
+  const [oauthFlowType, setOauthFlowType] = useState<'redirect' | 'manual'>('redirect')
+  const [oauthSubmitting, setOauthSubmitting] = useState(false)
 
   useEffect(() => {
     authedFetch('/api/system/capabilities')
@@ -531,7 +533,8 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   })
 
   const skillsWithKey = skillsConfig.filter(s => s.hasApiKey).length
-  const driveConfigured = integConfig?.drive?.enabled && (integConfig?.drive?.hasServiceAccountKey || integConfig?.drive?.serviceAccountKey)
+  const driveConfigured = (integConfig?.drive?.enabled && (integConfig?.drive?.hasServiceAccountKey || integConfig?.drive?.serviceAccountKey))
+    || (integConfig?.gogcli?.enabled && integConfig?.gogcli?.account)
 
   // Build model options list from modelConfig providers
   const modelOptions: string[] = []
@@ -873,13 +876,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
       {/* ---- Config Modal (gmail/drive/voice/webhook) ---- */}
       {configModal && (
-        <div className="cap-modal-overlay" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>
+        <div className="cap-modal-overlay" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}>
           <div className="cap-modal" onClick={e => e.stopPropagation()}>
             <div className="cap-modal-header">
               <div className="cap-modal-title">
                 <h2>{t(`integ.${configModal}.title`)}</h2>
               </div>
-              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>x</button>
+              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}>x</button>
             </div>
             <div className="cap-modal-body">
               <div className="cap-config-form">
@@ -1066,6 +1069,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                                 if (data.authUrl) {
                                   setOauthUrl(data.authUrl)
                                   setOauthRedirectUri(data.redirectUri)
+                                  setOauthFlowType(data.flowType || 'redirect')
                                 } else {
                                   setTestResult({ ok: false, msg: data.error || 'Failed' })
                                 }
@@ -1080,17 +1084,63 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                         ) : (
                           <div className="cap-oauth-guide">
                             <p>{t('integ.gogcli.step2.desc')}</p>
-                            {oauthRedirectUri && (
-                              <div className="cap-config-guide" style={{ marginTop: '8px', fontSize: '10px', wordBreak: 'break-all' }}>
-                                {t('integ.gogcli.redirectNote')}<br/>
-                                <code>{oauthRedirectUri}</code>
-                              </div>
-                            )}
                             <a href={oauthUrl} target="_blank" rel="noopener noreferrer" className="cap-oauth-link">
                               {t('integ.gogcli.openLink')}
                             </a>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Step 3: Paste authorization code (manual flow for "installed" type credentials) */}
+                    {oauthUrl && oauthFlowType === 'manual' && (
+                      <div className="cap-config-field">
+                        <label className="cap-config-label">{t('integ.gogcli.step3')}</label>
+                        <p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 8px' }}>{t('integ.gogcli.step3.desc')}</p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            className="cap-config-input"
+                            placeholder={t('integ.gogcli.codePlaceholder')}
+                            value={oauthCode}
+                            onChange={e => setOauthCode(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            className="cap-file-upload-btn"
+                            disabled={!oauthCode.trim() || oauthSubmitting}
+                            onClick={async () => {
+                              setOauthSubmitting(true)
+                              setTestResult(null)
+                              try {
+                                const res = await authedFetch('/api/integrations/config/gogcli/callback', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ code: oauthCode.trim() }),
+                                })
+                                const data = await res.json()
+                                if (data.success) {
+                                  setTestResult({ ok: true, msg: data.message || 'OK' })
+                                  setOauthUrl(null)
+                                  setOauthCode('')
+                                  // Refresh config to show account
+                                  const cfgRes = await authedFetch('/api/integrations/config/gogcli')
+                                  if (cfgRes.ok) {
+                                    const cfg = await cfgRes.json()
+                                    setConfigForm(prev => ({ ...prev, account: cfg.account, enabled: cfg.enabled }))
+                                  }
+                                } else {
+                                  setTestResult({ ok: false, msg: data.error || 'Failed' })
+                                }
+                              } catch {
+                                setTestResult({ ok: false, msg: t('common.networkError') })
+                              }
+                              setOauthSubmitting(false)
+                            }}
+                          >
+                            {oauthSubmitting ? '...' : t('integ.gogcli.submitCode')}
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -1155,7 +1205,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 <button className="primary" onClick={() => handleSaveConfig(configModal)} disabled={configSaving}>
                   {configSaving ? '...' : t('integ.save')}
                 </button>
-                <button onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>
+                <button onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}>
                   {t('integ.cancel')}
                 </button>
                 <button className="danger" onClick={() => handleResetConfig(configModal)}>
@@ -1405,13 +1455,15 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                     <div className="cap-restart-warn">{t('integ.backup.requireDrive')}</div>
                   )}
                   <div className="cap-config-toggle">
-                    <label>
-                      <input type="checkbox" checked={sysForm.enabled || false}
-                        onChange={e => setSysForm({ ...sysForm, enabled: e.target.checked })}
-                        disabled={!driveConfigured}
-                      />
+                    <span className="cap-toggle-label">{t('integ.enableService')}</span>
+                    <button
+                      type="button"
+                      className={`cap-toggle-btn ${sysForm.enabled ? 'on' : 'off'}`}
+                      onClick={() => driveConfigured && setSysForm({ ...sysForm, enabled: !sysForm.enabled })}
+                      disabled={!driveConfigured}
+                    >
                       {sysForm.enabled ? t('integ.enabled') : t('integ.disabled')}
-                    </label>
+                    </button>
                   </div>
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('integ.backup.schedule')}</label>

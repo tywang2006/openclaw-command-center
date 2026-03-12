@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import crypto from 'node:crypto';
@@ -11,7 +12,7 @@ import {
   migratePlaintextFields,
 } from '../crypto.js';
 import { recordAudit } from './audit.js';
-import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync } from '../utils.js';
 
 // OAuth CSRF state tokens (expire after 10 minutes)
 const oauthStates = new Map();
@@ -513,6 +514,7 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
     if (!clientCredentials) {
       return res.status(400).json({ error: 'Upload OAuth Client Credentials JSON first' });
     }
+    const isInstalled = !!clientCredentials.installed;
     const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
     if (!cred.client_id || !cred.client_secret) {
       return res.status(400).json({ error: 'Invalid credentials: missing client_id or client_secret' });
@@ -523,7 +525,10 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
       'https://www.googleapis.com/auth/userinfo.email',
     ].join(' ');
 
-    const redirectUri = getOAuthRedirectUri(req);
+    // For "installed" type (desktop app), use http://localhost redirect
+    // User must copy the code from the redirect URL and paste it back
+    const redirectUri = isInstalled ? 'http://localhost' : getOAuthRedirectUri(req);
+    const flowType = isInstalled ? 'manual' : 'redirect';
     const state = crypto.randomBytes(32).toString('hex');
     oauthStates.set(state, Date.now());
     // Clean expired states (older than 10 minutes)
@@ -538,7 +543,7 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
       `&access_type=offline` +
       `&prompt=consent` +
       `&state=${encodeURIComponent(state)}`;
-    res.json({ success: true, authUrl, redirectUri });
+    res.json({ success: true, authUrl, redirectUri, flowType });
   } catch (error) {
     console.error('[IntegrationsConfig] gogcli authorize error:', error);
     res.status(500).json({ error: 'Failed to generate auth URL' });
@@ -644,8 +649,10 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
     if (!clientCredentials) {
       return res.status(400).json({ error: 'No client credentials configured' });
     }
+    const isInstalled = !!clientCredentials.installed;
     const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
-    const redirectUri = getOAuthRedirectUri(req);
+    // Must match the redirect_uri used in the authorize step
+    const redirectUri = isInstalled ? 'http://localhost' : getOAuthRedirectUri(req);
 
     const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -789,6 +796,9 @@ router.put('/integrations/autobackup', (req, res) => {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
+    // Sync to OpenClaw cron system
+    syncAutoBackupCronJob();
+
     res.json({ success: true });
   } catch (error) {
     console.error('[IntegrationsConfig] PUT /integrations/autobackup error:', error);
@@ -815,26 +825,74 @@ router.post('/integrations/autobackup/run', async (req, res) => {
 });
 
 /**
- * Execute auto backup using existing Drive backup logic
+ * Build a Google Drive client, preferring OAuth (gogcli) over service account.
+ * Service accounts have 0 storage quota so OAuth is required for uploads.
  */
-async function runAutoBackup() {
-  const config = getConfig();
-  const driveConfig = config.drive;
+async function buildDriveClient(config) {
+  const { google: googleapis } = await import('googleapis');
 
-  if (!driveConfig?.enabled || !driveConfig?.serviceAccountKey) {
-    return { success: false, error: 'Google Drive not configured or disabled' };
+  // 1) Try OAuth tokens (gogcli) — user's Drive with real quota
+  const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+  const gogcli = config.gogcli || {};
+  if (fs.existsSync(tokenPath) && gogcli.clientCredentials) {
+    try {
+      const tokens = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+      if (tokens.access_token) {
+        let clientCreds = gogcli.clientCredentials;
+        // If clientCredentials is still a string (encryption issue), try to parse it
+        if (typeof clientCreds === 'string') {
+          try { clientCreds = JSON.parse(clientCreds); } catch { /* keep as-is */ }
+        }
+        const cred = (typeof clientCreds === 'object' && clientCreds !== null)
+          ? (clientCreds.installed || clientCreds.web || clientCreds)
+          : {};
+        if (!cred.client_id || !cred.client_secret) {
+          console.error('[Drive] OAuth credentials missing client_id or client_secret. Type:', typeof clientCreds);
+          throw new Error('Invalid OAuth credentials');
+        }
+        console.log('[Drive] Using OAuth client_id:', cred.client_id.substring(0, 20) + '...');
+        const oauth2 = new googleapis.auth.OAuth2(cred.client_id, cred.client_secret);
+        oauth2.setCredentials(tokens);
+        // Auto-refresh: listen for new tokens
+        oauth2.on('tokens', (newTokens) => {
+          const merged = { ...tokens, ...newTokens };
+          fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+        });
+        return { drive: googleapis.drive({ version: 'v3', auth: oauth2 }), method: 'oauth' };
+      }
+    } catch (e) {
+      console.warn('[Drive] OAuth token load failed, trying service account:', e.message);
+    }
   }
 
-  try {
-    // Call the drive backup endpoint internally
-    const { google: googleapis } = await import('googleapis');
+  // 2) Fallback to service account (only works with shared drives / shared folders)
+  const driveConfig = config.drive || {};
+  if (driveConfig.serviceAccountKey) {
     const auth = new googleapis.auth.GoogleAuth({
       credentials: driveConfig.serviceAccountKey,
       scopes: ['https://www.googleapis.com/auth/drive.file'],
     });
-    const drive = googleapis.drive({ version: 'v3', auth });
+    return { drive: googleapis.drive({ version: 'v3', auth }), method: 'service-account' };
+  }
 
+  return null;
+}
+
+/**
+ * Execute auto backup using existing Drive backup logic
+ */
+async function runAutoBackup() {
+  const config = getConfig();
+
+  const client = await buildDriveClient(config);
+  if (!client) {
+    return { success: false, error: 'Google Drive not configured. Set up Google Workspace (OAuth) in Capabilities tab, or configure a Drive service account.' };
+  }
+  const { drive } = client;
+
+  try {
     // Get or create backup folder
+    const driveConfig = config.drive || {};
     let folderId = driveConfig.folderId;
     if (!folderId) {
       const folder = await drive.files.create({
@@ -842,6 +900,7 @@ async function runAutoBackup() {
         fields: 'id',
       });
       folderId = folder.data.id;
+      if (!config.drive) config.drive = {};
       config.drive.folderId = folderId;
     }
 
@@ -875,7 +934,7 @@ async function runAutoBackup() {
       const filename = `${id}_backup_${timestamp}.md`;
       const file = await drive.files.create({
         resource: { name: filename, parents: [folderId] },
-        media: { mimeType: 'text/markdown', body: Buffer.from(content, 'utf8') },
+        media: { mimeType: 'text/markdown', body: Readable.from(Buffer.from(content, 'utf8')) },
         fields: 'id, name',
       });
 
@@ -887,7 +946,7 @@ async function runAutoBackup() {
     config.autoBackup.lastRun = new Date().toISOString();
     saveConfig(config);
 
-    console.log(`[AutoBackup] Completed: ${files.length} departments backed up`);
+    console.log(`[AutoBackup] Completed (${client.method}): ${files.length} departments backed up`);
     return { success: true, files };
   } catch (error) {
     console.error('[AutoBackup] Failed:', error);
@@ -895,34 +954,92 @@ async function runAutoBackup() {
   }
 }
 
+// ---- OpenClaw Cron Sync for Auto Backup ----
+
+const CRON_FILE_PATH = path.join(OPENCLAW_HOME, 'cron', 'jobs.json');
+const AUTOBACKUP_JOB_NAME = '[系统] 自动备份到 Google Drive';
+
+function readCronJobs() {
+  try {
+    if (fs.existsSync(CRON_FILE_PATH)) {
+      return JSON.parse(fs.readFileSync(CRON_FILE_PATH, 'utf8'));
+    }
+  } catch {}
+  return { version: 1, jobs: [] };
+}
+
+function writeCronJobs(data) {
+  try {
+    const dir = path.dirname(CRON_FILE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    safeWriteFileSync(CRON_FILE_PATH, JSON.stringify(data, null, 2));
+    return true;
+  } catch (err) {
+    console.error('[AutoBackup] Failed to write cron jobs:', err.message);
+    return false;
+  }
+}
+
 /**
- * Check if it's time to run auto backup (called every 60s from index.js)
+ * Convert autoBackup config (schedule + time) to a cron expression.
+ *   daily  03:00  → "0 3 * * *"
+ *   weekly 03:00  → "0 3 * * 1"
  */
-export async function checkAutoBackup() {
+function buildCronExpr(schedule, time) {
+  const [hh, mm] = (time || '03:00').split(':').map(Number);
+  if (schedule === 'weekly') return `${mm} ${hh} * * 1`;
+  return `${mm} ${hh} * * *`;
+}
+
+/**
+ * Sync autoBackup settings to an OpenClaw cron job.
+ * Creates, updates, or disables the job to match the current config.
+ * Called on startup and whenever autoBackup settings change.
+ */
+export function syncAutoBackupCronJob() {
   try {
     const config = getConfig();
-    const ab = config.autoBackup;
-    if (!ab?.enabled || !ab?.time) return;
+    const ab = config.autoBackup || {};
+    const data = readCronJobs();
 
-    const now = new Date();
-    const [hh, mm] = ab.time.split(':').map(Number);
+    // Find existing auto-backup job by name
+    let job = data.jobs.find(j => j.name === AUTOBACKUP_JOB_NAME);
+    const cronExpr = buildCronExpr(ab.schedule, ab.time);
+    const now = Date.now();
 
-    if (now.getHours() !== hh || now.getMinutes() !== mm) return;
-
-    // Weekly: only on Monday (day 1)
-    if (ab.schedule === 'weekly' && now.getDay() !== 1) return;
-
-    // Prevent running twice in the same minute
-    if (ab.lastRun) {
-      const lastRun = new Date(ab.lastRun);
-      const diffMs = now.getTime() - lastRun.getTime();
-      if (diffMs < 120000) return; // Less than 2 minutes since last run
+    if (job) {
+      // Update existing job
+      job.enabled = !!ab.enabled;
+      job.schedule = { kind: 'cron', expr: cronExpr };
+      job.updatedAtMs = now;
+      console.log(`[AutoBackup] Synced cron job: enabled=${job.enabled}, expr=${cronExpr}`);
+    } else {
+      // Create new job
+      job = {
+        id: crypto.randomUUID(),
+        agentId: 'main',
+        name: AUTOBACKUP_JOB_NAME,
+        enabled: !!ab.enabled,
+        createdAtMs: now,
+        updatedAtMs: now,
+        deptId: 'admin',
+        schedule: { kind: 'cron', expr: cronExpr },
+        sessionTarget: 'isolated',
+        wakeMode: 'now',
+        payload: {
+          kind: 'agentTurn',
+          message: `执行自动备份: bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh POST /integrations/autobackup/run`,
+        },
+        delivery: { mode: 'none' },
+        state: { consecutiveErrors: 0 },
+      };
+      data.jobs.push(job);
+      console.log(`[AutoBackup] Created cron job: id=${job.id}, expr=${cronExpr}`);
     }
 
-    console.log('[AutoBackup] Scheduled backup starting...');
-    await runAutoBackup();
+    writeCronJobs(data);
   } catch (error) {
-    console.error('[AutoBackup] Check failed:', error.message);
+    console.error('[AutoBackup] Cron sync failed:', error.message);
   }
 }
 

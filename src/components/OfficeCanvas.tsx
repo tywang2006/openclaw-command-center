@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Department, ToolState } from '../hooks/useAgentState'
+import { useDeptVisits, consumeVisit } from '../hooks/useAgentState'
 import type { SubAgent } from './ChatPanel'
 import { OfficeState } from '../office/engine/officeState'
 import { renderFrame } from '../office/engine/renderer'
@@ -191,6 +192,53 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       subAgentNamesRef.current.delete(charId)
     })
   }, [subAgents, departments, officeReady])
+
+  // Handle dept:visit events — walk source agent to target department, then back
+  const deptVisits = useDeptVisits()
+  const processedVisitsRef = useRef(new Set<number>())
+
+  useEffect(() => {
+    if (!officeStateRef.current || deptVisits.length === 0) return
+    const state = officeStateRef.current
+
+    for (const visit of deptVisits) {
+      if (processedVisitsRef.current.has(visit.id)) continue
+      processedVisitsRef.current.add(visit.id)
+      consumeVisit(visit.id)
+
+      const fromIdx = departments.findIndex(d => d.id === visit.from)
+      const toIdx = departments.findIndex(d => d.id === visit.to)
+      if (fromIdx < 0 || toIdx < 0) continue
+
+      // Find target department's seat position
+      const targetSeatId = `dept-${visit.to}-chair-main`
+      const targetSeat = state.seats.get(targetSeatId)
+      if (!targetSeat) continue
+
+      // Walk the source agent to a tile near the target seat
+      const col = targetSeat.seatCol - 1
+      const row = targetSeat.seatRow
+      const walked = state.walkToTile(fromIdx, col, row)
+      if (!walked) {
+        // Try adjacent tiles if first attempt fails
+        state.walkToTile(fromIdx, targetSeat.seatCol + 1, row) ||
+        state.walkToTile(fromIdx, targetSeat.seatCol, row - 1) ||
+        state.walkToTile(fromIdx, targetSeat.seatCol, row + 1)
+      }
+
+      // Send agent back to their seat after a delay
+      setTimeout(() => {
+        if (officeStateRef.current) {
+          officeStateRef.current.sendToSeat(fromIdx)
+        }
+      }, 8000)
+    }
+
+    // Cleanup old processed visit IDs
+    if (processedVisitsRef.current.size > 100) {
+      processedVisitsRef.current.clear()
+    }
+  }, [deptVisits, departments, officeReady])
 
   // Render loop using the full renderFrame pipeline
   useEffect(() => {

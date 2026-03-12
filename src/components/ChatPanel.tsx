@@ -47,6 +47,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
   const [showNewSub, setShowNewSub] = useState(false)
   const [newSubName, setNewSubName] = useState('')
   const [newSubTask, setNewSubTask] = useState('')
+  const [newSubSkills, setNewSubSkills] = useState('')
   const { showToast } = useToast()
   const messagesRef = useRef<HTMLDivElement>(null)
   const { t, locale } = useLocale()
@@ -768,7 +769,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
       const res = await authedFetch(`/api/departments/${selectedDeptId}/subagents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: newSubTask.trim(), name: agentName })
+        body: JSON.stringify({ task: newSubTask.trim(), name: agentName, ...(newSubSkills.trim() ? { skills: newSubSkills.split(',').map(s => s.trim()).filter(Boolean) } : {}) })
       })
       const data = await res.json()
       if (data.success) {
@@ -795,6 +796,7 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     }
     setNewSubName('')
     setNewSubTask('')
+    setNewSubSkills('')
     setShowNewSub(false)
   }
 
@@ -1056,6 +1058,12 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
             onChange={e => setNewSubTask(e.target.value)}
             placeholder={t('chat.subagent.task.placeholder')}
             onKeyDown={e => { if (e.key === 'Enter') createSubAgent() }}
+          />
+          <input
+            className="sub-skills-input"
+            value={newSubSkills}
+            onChange={e => setNewSubSkills(e.target.value)}
+            placeholder={t('chat.subagent.skills.placeholder')}
           />
           <button onClick={createSubAgent} disabled={!newSubTask.trim()}>{t('chat.subagent.create')}</button>
         </div>

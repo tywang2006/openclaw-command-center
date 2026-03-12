@@ -77,6 +77,37 @@ export function useStreamingTexts(): Map<string, string> {
   return useSyncExternalStore(subscribeStreaming, getStreamingSnapshot)
 }
 
+// Department visit events store — decoupled like streaming to avoid unnecessary re-renders
+export interface DeptVisit {
+  from: string
+  to: string
+  id: number
+}
+let _deptVisits: DeptVisit[] = []
+let _visitVersion = 0
+const _visitListeners = new Set<() => void>()
+
+function _notifyVisitListeners() {
+  _visitVersion++
+  for (const fn of _visitListeners) fn()
+}
+
+function getVisitSnapshot() { return _deptVisits }
+function subscribeVisits(cb: () => void) {
+  _visitListeners.add(cb)
+  return () => { _visitListeners.delete(cb) }
+}
+
+/** Hook for components that need dept visit events */
+export function useDeptVisits(): DeptVisit[] {
+  return useSyncExternalStore(subscribeVisits, getVisitSnapshot)
+}
+
+export function consumeVisit(id: number) {
+  _deptVisits = _deptVisits.filter(v => v.id !== id)
+  _notifyVisitListeners()
+}
+
 function parseDepartment(d: any): Department {
   return {
     id: d.id || d.name,
@@ -322,6 +353,13 @@ export function useAgentState() {
             }
             return { ...prev, toolStates }
           })
+        }
+        break
+
+      case 'dept:visit':
+        if (data?.from && data?.to) {
+          _deptVisits = [..._deptVisits, { from: data.from, to: data.to, id: Date.now() + Math.random() }]
+          _notifyVisitListeners()
         }
         break
 

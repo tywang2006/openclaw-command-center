@@ -11,19 +11,75 @@
 # Supports: beginner mode (install OpenClaw + Command Center)
 #           existing user mode (Command Center only)
 #
+# Flags (for automation / non-interactive):
+#   --non-interactive    Skip all prompts, use defaults or flags
+#   --port=N             Set CMD_PORT (default: 5100)
+#   --password=X         Set access password (min 6 chars)
+#   --mode=beginner|existing  Install mode
+#   --lang=zh|en         Language
+#
+
+set -euo pipefail
+
+# ── Bash 4+ check (needed for declare -A) ──
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+  echo "ERROR: bash 4+ is required (found bash ${BASH_VERSION:-unknown})." >&2
+  echo "On macOS: brew install bash" >&2
+  exit 1
+fi
+
+# ── Install lockfile ──
+INSTALL_LOCK="/tmp/openclaw-cmd-install.lock"
+cleanup() {
+  rm -f "$INSTALL_LOCK"
+}
+trap cleanup EXIT INT TERM
+
+if [[ -f "$INSTALL_LOCK" ]]; then
+  local_pid=$(cat "$INSTALL_LOCK" 2>/dev/null || echo "")
+  if [[ -n "$local_pid" ]] && kill -0 "$local_pid" 2>/dev/null; then
+    echo "ERROR: Another install is already running (PID $local_pid)." >&2
+    exit 1
+  fi
+  # Stale lockfile, remove it
+  rm -f "$INSTALL_LOCK"
+fi
+echo $$ > "$INSTALL_LOCK"
+
+# ============================================================
+# CLI Flags
+# ============================================================
+
+NON_INTERACTIVE=0
+ARG_PORT=""
+ARG_PASSWORD=""
+ARG_MODE=""
+ARG_LANG=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --non-interactive) NON_INTERACTIVE=1 ;;
+    --port=*)          ARG_PORT="${arg#*=}" ;;
+    --password=*)      ARG_PASSWORD="${arg#*=}" ;;
+    --mode=*)          ARG_MODE="${arg#*=}" ;;
+    --lang=*)          ARG_LANG="${arg#*=}" ;;
+  esac
+done
 
 # ============================================================
 # Constants
 # ============================================================
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 CMD_DIR="${OPENCLAW_HOME}/workspace/command-center"
-CMD_PORT="${CMD_PORT:-5100}"
+CMD_PORT="${ARG_PORT:-${CMD_PORT:-5100}}"
 PM2_NAME="openclaw-cmd"
 NODE_MIN=18
 GATEWAY_HEALTH_RETRIES=15
 GATEWAY_HEALTH_INTERVAL=2
+# Variable to hold plain-text password for summary display only
+INSTALL_PASSWORD=""
 
 # ============================================================
 # Color System — teal accent #00d4aa
@@ -357,10 +413,14 @@ spinner() {
 # Run a command with spinner
 run_with_spinner() {
   local msg="$1"; shift
-  "$@" &>/tmp/openclaw_install_log 2>&1 &
+  local log_file
+  log_file=$(mktemp /tmp/openclaw_install_XXXXXX.log)
+  "$@" &>"$log_file" 2>&1 &
   local pid=$!
   spinner $pid "$msg"
-  return $?
+  local rc=$?
+  rm -f "$log_file"
+  return $rc
 }
 
 # Step header: step_header CURRENT TOTAL "description"
@@ -388,8 +448,8 @@ run_step() {
 
   step_header "$current" "$total" "$desc"
 
-  # Offer skip before running if skippable
-  if [[ "$skippable" -eq 1 ]]; then
+  # Offer skip before running if skippable (skip in non-interactive mode)
+  if [[ "$skippable" -eq 1 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo -ne "  ${DIM}$(t skip_prompt): ${NC}"
     read -r -t 5 skip_input 2>/dev/null || skip_input=""
     if [[ "$skip_input" == "s" || "$skip_input" == "S" ]]; then
@@ -403,10 +463,21 @@ run_step() {
       step_result ok
       return 0
     else
+      # In non-interactive mode, fail immediately on non-skippable, skip on skippable
+      if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        if [[ "$skippable" -eq 1 ]]; then
+          step_result skip
+          return 0
+        else
+          step_result fail
+          err "$(t abort_msg)"
+          exit 1
+        fi
+      fi
       if [[ "$skippable" -eq 1 ]]; then
         echo ""
         echo -ne "  ${YELLOW}$(t retry_prompt): ${NC}"
-        read -r choice
+        read -r choice || choice="a"
         case "$choice" in
           r|R) info "$(t retry_r)"; continue ;;
           s|S) step_result skip; return 0 ;;
@@ -416,7 +487,7 @@ run_step() {
       else
         echo ""
         echo -ne "  ${YELLOW}$(t retry_abort): ${NC}"
-        read -r choice
+        read -r choice || choice="a"
         case "$choice" in
           a|A) err "$(t abort_msg)"; exit 1 ;;
           *)   info "$(t retry_r)"; continue ;;
@@ -468,7 +539,7 @@ select_language() {
     echo -e "    ${TEAL}2)${NC} English"
     echo ""
     echo -ne "  [1/2]: "
-    read -r lang_choice
+    read -r lang_choice || lang_choice=""
     case "$lang_choice" in
       2|en|EN) LANG_CODE="en" ;;
       *)       LANG_CODE="zh" ;;
@@ -502,7 +573,7 @@ select_mode() {
     echo -e "       ${DIM}$(t mode_existing_desc)${NC}"
     echo ""
     echo -ne "  [1/2]: "
-    read -r mode_choice
+    read -r mode_choice || mode_choice=""
     case "$mode_choice" in
       2) INSTALL_MODE="existing" ;;
       *) INSTALL_MODE="beginner" ;;
@@ -550,11 +621,22 @@ do_prereqs() {
     warn "$(t git_not_found)"
   fi
 
+  # curl (needed for health check)
+  if ! command -v curl &>/dev/null; then
+    warn "curl not found — health check will be skipped"
+  else
+    log "curl $(curl --version 2>/dev/null | head -1 | awk '{print $2}')"
+  fi
+
   # pm2
   info "$(t prereqs_pm2)"
   if ! command -v pm2 &>/dev/null; then
     warn "$(t pm2_installing)"
-    npm install -g pm2 &>/dev/null || return 1
+    if [[ "$(id -u)" -eq 0 ]]; then
+      npm install -g pm2 &>/dev/null || return 1
+    else
+      sudo npm install -g pm2 &>/dev/null || npm install -g pm2 &>/dev/null || return 1
+    fi
   fi
   log "pm2 $(pm2 -v 2>/dev/null || echo '?')"
 
@@ -573,18 +655,13 @@ do_install_deps() {
   # If CMD_DIR doesn't have package.json, try to clone or locate
   if [[ ! -f "${CMD_DIR}/package.json" ]]; then
     if [[ -n "$script_dir" ]] && [[ -f "${script_dir}/package.json" ]]; then
-      # Running from repo, copy to target
+      # Running from repo, copy to target (cp -a instead of rsync)
       if [[ "$script_dir" != "$CMD_DIR" ]]; then
         info "$(t install_deps_clone)"
         mkdir -p "$CMD_DIR"
-        rsync -a --delete \
-          --exclude='node_modules' \
-          --exclude='dist' \
-          --exclude='logs' \
-          --exclude='.auth_password' \
-          --exclude='.env' \
-          --exclude='tsconfig.tsbuildinfo' \
-          "$script_dir/" "$CMD_DIR/"
+        # Copy everything except build artifacts and user config
+        cp -a "$script_dir"/. "$CMD_DIR"/
+        rm -rf "${CMD_DIR}/node_modules" "${CMD_DIR}/dist" "${CMD_DIR}/logs" "${CMD_DIR}/tsconfig.tsbuildinfo"
       fi
     elif command -v git &>/dev/null; then
       info "$(t install_deps_clone)"
@@ -608,9 +685,15 @@ do_install_deps() {
 
   cd "$CMD_DIR" || return 1
 
-  # npm install
+  # npm ci (deterministic) if lockfile exists, else npm install
   info "$(t install_deps_npm)"
-  if run_with_spinner "npm install" npm install --production=false; then
+  local npm_cmd
+  if [[ -f "${CMD_DIR}/package-lock.json" ]]; then
+    npm_cmd="npm ci --no-fund --no-audit"
+  else
+    npm_cmd="npm install --no-fund --no-audit"
+  fi
+  if run_with_spinner "npm install" $npm_cmd; then
     return 0
   else
     err "$(t install_deps_npm_fail)"
@@ -630,56 +713,90 @@ do_configure() {
   # --- Password ---
   if [[ -f "${CMD_DIR}/.auth_password" ]]; then
     log "$(t configure_password_keep)"
+    INSTALL_PASSWORD="(existing)"
   else
-    echo ""
-    info "$(t configure_password)"
-    echo -e "  ${DIM}$(t configure_password_default)${NC}"
-    local pw1="" pw2=""
-    local attempts=0
-    while true; do
-      echo -ne "  > "
-      read -r -s pw1
+    local pw1=""
+    if [[ "$NON_INTERACTIVE" -eq 1 ]] && [[ -n "$ARG_PASSWORD" ]]; then
+      pw1="$ARG_PASSWORD"
+    else
       echo ""
-      if [[ -z "$pw1" ]]; then
-        pw1="openclaw"
-        break
-      fi
-      if [[ ${#pw1} -lt 6 ]]; then
-        warn "$(t configure_password_short)"
-        pw1="openclaw"
-        break
-      fi
-      echo -ne "  $(t configure_password_confirm): "
-      read -r -s pw2
-      echo ""
-      if [[ "$pw1" == "$pw2" ]]; then
-        break
-      else
-        warn "$(t configure_password_mismatch)"
-        attempts=$((attempts + 1))
-        if [[ $attempts -ge 3 ]]; then
+      info "$(t configure_password)"
+      echo -e "  ${DIM}$(t configure_password_default)${NC}"
+      local pw2=""
+      local attempts=0
+      while true; do
+        echo -ne "  > "
+        read -r -s pw1 || pw1=""
+        echo ""
+        if [[ -z "$pw1" ]]; then
           pw1="openclaw"
-          warn "$(t configure_password_short)"
           break
         fi
-      fi
-    done
-    printf '%s' "$pw1" > "${CMD_DIR}/.auth_password"
+        if [[ ${#pw1} -lt 6 ]]; then
+          warn "$(t configure_password_short)"
+          pw1="openclaw"
+          break
+        fi
+        echo -ne "  $(t configure_password_confirm): "
+        read -r -s pw2 || pw2=""
+        echo ""
+        if [[ "$pw1" == "$pw2" ]]; then
+          break
+        else
+          warn "$(t configure_password_mismatch)"
+          attempts=$((attempts + 1))
+          if [[ $attempts -ge 3 ]]; then
+            pw1="openclaw"
+            warn "$(t configure_password_short)"
+            break
+          fi
+        fi
+      done
+    fi
+    # Validate non-interactive password
+    if [[ ${#pw1} -lt 6 ]]; then
+      pw1="openclaw"
+    fi
+    # Save plain text for summary display
+    INSTALL_PASSWORD="$pw1"
+    # Hash with scrypt via Node.js before writing (matches auth.js hashPassword())
+    local hashed
+    hashed=$(node -e "
+      const crypto = require('crypto');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(process.argv[1], salt, 64).toString('hex');
+      process.stdout.write(salt + ':' + hash);
+    " "$pw1" 2>/dev/null)
+    if [[ -n "$hashed" ]] && [[ "$hashed" == *":"* ]]; then
+      printf '%s' "$hashed" > "${CMD_DIR}/.auth_password"
+    else
+      # Fallback: write plain text (auth.js supports legacy plain text)
+      printf '%s' "$pw1" > "${CMD_DIR}/.auth_password"
+    fi
     log "$(t configure_password_ok)"
   fi
 
-  # --- .env ---
-  info "$(t configure_env)"
-  if [[ ! -f "${CMD_DIR}/.env" ]]; then
-    cat > "${CMD_DIR}/.env" <<ENVEOF
-# OpenClaw Command Center Configuration
-OPENCLAW_HOME=${OPENCLAW_HOME}
-CMD_PORT=${CMD_PORT}
-OPENCLAW_AUTH_TOKEN=${OPENCLAW_TOKEN}
-ENVEOF
-    log "$(t configure_env_ok)"
-  else
-    log "$(t configure_env_keep)"
+  # --- integrations.json (needed by server/routes/integrations-config.js) ---
+  local integ_path="${CMD_DIR}/integrations.json"
+  if [[ ! -f "$integ_path" ]]; then
+    cat > "$integ_path" <<'INTEGEOF'
+{
+  "gmail": { "enabled": false, "email": "", "appPassword": "" },
+  "drive": { "enabled": false, "serviceAccountKey": null, "folderId": null },
+  "voice": { "enabled": true, "source": "openclaw", "apiKeyOverride": null },
+  "webhook": { "enabled": false, "url": "", "secret": "" },
+  "google-sheets": { "enabled": false }
+}
+INTEGEOF
+    log "integrations.json created"
+  fi
+
+  # --- bulletin/board.md (needed by server) ---
+  local board_path="${OPENCLAW_HOME}/workspace/departments/bulletin/board.md"
+  if [[ ! -f "$board_path" ]]; then
+    mkdir -p "$(dirname "$board_path")"
+    printf '%s\n' "# Bulletin Board" "" "Welcome to Command Center." > "$board_path"
+    log "bulletin/board.md created"
   fi
 
   # --- Departments ---
@@ -740,26 +857,28 @@ do_build_start() {
     return 1
   fi
 
-  # Generate layout
-  info "$(t build_layout)"
-  node "${CMD_DIR}/scripts/gen-layout.js" &>/dev/null || warn "$(t layout_fail)"
+  # Layout generation skipped — server auto-generates on startup (layout-generator.js)
 
-  # Check port conflict
+  # Check port conflict (fallback chain: ss → lsof → netstat)
+  local port_in_use=0
   if command -v ss &>/dev/null; then
-    if ss -tlnp 2>/dev/null | grep -q ":${CMD_PORT} "; then
-      # Check if it's our own PM2 process
-      local port_pid
-      port_pid=$(ss -tlnp 2>/dev/null | grep ":${CMD_PORT} " | grep -oP 'pid=\K\d+' | head -1)
-      local pm2_pid
-      pm2_pid=$(pm2 pid "$PM2_NAME" 2>/dev/null || echo "")
-      if [[ -n "$port_pid" ]] && [[ "$port_pid" != "$pm2_pid" ]] && [[ -n "$pm2_pid" ]]; then
-        warn "$(printf "$(t build_pm2_port)" "$CMD_PORT")"
-        info "$(t build_pm2_port_hint)"
-      fi
+    ss -tlnp 2>/dev/null | grep -q ":${CMD_PORT} " && port_in_use=1
+  elif command -v lsof &>/dev/null; then
+    lsof -iTCP:"${CMD_PORT}" -sTCP:LISTEN &>/dev/null && port_in_use=1
+  elif command -v netstat &>/dev/null; then
+    netstat -tlnp 2>/dev/null | grep -q ":${CMD_PORT} " && port_in_use=1
+  fi
+  if [[ "$port_in_use" -eq 1 ]]; then
+    # Check if it's our own PM2 process
+    local pm2_pid
+    pm2_pid=$(pm2 pid "$PM2_NAME" 2>/dev/null || echo "")
+    if [[ -z "$pm2_pid" ]] || [[ "$pm2_pid" == "0" ]]; then
+      warn "$(printf "$(t build_pm2_port)" "$CMD_PORT")"
+      info "$(t build_pm2_port_hint)"
     fi
   fi
 
-  # Generate ecosystem config
+  # Generate ecosystem config with CMD_PORT and OPENCLAW_HOME
   cat > "${CMD_DIR}/ecosystem.config.cjs" <<PMEOF
 const path = require('path');
 const home = process.env.HOME || '/root';
@@ -777,6 +896,8 @@ module.exports = {
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
     env: {
       NODE_ENV: 'production',
+      CMD_PORT: '${CMD_PORT}',
+      OPENCLAW_HOME: '${OPENCLAW_HOME}',
     }
   }]
 };
@@ -786,6 +907,9 @@ PMEOF
   info "$(t build_pm2_start)"
   pm2 delete "$PM2_NAME" 2>/dev/null || true
   pm2 start "${CMD_DIR}/ecosystem.config.cjs" &>/dev/null || return 1
+
+  # Enable auto-start on system reboot (non-fatal)
+  pm2 startup 2>/dev/null || true
   pm2 save &>/dev/null || true
   log "$(t build_pm2_ok)"
 
@@ -795,6 +919,11 @@ PMEOF
 do_health_check() {
   info "$(t health_run)"
   sleep 3
+
+  if ! command -v curl &>/dev/null; then
+    warn "curl not found — skipping health check"
+    return 0
+  fi
 
   local health
   health=$(curl -s --max-time 5 "http://127.0.0.1:${CMD_PORT}/health" 2>/dev/null || echo "")
@@ -844,7 +973,7 @@ do_warn_overwrite() {
     echo ""
     echo -ne "  ${RED}$(t warn_overwrite_confirm): ${NC}"
     local confirm
-    read -r confirm
+    read -r confirm || confirm=""
     if [[ "$confirm" != "YES" ]]; then
       err "$(t warn_overwrite_abort)"
       exit 1
@@ -873,8 +1002,8 @@ do_setup_wizard() {
   echo -e "  ${DIM}$(printf '%.0s─' {1..50})${NC}"
   echo ""
   # Pass-through to interactive wizard
-  openclaw setup --wizard
-  local rc=$?
+  local rc=0
+  openclaw setup --wizard || rc=$?
   echo ""
   return $rc
 }
@@ -882,8 +1011,8 @@ do_setup_wizard() {
 do_configure_model() {
   info "$(t configure_model_run)"
   echo ""
-  openclaw configure --section model
-  local rc=$?
+  local rc=0
+  openclaw configure --section model || rc=$?
   echo ""
   return $rc
 }
@@ -891,8 +1020,8 @@ do_configure_model() {
 do_configure_gateway() {
   info "$(t configure_gateway_run)"
   echo ""
-  openclaw configure --section gateway
-  local rc=$?
+  local rc=0
+  openclaw configure --section gateway || rc=$?
   echo ""
   return $rc
 }
@@ -907,7 +1036,7 @@ do_start_gateway() {
   # Fallback: run in background with --force
   warn "$(t start_gateway_fallback)"
   openclaw gateway run --force &>/dev/null &
-  disown 2>/dev/null
+  disown 2>/dev/null || true
   sleep 3
   return 0
 }
@@ -942,11 +1071,32 @@ do_check_openclaw() {
   fi
   log "$(t check_openclaw_ok)"
 
-  # Extract auth token (matches server/gateway.js:resolveAuthToken chain)
+  # Extract auth token (matches server/gateway.js:resolveAuthToken priority)
+  # Priority: gateway.auth.token → legacy (authToken, token, auth.token) → paired.json
   OPENCLAW_TOKEN=$(node -e "
+    const fs = require('fs');
+    const path = require('path');
     try {
-      const c = require('${config_path}');
-      console.log(c.authToken || c.token || (c.auth && c.auth.token) || (c.gateway && c.gateway.auth && c.gateway.auth.token) || '');
+      const c = JSON.parse(fs.readFileSync('${config_path}', 'utf8'));
+      // 1. gateway.auth.token (most common — Gateway shared secret)
+      if (c.gateway && c.gateway.auth && c.gateway.auth.token) {
+        console.log(c.gateway.auth.token); process.exit(0);
+      }
+      // 2. Legacy field names
+      const legacy = c.authToken || c.token || (c.auth && c.auth.token);
+      if (legacy) { console.log(legacy); process.exit(0); }
+      // 3. paired.json device lookup
+      const pairedPath = path.join('${OPENCLAW_HOME}', 'devices', 'paired.json');
+      if (fs.existsSync(pairedPath)) {
+        const devices = JSON.parse(fs.readFileSync(pairedPath, 'utf8'));
+        for (const e of Object.values(devices)) {
+          if (e.clientId === 'gateway-client' && e.clientMode === 'backend') {
+            const t = e.tokens && e.tokens.operator && e.tokens.operator.token;
+            if (t) { console.log(t); process.exit(0); }
+          }
+        }
+      }
+      console.log('');
     } catch { console.log(''); }
   " 2>/dev/null || echo "")
 
@@ -1075,8 +1225,9 @@ NGINXEOF
 # ============================================================
 
 show_summary() {
-  local password
-  password=$(cat "${CMD_DIR}/.auth_password" 2>/dev/null || echo "openclaw")
+  # Use the plain-text password captured during do_configure(),
+  # NOT the file (which now contains a scrypt hash)
+  local password="${INSTALL_PASSWORD:-openclaw}"
 
   echo ""
   echo ""
@@ -1097,7 +1248,7 @@ show_summary() {
   echo -e "    ${DIM}$(t done_cmd_restart)${NC}  pm2 restart ${PM2_NAME}"
   echo -e "    ${DIM}$(t done_cmd_stop)${NC}     pm2 stop ${PM2_NAME}"
   echo -e "    ${DIM}$(t done_cmd_deploy)${NC}   bash ${CMD_DIR}/scripts/deploy.sh"
-  echo -e "    ${DIM}$(t done_cmd_password)${NC}  echo 'new' > ${CMD_DIR}/.auth_password"
+  echo -e "    ${DIM}$(t done_cmd_password)${NC}  curl -X PUT http://localhost:${CMD_PORT}/api/auth/password"
   echo ""
   echo -e "  ${TEAL}${BOLD}$(printf '%.0s━' {1..50})${NC}"
   echo ""
@@ -1110,27 +1261,39 @@ show_summary() {
 main() {
   show_banner
 
-  # Root warning
-  if [[ "$(id -u)" -eq 0 ]] && [[ "${HOME}" == "/root" ]]; then
+  # Root warning (skip in non-interactive mode)
+  if [[ "$(id -u)" -eq 0 ]] && [[ "${HOME}" == "/root" ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     warn "$(t root_warn)"
     echo -ne "  ${DIM}$(t root_warn_hint)${NC}"
-    read -r
+    read -r || true
   fi
 
   # Language selection
-  select_language
+  if [[ -n "$ARG_LANG" ]]; then
+    LANG_CODE="$ARG_LANG"
+  elif [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    LANG_CODE="en"
+  else
+    select_language
+  fi
   show_banner
 
   # Mode selection
-  select_mode
+  if [[ -n "$ARG_MODE" ]]; then
+    INSTALL_MODE="$ARG_MODE"
+  elif [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    INSTALL_MODE="existing"
+  else
+    select_mode
+  fi
   show_banner
 
   echo -e "  ${BOLD}$(t mode_label): ${TEAL}${INSTALL_MODE}${NC}"
   echo ""
 
   if [[ "$INSTALL_MODE" == "beginner" ]]; then
-    # ── Beginner Mode: 12 steps ──
-    local total=12
+    # ── Beginner Mode: 13 steps (includes Nginx) ──
+    local total=13
 
     run_step 1  $total "$(t prereqs)"           0 do_prereqs
     run_step 2  $total "$(t warn_overwrite)"     0 do_warn_overwrite
@@ -1143,7 +1306,8 @@ main() {
     run_step 9  $total "$(t install_deps)"       0 do_install_deps
     run_step 10 $total "$(t configure)"          0 do_configure
     run_step 11 $total "$(t build_start)"        0 do_build_start
-    run_step 12 $total "$(t health_check)"       0 do_health_check
+    run_step 12 $total "$(t nginx_setup)"        1 do_nginx_setup
+    run_step 13 $total "$(t health_check)"       0 do_health_check
 
   else
     # ── Existing User Mode: 8 steps ──

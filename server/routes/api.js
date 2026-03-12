@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
-import { chat, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
+import { chat, chatAsync, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
 import { generateAndSave } from '../layout-generator.js';
 import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync } from '../utils.js';
 
@@ -68,6 +68,8 @@ router.get('/departments', (req, res) => {
           hue: dept.hue ?? 200,
           order: dept.order ?? 99,
           telegramTopicId: dept.telegramTopicId,
+          skills: dept.skills || ['*'],
+          apiGroups: dept.apiGroups || ['*'],
           status: agentStatus.status || 'idle',
           lastSeen: agentStatus.lastSeen || null,
           currentTask: agentStatus.currentTask || null,
@@ -586,7 +588,7 @@ router.post('/departments/:id/chat', async (req, res) => {
     if (!validateDeptId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
-    const { message, images, documents } = req.body;
+    const { message, images, documents, async: isAsync, sourceDept } = req.body || {};
 
     if ((!message || !message.trim()) && (!images || images.length === 0) && (!documents || documents.length === 0)) {
       return res.status(400).json({ error: 'Message, image, or document is required' });
@@ -599,6 +601,47 @@ router.post('/departments/:id/chat', async (req, res) => {
     const imgCount = Array.isArray(images) ? images.length : 0;
     const docCount = Array.isArray(documents) ? documents.length : 0;
     console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}${docCount ? ` [+${docCount} docs]` : ''}`);
+
+    // Cross-department: broadcast visit event + create request file
+    if (sourceDept && sourceDept !== id) {
+      const wss = req.app.locals.wss;
+      if (wss) {
+        const visitPayload = JSON.stringify({
+          event: 'dept:visit',
+          data: { from: sourceDept, to: id, message: msgText.substring(0, 100) },
+          timestamp: new Date().toISOString(),
+        });
+        wss.clients.forEach(c => {
+          if (c.readyState === 1 && c._authenticated) try { c.send(visitPayload); } catch {}
+        });
+      }
+
+      // Create request file in bulletin/requests/ so it shows in the UI
+      try {
+        const requestsDir = path.join(BASE_PATH, 'departments', 'bulletin', 'requests');
+        if (!fs.existsSync(requestsDir)) fs.mkdirSync(requestsDir, { recursive: true });
+        const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+        const config = readJsonFile(configPath) || { departments: {} };
+        const fromName = config.departments?.[sourceDept]?.name || sourceDept;
+        const toName = config.departments?.[id]?.name || id;
+        const ts = new Date();
+        const dateStr = ts.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `${sourceDept}_${id}_${dateStr}.md`;
+        const content = `# 跨部门请求\n\n- **发起部门**: ${fromName} (${sourceDept})\n- **目标部门**: ${toName} (${id})\n- **时间**: ${ts.toLocaleString('zh-CN')}\n\n## 内容\n\n${msgText}\n`;
+        fs.writeFileSync(path.join(requestsDir, filename), content);
+      } catch (err) {
+        console.error('[Chat] Failed to write request file:', err.message);
+      }
+    }
+
+    // Async mode: fire-and-forget, return immediately
+    if (isAsync) {
+      const result = chatAsync(id, msgText);
+      if (result.success) {
+        return res.json({ success: true, status: 'sent', deptId: id });
+      }
+      return res.status(502).json({ error: result.error });
+    }
 
     // Build enhanced message with document content
     let enhancedMessage = msgText;
@@ -731,14 +774,15 @@ router.post('/departments/:id/subagents', (req, res) => {
   if (!validateDeptId(req.params.id)) {
     return res.status(400).json({ error: 'Invalid department ID' });
   }
-  const { task, name } = req.body;
+  const { task, name, skills } = req.body;
   if (!task || !task.trim()) {
     return res.status(400).json({ error: 'Task description is required' });
   }
   if (task.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ error: `Task description too long (max ${MAX_MESSAGE_LENGTH} chars)` });
   }
-  const result = createSubAgent(req.params.id, task.trim(), name?.trim() || undefined);
+  const skillsList = Array.isArray(skills) ? skills.filter(s => typeof s === 'string' && s.trim()) : undefined;
+  const result = createSubAgent(req.params.id, task.trim(), name?.trim() || undefined, skillsList);
   res.json({ success: true, ...result });
 });
 
@@ -1025,7 +1069,7 @@ router.post('/departments/:id/export/drive', async (req, res) => {
  */
 router.post('/departments', (req, res) => {
   try {
-    const { id, name, agent, icon, color, hue, telegramTopicId, order } = req.body;
+    const { id, name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
 
     if (!id || !VALID_DEPT_ID.test(id)) {
       return res.status(400).json({ success: false, error: 'Invalid department ID' });
@@ -1055,7 +1099,9 @@ router.post('/departments', (req, res) => {
       color: color || '#94a3b8',
       hue: hue ?? 200,
       order: order ?? Object.keys(config.departments).length,
-      ...(telegramTopicId !== undefined ? { telegramTopicId } : {})
+      ...(telegramTopicId !== undefined ? { telegramTopicId } : {}),
+      ...(Array.isArray(skills) ? { skills } : {}),
+      ...(Array.isArray(apiGroups) ? { apiGroups } : {}),
     };
 
     safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
@@ -1101,7 +1147,7 @@ router.put('/departments/:id', (req, res) => {
       return res.status(404).json({ success: false, error: 'Department not found' });
     }
 
-    const { name, agent, icon, color, hue, telegramTopicId, order } = req.body;
+    const { name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
 
     if (name !== undefined) config.departments[id].name = name;
     if (agent !== undefined) config.departments[id].agent = agent;
@@ -1110,6 +1156,8 @@ router.put('/departments/:id', (req, res) => {
     if (hue !== undefined) config.departments[id].hue = hue;
     if (telegramTopicId !== undefined) config.departments[id].telegramTopicId = telegramTopicId;
     if (order !== undefined) config.departments[id].order = order;
+    if (Array.isArray(skills)) config.departments[id].skills = skills;
+    if (Array.isArray(apiGroups)) config.departments[id].apiGroups = apiGroups;
 
     safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 

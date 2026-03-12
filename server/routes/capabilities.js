@@ -7,6 +7,8 @@ const router = express.Router();
 
 const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
+const SANDBOXES_PATH = path.join(OPENCLAW_HOME, 'sandboxes');
+const EXTENSIONS_PATH = path.join(OPENCLAW_HOME, 'extensions');
 
 // Static plugin descriptions (plugins have no SKILL.md)
 const PLUGIN_INFO = {
@@ -81,23 +83,26 @@ router.get('/system/capabilities', (req, res) => {
     }
 
     // --- Skills ---
+    // Collect from multiple sources: workspace > sandbox > extensions
     const skillEntries = config.skills?.entries || {};
-    const skills = [];
+    const skillMap = new Map(); // slug -> skill object (dedup, workspace wins)
 
-    if (fs.existsSync(SKILLS_PATH)) {
-      const dirs = fs.readdirSync(SKILLS_PATH, { withFileTypes: true })
+    function scanSkillDir(basePath, source) {
+      if (!fs.existsSync(basePath)) return;
+      const dirs = fs.readdirSync(basePath, { withFileTypes: true })
         .filter(d => d.isDirectory() && !d.name.startsWith('.'))
         .map(d => d.name);
 
       for (const slug of dirs) {
-        const skillMd = readTextFile(path.join(SKILLS_PATH, slug, 'SKILL.md'));
+        if (source !== 'workspace' && skillMap.has(slug)) continue; // workspace takes priority
+        const skillMd = readTextFile(path.join(basePath, slug, 'SKILL.md'));
         if (!skillMd) continue;
 
         const { frontmatter } = parseFrontmatter(skillMd);
-        const meta = readJsonFile(path.join(SKILLS_PATH, slug, '_meta.json'));
-        const hasAssets = fs.existsSync(path.join(SKILLS_PATH, slug, 'assets'));
+        const meta = readJsonFile(path.join(basePath, slug, '_meta.json'));
+        const hasAssets = fs.existsSync(path.join(basePath, slug, 'assets'));
 
-        skills.push({
+        skillMap.set(slug, {
           slug,
           name: frontmatter.name || slug,
           summary: frontmatter.summary || frontmatter.description || null,
@@ -106,11 +111,34 @@ router.get('/system/capabilities', (req, res) => {
           version: meta?.version || frontmatter.version || null,
           hasAssets,
           hasApiKey: slug in skillEntries,
+          source,
         });
       }
-
-      skills.sort((a, b) => a.name.localeCompare(b.name));
     }
+
+    // 1) Sandbox skills (OpenClaw built-in library)
+    if (fs.existsSync(SANDBOXES_PATH)) {
+      const sandboxes = fs.readdirSync(SANDBOXES_PATH, { withFileTypes: true })
+        .filter(d => d.isDirectory() && d.name.startsWith('agent-main'));
+      for (const sb of sandboxes) {
+        scanSkillDir(path.join(SANDBOXES_PATH, sb.name, 'skills'), 'sandbox');
+      }
+    }
+
+    // 2) Extension skills
+    if (fs.existsSync(EXTENSIONS_PATH)) {
+      const exts = fs.readdirSync(EXTENSIONS_PATH, { withFileTypes: true })
+        .filter(d => d.isDirectory());
+      for (const ext of exts) {
+        scanSkillDir(path.join(EXTENSIONS_PATH, ext.name, 'skills'), 'extension');
+      }
+    }
+
+    // 3) Workspace skills (user's own — highest priority, overwrites above)
+    scanSkillDir(SKILLS_PATH, 'workspace');
+
+    const skills = Array.from(skillMap.values());
+    skills.sort((a, b) => a.name.localeCompare(b.name));
 
     // --- Models ---
     const primaryModel = config.agents?.defaults?.model?.primary || '';

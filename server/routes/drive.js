@@ -1,8 +1,9 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { google } from 'googleapis';
-import { BASE_PATH, readJsonFile } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
@@ -45,9 +46,62 @@ function updateDriveConfig(updates) {
 }
 
 /**
- * Helper: Create Google Drive client
+ * Helper: Check if any Drive auth is available (OAuth or service account)
+ */
+function hasDriveAuth() {
+  const fullConfig = readJsonFile(CONFIG_PATH) || {};
+  const key = getEncryptionKey();
+  decryptSensitiveFields(fullConfig, key);
+  const driveConfig = fullConfig.drive || {};
+  const gogcli = fullConfig.gogcli || {};
+  const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+  // OAuth available?
+  if (gogcli.enabled && gogcli.clientCredentials && fs.existsSync(tokenPath)) return true;
+  // Service account available?
+  if (driveConfig.enabled && driveConfig.serviceAccountKey) return true;
+  return false;
+}
+
+/**
+ * Helper: Create Google Drive client (prefers OAuth over service account)
  */
 function getDriveClient(driveConfig) {
+  // 1) Try OAuth (gogcli) — user's Drive with real storage quota
+  const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+  const fullConfig = readJsonFile(CONFIG_PATH) || {};
+  // Decrypt gogcli credentials if encrypted
+  const key = getEncryptionKey();
+  decryptSensitiveFields(fullConfig, key);
+  const gogcli = fullConfig.gogcli || {};
+  if (fs.existsSync(tokenPath) && gogcli.clientCredentials) {
+    try {
+      const tokens = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+      if (tokens.access_token) {
+        let clientCreds = gogcli.clientCredentials;
+        if (typeof clientCreds === 'string') {
+          try { clientCreds = JSON.parse(clientCreds); } catch { /* keep as-is */ }
+        }
+        const cred = (typeof clientCreds === 'object' && clientCreds !== null)
+          ? (clientCreds.installed || clientCreds.web || clientCreds)
+          : {};
+        if (!cred.client_id || !cred.client_secret) {
+          console.error('[Drive] OAuth credentials missing client_id or client_secret');
+          throw new Error('Invalid OAuth credentials');
+        }
+        const oauth2 = new google.auth.OAuth2(cred.client_id, cred.client_secret);
+        oauth2.setCredentials(tokens);
+        oauth2.on('tokens', (newTokens) => {
+          const merged = { ...tokens, ...newTokens };
+          fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+        });
+        return google.drive({ version: 'v3', auth: oauth2 });
+      }
+    } catch (e) {
+      console.warn('[Drive] OAuth token load failed, falling back to service account:', e.message);
+    }
+  }
+
+  // 2) Fallback to service account
   const auth = new google.auth.GoogleAuth({
     credentials: driveConfig.serviceAccountKey,
     scopes: ['https://www.googleapis.com/auth/drive.file']
@@ -98,11 +152,11 @@ async function getOrCreateBackupFolder(drive, driveConfig) {
 router.get('/drive/status', (req, res) => {
   try {
     const driveConfig = getDriveConfig();
-    const configured = !!(driveConfig.serviceAccountKey);
+    const configured = !!(driveConfig.serviceAccountKey) || hasDriveAuth();
 
     res.json({
       configured,
-      enabled: driveConfig.enabled,
+      enabled: driveConfig.enabled || configured,
       folderId: driveConfig.folderId || null
     });
   } catch (error) {
@@ -126,11 +180,11 @@ router.post('/drive/upload', async (req, res) => {
 
     const driveConfig = getDriveConfig();
 
-    if (!driveConfig.enabled) {
+    if (!driveConfig.enabled && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive integration is disabled' });
     }
 
-    if (!driveConfig.serviceAccountKey) {
+    if (!driveConfig.serviceAccountKey && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive not configured' });
     }
 
@@ -148,7 +202,7 @@ router.post('/drive/upload', async (req, res) => {
 
       const media = {
         mimeType: mimeType || 'text/markdown',
-        body: buffer
+        body: Readable.from(buffer)
       };
 
       const file = await drive.files.create({
@@ -182,15 +236,15 @@ router.post('/drive/upload', async (req, res) => {
  */
 router.post('/drive/backup', async (req, res) => {
   try {
-    const { deptId } = req.body;
+    const { deptId } = req.body || {};
 
     const driveConfig = getDriveConfig();
 
-    if (!driveConfig.enabled) {
+    if (!driveConfig.enabled && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive integration is disabled' });
     }
 
-    if (!driveConfig.serviceAccountKey) {
+    if (!driveConfig.serviceAccountKey && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive not configured' });
     }
 
@@ -259,7 +313,7 @@ router.post('/drive/backup', async (req, res) => {
 
         const media = {
           mimeType: 'text/markdown',
-          body: buffer
+          body: Readable.from(buffer)
         };
 
         const file = await drive.files.create({
@@ -296,11 +350,11 @@ router.get('/drive/files', async (req, res) => {
   try {
     const driveConfig = getDriveConfig();
 
-    if (!driveConfig.enabled) {
+    if (!driveConfig.enabled && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive integration is disabled' });
     }
 
-    if (!driveConfig.serviceAccountKey) {
+    if (!driveConfig.serviceAccountKey && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive not configured' });
     }
 

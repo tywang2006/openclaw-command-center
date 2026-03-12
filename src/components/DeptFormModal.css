@@ -136,3 +136,131 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Collapsible sections */
+.dept-section {
+  border: 1px solid var(--border-color, #2a2a4a);
+}
+.dept-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-primary, #0a0a14);
+  border: none;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.dept-section-toggle:hover {
+  background: var(--bg-card, #1a1a2e);
+}
+.dept-section-arrow {
+  font-size: 10px;
+  width: 12px;
+  color: var(--text-muted, #888);
+}
+.dept-section-badge {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--accent-muted, rgba(0,212,170,0.15));
+  color: var(--accent-color, #00d4aa);
+  font-family: monospace;
+}
+.dept-section-content {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border-color, #2a2a4a);
+}
+.dept-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.dept-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  font-family: monospace;
+}
+.dept-tag.core {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted, #666);
+}
+.dept-tag-hint {
+  font-size: 10px;
+  color: var(--text-muted, #555);
+  font-style: italic;
+}
+.dept-check-row {
+  display: flex;
+  gap: 8px;
+}
+.dept-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-primary, #e0e0e0);
+  cursor: pointer;
+}
+.dept-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-color, #00d4aa);
+}
+.dept-check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+.dept-skill-search {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--bg-primary, #0a0a14);
+  border: 1px solid var(--border-color, #2a2a4a);
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  font-family: monospace;
+  box-sizing: border-box;
+}
+.dept-skill-search:focus {
+  outline: none;
+  border-color: var(--accent-color, #00d4aa);
+}
+.dept-skill-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dept-skill-item {
+  padding: 3px 0;
+}
+.dept-skill-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dept-skill-tag {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted, #888);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+.dept-skill-loading {
+  font-size: 11px;
+  color: var(--text-muted, #666);
+  padding: 8px 0;
+  text-align: center;
+}

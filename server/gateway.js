@@ -703,6 +703,36 @@ class GatewayClient {
     });
   }
 
+  /**
+   * Fire-and-forget: send message to agent but don't wait for response.
+   * Response events will flow through to WebSocket listeners since
+   * the requestId isn't tracked in pendingRequests.
+   */
+  sendAgentMessageAsync(sessionKey, message, attachments = []) {
+    if (!this.connected || !this.authenticated) {
+      throw new Error('Gateway not connected');
+    }
+
+    const requestId = `req_${randomUUID().replace(/-/g, '')}`;
+    const idempotencyKey = `cmd_${sessionKey}_${Date.now()}`;
+
+    this._send({
+      type: 'req',
+      id: requestId,
+      method: 'agent',
+      params: {
+        agentId: 'main',
+        sessionKey,
+        message,
+        attachments: attachments.length > 0 ? attachments : [],
+        deliver: false,
+        idempotencyKey,
+      },
+    });
+    console.log(`[Gateway] Sent async request ${requestId} to session ${sessionKey}`);
+    return requestId;
+  }
+
   waitForReady(timeoutMs = 10000) {
     if (this.isReady) return Promise.resolve();
 
