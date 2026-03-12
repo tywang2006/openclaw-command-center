@@ -1,4 +1,5 @@
 // SVG icons to replace emojis throughout the UI
+import React from 'react'
 
 interface IconProps {
   size?: number
@@ -213,7 +214,7 @@ export function BookIcon({ size = 16, color = '#94a3b8', className }: IconProps)
 }
 
 // Map icon name to component
-const ICON_MAP: Record<string, (props: IconProps) => JSX.Element> = {
+const ICON_MAP: Record<string, (props: IconProps) => React.JSX.Element> = {
   bolt: BoltIcon,
   wrench: WrenchIcon,
   search: SearchIcon,

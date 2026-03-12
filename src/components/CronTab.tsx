@@ -4,6 +4,7 @@ import { DeptIcon } from './Icons';
 import { useToast } from './Toast';
 import { useLocale } from '../i18n/index';
 import { authedFetch } from '../utils/api';
+import { useVisibilityInterval } from '../hooks/useVisibilityInterval';
 import './CronTab.css';
 
 interface CronJob {
@@ -105,11 +106,8 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
     }
   }, [t, showToast]);
 
-  useEffect(() => {
-    fetchJobs();
-    const interval = setInterval(fetchJobs, 30000);
-    return () => clearInterval(interval);
-  }, [fetchJobs]);
+  useEffect(() => { fetchJobs(); }, [fetchJobs]);
+  useVisibilityInterval(fetchJobs, 30000, [fetchJobs]);
 
   useEffect(() => {
     if (form.deptId) {

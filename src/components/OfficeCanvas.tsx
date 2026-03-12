@@ -15,6 +15,7 @@ import {
   TOOL_LABEL_BG,
   TOOL_LABEL_BORDER,
 } from '../constants'
+import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './OfficeCanvas.css'
 
 // Initialize furniture catalog once at module load
@@ -128,20 +129,16 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     })
   }, [departments, officeReady])
 
-  // Poll collaboration links every 60s (F11)
-  useEffect(() => {
-    const fetchCollab = () => {
-      authedFetch('/api/collaboration')
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data?.links)) setCollabLinks(data.links)
-        })
-        .catch(() => {})
-    }
-    fetchCollab()
-    const timer = setInterval(fetchCollab, 60000)
-    return () => clearInterval(timer)
+  // Poll collaboration links every 60s (F11) — pauses when tab hidden
+  const fetchCollab = useCallback(() => {
+    authedFetch('/api/collaboration')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data?.links)) setCollabLinks(data.links)
+      })
+      .catch(() => {})
   }, [])
+  useVisibilityInterval(fetchCollab, 60000, [fetchCollab])
 
   // Update selection
   useEffect(() => {

@@ -1,3 +1,4 @@
+import React from 'react'
 import type { Department } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import './MobileNav.css'
@@ -14,7 +15,7 @@ interface MobileNavProps {
   onToggleDeptPicker: () => void
 }
 
-const NAV_ITEMS: { id: RightTab; icon: (active: boolean) => JSX.Element }[] = [
+const NAV_ITEMS: { id: RightTab; icon: (active: boolean) => React.JSX.Element }[] = [
   {
     id: 'chat',
     icon: (active) => (

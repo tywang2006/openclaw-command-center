@@ -54,8 +54,22 @@ const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
 
 // Security headers
 app.use(helmet({
-  contentSecurityPolicy: false,  // CSP breaks inline styles in React
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: null,  // Disable — no HTTPS on this server
+    },
+  },
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,  // Allow loading through nginx reverse proxy
+  crossOriginOpenerPolicy: false,    // Not useful without HTTPS
 }));
 
 // Middleware
@@ -163,7 +177,7 @@ app.use('/cmd', express.static(distPath, {
 }));
 
 // SPA fallback - serve index.html for /cmd/* routes
-app.get('/cmd/*', (req, res) => {
+app.get('/cmd/{*splat}', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -222,6 +236,7 @@ wss.on('connection', (ws, req) => {
       }
 
       authenticated = true;
+      ws._authenticated = true;
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
 
@@ -385,7 +400,7 @@ gateway.onEvent((event) => {
         },
         timestamp,
       });
-      wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+      wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
       // Record for replay (F13)
       if (isRecording()) addReplayEvent(JSON.parse(payload));
     }
@@ -406,7 +421,7 @@ gateway.onEvent((event) => {
       },
       timestamp: new Date().toISOString(),
     });
-    wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
     if (isRecording()) addReplayEvent(JSON.parse(payload));
   }
 
@@ -420,7 +435,7 @@ gateway.onEvent((event) => {
       data: { deptId, chunk: event.chunk },
       timestamp: new Date().toISOString(),
     });
-    wss.clients.forEach(c => { if (c.readyState === 1) try { c.send(payload); } catch {} });
+    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
     if (isRecording()) addReplayEvent(JSON.parse(payload));
   }
 

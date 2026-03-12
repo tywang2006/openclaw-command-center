@@ -3,6 +3,7 @@ import type { Department } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
+import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './DashboardTab.css'
 
 interface DashboardTabProps {
@@ -122,19 +123,11 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
 
   useEffect(() => {
     fetchMetrics().then(() => setLoading(false))
-    fetchGatewayStats()
-    fetchPermissions()
+  }, [fetchMetrics])
 
-    const metricsInterval = setInterval(fetchMetrics, 10000)
-    const gatewayInterval = setInterval(fetchGatewayStats, 10000)
-    const permissionsInterval = setInterval(fetchPermissions, 30000)
-
-    return () => {
-      clearInterval(metricsInterval)
-      clearInterval(gatewayInterval)
-      clearInterval(permissionsInterval)
-    }
-  }, [fetchMetrics, fetchGatewayStats, fetchPermissions])
+  useVisibilityInterval(fetchMetrics, 10000, [fetchMetrics])
+  useVisibilityInterval(fetchGatewayStats, 10000, [fetchGatewayStats])
+  useVisibilityInterval(fetchPermissions, 30000, [fetchPermissions])
 
   const formatUptime = (seconds: number): string => {
     if (seconds < 60) return `${Math.floor(seconds)}s`

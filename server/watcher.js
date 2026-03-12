@@ -14,7 +14,7 @@ function broadcast(wss, event, data) {
   const message = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
 
   wss.clients.forEach(client => {
-    if (client.readyState === 1) { // WebSocket.OPEN
+    if (client.readyState === 1 && client._authenticated) { // WebSocket.OPEN + authenticated
       try {
         client.send(message);
       } catch (error) {
@@ -243,13 +243,13 @@ function createWatcher(wss) {
 
   const departments = loadDepartmentIds();
 
-  // Define watch paths
+  // Define watch paths (chokidar v5 no longer supports globs, watch directories instead)
   const watchPaths = [
     path.join(BASE_PATH, 'departments', 'config.json'),
     path.join(BASE_PATH, 'departments', 'status.json'),
     path.join(BASE_PATH, 'departments', 'bulletin', 'board.md'),
-    path.join(BASE_PATH, 'departments', 'bulletin', 'requests', '*.md'),
-    path.join(BASE_PATH, 'agents', 'main', 'sessions', '*-topic-*.jsonl')
+    path.join(BASE_PATH, 'departments', 'bulletin', 'requests'),
+    path.join(BASE_PATH, 'agents', 'main', 'sessions')
   ];
 
   // Add department memory files

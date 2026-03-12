@@ -38,8 +38,6 @@ function persistSync() {
 }
 
 process.on('beforeExit', persistSync);
-process.on('SIGTERM', () => { persistSync(); process.exit(0); });
-process.on('SIGINT', () => { persistSync(); process.exit(0); });
 
 export function notify({ severity = 'info', category = 'system', title, body = '', deptId = null, actionUrl = null }) {
   const notif = {

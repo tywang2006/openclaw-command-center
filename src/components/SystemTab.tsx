@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
+import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './SystemTab.css'
 
 interface Model {
@@ -162,9 +163,9 @@ export default function SystemTab() {
 
   useEffect(() => {
     fetchAll().then(() => setLoading(false))
-    const interval = setInterval(fetchAll, 10000)
-    return () => clearInterval(interval)
   }, [fetchAll])
+
+  useVisibilityInterval(fetchAll, 10000, [fetchAll])
 
   const handleModelSwitch = async (modelId: string) => {
     setSaving(true)

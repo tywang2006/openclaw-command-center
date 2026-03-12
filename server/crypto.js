@@ -38,6 +38,8 @@ const SENSITIVE_FIELDS = [
   'gmail.appPassword',
   'drive.serviceAccountKey',
   'voice.apiKeyOverride',
+  'gogcli.clientCredentials',
+  'google-sheets.serviceAccountKey',
 ];
 
 // --------------------------------------------------------------------------
@@ -189,10 +191,10 @@ export function decryptSensitiveFields(config, key) {
 
     let decrypted = decrypt(value, key);
 
-    // serviceAccountKey should be parsed back into an object
-    if (fieldPath === 'drive.serviceAccountKey') {
+    // serviceAccountKey / clientCredentials should be parsed back into an object
+    if (fieldPath === 'drive.serviceAccountKey' || fieldPath === 'google-sheets.serviceAccountKey' || fieldPath === 'gogcli.clientCredentials') {
       try { decrypted = JSON.parse(decrypted); } catch {
-        console.warn('[Crypto] Failed to parse decrypted serviceAccountKey as JSON');
+        console.warn(`[Crypto] Failed to parse decrypted ${fieldPath} as JSON`);
       }
     }
 

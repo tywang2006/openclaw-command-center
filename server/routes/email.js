@@ -23,14 +23,32 @@ function getGmailConfig() {
 /**
  * Helper: Create nodemailer transporter
  */
-function createTransporter(gmailConfig) {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: gmailConfig.email,
-      pass: gmailConfig.appPassword
+async function createTransporter(gmailConfig) {
+  // Try 587 first (STARTTLS), fallback to 465 (SSL) if blocked
+  const configs = [
+    { port: 587, secure: false },
+    { port: 465, secure: true },
+  ];
+
+  for (const cfg of configs) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: cfg.port,
+        secure: cfg.secure,
+        auth: {
+          user: gmailConfig.email,
+          pass: gmailConfig.appPassword
+        },
+        connectionTimeout: 10000,
+      });
+      await transporter.verify();
+      return transporter;
+    } catch (err) {
+      console.log(`[Email] Port ${cfg.port} failed: ${err.message}`);
     }
-  });
+  }
+  throw new Error('Cannot connect to Gmail SMTP on any port');
 }
 
 /**
@@ -73,18 +91,11 @@ router.post('/email/test', async (req, res) => {
       return res.status(400).json({ error: 'Gmail not configured' });
     }
 
-    const transporter = createTransporter(gmailConfig);
-
-    try {
-      await transporter.verify();
+    const transporter = await createTransporter(gmailConfig);
       res.json({ success: true, message: 'Gmail connection successful' });
-    } catch (error) {
-      console.error('[Email] Gmail verification failed:', error);
-      res.status(502).json({ error: 'Gmail connection failed', detail: error.message });
-    }
   } catch (error) {
     console.error('[Email] Error in POST /email/test:', error);
-    res.status(500).json({ error: 'Failed to test email connection' });
+    res.status(502).json({ error: 'Gmail connection failed', detail: error.message });
   }
 });
 
@@ -120,7 +131,7 @@ router.post('/email/send', async (req, res) => {
       return res.status(400).json({ error: 'Gmail not configured' });
     }
 
-    const transporter = createTransporter(gmailConfig);
+    const transporter = await createTransporter(gmailConfig);
 
     // Build mail options
     const mailOptions = {

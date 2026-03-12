@@ -120,8 +120,8 @@ export function authMiddleware(req, res, next) {
   // Clean up expired tokens on each request
   cleanupExpiredTokens();
 
-  // Exempt /auth/login path (relative to /api mount point)
-  if (req.path === '/auth/login') {
+  // Exempt paths that don't need auth (relative to /api mount point)
+  if (req.path === '/auth/login' || req.path === '/integrations/config/gogcli/oauth-redirect') {
     return next();
   }
 
@@ -269,10 +269,10 @@ authRouter.put('/password', (req, res) => {
     });
   }
 
-  if (newPassword.length < 6) {
+  if (newPassword.length < 12) {
     return res.status(400).json({
       success: false,
-      error: 'New password must be at least 6 characters'
+      error: 'New password must be at least 12 characters'
     });
   }
 

@@ -134,10 +134,10 @@ router.put('/departments/:id/memory', (req, res) => {
 });
 
 /**
- * GET /api/departments/:id/daily/:date?
+ * GET /api/departments/:id/daily/{:date}
  * Return department's daily log (defaults to today YYYY-MM-DD)
  */
-router.get('/departments/:id/daily/:date?', (req, res) => {
+router.get('/departments/:id/daily/{:date}', (req, res) => {
   try {
     const { id, date } = req.params;
     if (!validateDeptId(id)) {
@@ -221,10 +221,10 @@ router.get('/requests', (req, res) => {
 });
 
 /**
- * GET /api/activity/:topicId?tail=50
+ * GET /api/activity/{:topicId}?tail=50
  * Return last N messages from matching JSONL session file
  */
-router.get('/activity/:topicId?', (req, res) => {
+router.get('/activity/{:topicId}', (req, res) => {
   try {
     const { topicId } = req.params;
     const tail = Math.min(parseInt(req.query.tail) || 50, MAX_TAIL);
@@ -911,6 +911,106 @@ router.post('/departments/:id/export', async (req, res) => {
   } catch (error) {
     console.error(`[Export] Error in POST /api/departments/${req.params.id}/export:`, error);
     res.status(500).json({ error: 'Failed to generate export' });
+  }
+});
+
+/**
+ * Generate export content as markdown string (reusable helper)
+ */
+async function generateExportMarkdown(id) {
+  const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+  const config = readJsonFile(configPath) || { departments: {} };
+  const deptName = config.departments?.[id]?.name || id;
+  const messages = await getChatHistory(id, 100);
+  const timestamp = new Date().toISOString().split('T')[0];
+
+  let content = `# ${deptName} Conversation Export\n\n`;
+  content += `**Export Date:** ${timestamp}\n\n---\n\n`;
+  for (const msg of messages) {
+    const role = msg.role === 'user' ? 'User' : deptName;
+    const time = new Date(msg.timestamp).toLocaleString();
+    content += `### ${role} (${time})\n\n${msg.text}\n\n---\n\n`;
+  }
+  return { content, deptName, timestamp };
+}
+
+/**
+ * POST /api/departments/:id/export/email
+ * Generate export and send via email
+ */
+router.post('/departments/:id/export/email', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+
+    const { to, subject } = req.body;
+    if (!to) {
+      return res.status(400).json({ error: 'Recipient email is required' });
+    }
+
+    const { content, deptName, timestamp } = await generateExportMarkdown(id);
+    const finalSubject = subject || `Chat Export - ${deptName} (${timestamp})`;
+
+    // Forward to internal email endpoint
+    const emailRes = await fetch('http://127.0.0.1:5100/api/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': req.headers.authorization || '',
+      },
+      body: JSON.stringify({ to, subject: finalSubject, body: content }),
+    });
+
+    const emailData = await emailRes.json();
+    if (emailData.success) {
+      console.log(`[Export] Emailed export for ${id} to ${to}`);
+      res.json({ success: true });
+    } else {
+      res.status(502).json({ error: emailData.error || 'Failed to send email' });
+    }
+  } catch (error) {
+    console.error(`[Export] Email export error for ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Failed to email export' });
+  }
+});
+
+/**
+ * POST /api/departments/:id/export/drive
+ * Generate export and upload to Google Drive
+ */
+router.post('/departments/:id/export/drive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateDeptId(id)) {
+      return res.status(400).json({ error: 'Invalid department ID' });
+    }
+
+    const { filename: customFilename } = req.body;
+    const { content, timestamp } = await generateExportMarkdown(id);
+    const filename = customFilename || `chat-export-${id}-${timestamp}.md`;
+
+    // Forward to internal drive upload endpoint
+    const driveRes = await fetch('http://127.0.0.1:5100/api/drive/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': req.headers.authorization || '',
+      },
+      body: JSON.stringify({ filename, content, mimeType: 'text/markdown' }),
+    });
+
+    const driveData = await driveRes.json();
+    if (driveData.success) {
+      console.log(`[Export] Uploaded export for ${id} to Drive: ${driveData.fileId}`);
+      res.json({ success: true, fileId: driveData.fileId, webViewLink: driveData.webViewLink });
+    } else {
+      res.status(502).json({ error: driveData.error || 'Failed to upload to Drive' });
+    }
+  } catch (error) {
+    console.error(`[Export] Drive export error for ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Failed to upload export to Drive' });
   }
 });
 

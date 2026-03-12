@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
+import crypto from 'node:crypto';
 import {
   getEncryptionKey,
   encryptSensitiveFields,
@@ -12,11 +13,14 @@ import {
 import { recordAudit } from './audit.js';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
 
+// OAuth CSRF state tokens (expire after 10 minutes)
+const oauthStates = new Map();
+
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
-const VALID_SERVICES = ['gmail', 'drive', 'voice', 'webhook'];
+const VALID_SERVICES = ['gmail', 'drive', 'voice', 'webhook', 'gogcli', 'google-sheets'];
 
 // Default configuration structure
 const DEFAULT_CONFIG = {
@@ -24,8 +28,13 @@ const DEFAULT_CONFIG = {
   drive: { enabled: false, serviceAccountKey: null, folderId: null },
   voice: { enabled: true, source: 'openclaw', apiKeyOverride: null },
   webhook: { enabled: false, url: '', platform: 'custom', events: ['error', 'backup'] },
+  gogcli: { enabled: false, clientCredentials: null, account: '' },
+  'google-sheets': { enabled: false, serviceAccountKey: null, defaultSpreadsheetId: '' },
   autoBackup: { enabled: false, schedule: 'daily', time: '03:00', lastRun: null }
 };
+
+// Simple write lock to prevent concurrent file corruption
+let _writeLock = Promise.resolve();
 
 /**
  * Helper: Write JSON file safely with optional backup rotation
@@ -88,11 +97,17 @@ function getConfig() {
  * Helper: Encrypt sensitive fields and write config to disk with backup
  */
 function saveConfig(config) {
-  // Deep clone to avoid mutating the in-memory copy
-  const toWrite = JSON.parse(JSON.stringify(config));
-  const key = getEncryptionKey();
-  encryptSensitiveFields(toWrite, key);
-  return writeJsonFile(CONFIG_PATH, toWrite, { backup: true });
+  // Serialize writes to prevent concurrent corruption
+  _writeLock = _writeLock.then(() => {
+    const toWrite = JSON.parse(JSON.stringify(config));
+    const key = getEncryptionKey();
+    encryptSensitiveFields(toWrite, key);
+    return writeJsonFile(CONFIG_PATH, toWrite, { backup: true });
+  }).catch(err => {
+    console.error('[IntegrationsConfig] saveConfig lock error:', err.message);
+    return false;
+  });
+  return _writeLock;
 }
 
 /**
@@ -143,6 +158,26 @@ function maskSensitiveFields(config) {
     }
   }
 
+  // gogcli
+  if (masked.gogcli) {
+    if (masked.gogcli.clientCredentials) {
+      masked.gogcli.hasClientCredentials = true;
+      delete masked.gogcli.clientCredentials;
+    } else {
+      masked.gogcli.hasClientCredentials = false;
+    }
+  }
+
+  // google-sheets
+  if (masked['google-sheets']) {
+    if (masked['google-sheets'].serviceAccountKey) {
+      masked['google-sheets'].hasServiceAccountKey = true;
+      delete masked['google-sheets'].serviceAccountKey;
+    } else {
+      masked['google-sheets'].hasServiceAccountKey = false;
+    }
+  }
+
   return masked;
 }
 
@@ -175,6 +210,8 @@ router.put('/integrations/config/:service', (req, res) => {
 
     const config = getConfig();
     const updates = req.body;
+
+    console.log(`[IntegrationsConfig] PUT ${service}:`, JSON.stringify(Object.keys(updates)), 'serviceAccountKey type:', typeof updates.serviceAccountKey);
 
     // Validate based on service type
     if (service === 'gmail') {
@@ -219,6 +256,30 @@ router.put('/integrations/config/:service', (req, res) => {
       if (updates.enabled !== undefined && typeof updates.enabled !== 'boolean') {
         return res.status(400).json({ error: 'enabled must be a boolean' });
       }
+    } else if (service === 'gogcli') {
+      if (updates.clientCredentials !== undefined && updates.clientCredentials !== null) {
+        if (typeof updates.clientCredentials !== 'object') {
+          return res.status(400).json({ error: 'clientCredentials must be an object (OAuth client JSON)' });
+        }
+      }
+      if (updates.account !== undefined && typeof updates.account !== 'string') {
+        return res.status(400).json({ error: 'account must be a string (email)' });
+      }
+      if (updates.enabled !== undefined && typeof updates.enabled !== 'boolean') {
+        return res.status(400).json({ error: 'enabled must be a boolean' });
+      }
+    } else if (service === 'google-sheets') {
+      if (updates.serviceAccountKey !== undefined && updates.serviceAccountKey !== null) {
+        if (typeof updates.serviceAccountKey !== 'object') {
+          return res.status(400).json({ error: 'serviceAccountKey must be an object' });
+        }
+        if (!updates.serviceAccountKey.client_email || !updates.serviceAccountKey.private_key) {
+          return res.status(400).json({ error: 'serviceAccountKey must contain client_email and private_key' });
+        }
+      }
+      if (updates.enabled !== undefined && typeof updates.enabled !== 'boolean') {
+        return res.status(400).json({ error: 'enabled must be a boolean' });
+      }
     }
 
     // Merge updates
@@ -259,21 +320,31 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         return res.status(400).json({ error: 'Gmail not configured. Please set email and appPassword.' });
       }
 
-      try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: email,
-            pass: appPassword
-          }
-        });
+      // Try multiple SMTP configurations (465 may be blocked by firewall)
+      const smtpConfigs = [
+        { host: 'smtp.gmail.com', port: 587, secure: false, label: 'port 587 (STARTTLS)' },
+        { host: 'smtp.gmail.com', port: 465, secure: true, label: 'port 465 (SSL)' },
+      ];
 
-        await transporter.verify();
-        res.json({ success: true, message: 'Gmail connection successful' });
-      } catch (error) {
-        console.error('[IntegrationsConfig] Gmail test failed:', error);
-        res.status(502).json({ error: 'Gmail connection failed', detail: error.message });
+      let lastError = null;
+      for (const smtp of smtpConfigs) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: smtp.host,
+            port: smtp.port,
+            secure: smtp.secure,
+            auth: { user: email, pass: appPassword },
+            connectionTimeout: 10000,
+          });
+          await transporter.verify();
+          return res.json({ success: true, message: `Gmail connection successful (${smtp.label})` });
+        } catch (error) {
+          console.log(`[IntegrationsConfig] Gmail test via ${smtp.label} failed: ${error.message}`);
+          lastError = error;
+        }
       }
+      console.error('[IntegrationsConfig] Gmail test failed on all ports:', lastError);
+      res.status(502).json({ error: 'Gmail connection failed', detail: lastError.message });
     } else if (service === 'drive') {
       const { serviceAccountKey } = config.drive;
       if (!serviceAccountKey) {
@@ -354,10 +425,270 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         console.error('[IntegrationsConfig] Voice test failed:', error);
         res.status(502).json({ error: 'Voice API connection failed', detail: error.message });
       }
+    } else if (service === 'gogcli') {
+      const { clientCredentials } = config.gogcli || {};
+      if (!clientCredentials) {
+        return res.status(400).json({ error: 'Please upload OAuth Client Credentials JSON first', detail: 'step:upload' });
+      }
+      // Check if we already have tokens
+      const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+      if (fs.existsSync(tokenPath)) {
+        try {
+          const tokens = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+          if (tokens.access_token) {
+            // Verify token still works
+            const resp = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
+              headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+            });
+            if (resp.ok) {
+              const info = await resp.json();
+              return res.json({ success: true, message: `Authenticated as ${info.email || info.name || 'OK'}` });
+            }
+            // Token expired, try refresh
+            if (tokens.refresh_token) {
+              const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
+              const refreshResp = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                  client_id: cred.client_id,
+                  client_secret: cred.client_secret,
+                  refresh_token: tokens.refresh_token,
+                  grant_type: 'refresh_token',
+                }).toString()
+              });
+              if (refreshResp.ok) {
+                const newTokens = await refreshResp.json();
+                tokens.access_token = newTokens.access_token;
+                fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2));
+                return res.json({ success: true, message: 'Token refreshed successfully' });
+              }
+            }
+          }
+        } catch {}
+      }
+      res.status(502).json({ error: 'Not authorized yet. Click "Authorize" to start OAuth flow.', detail: 'step:authorize' });
+    } else if (service === 'google-sheets') {
+      const { serviceAccountKey } = config['google-sheets'] || {};
+      if (!serviceAccountKey) {
+        return res.status(400).json({ error: 'Google Sheets not configured. Please upload a Service Account Key.' });
+      }
+
+      try {
+        const auth = new google.auth.GoogleAuth({
+          credentials: serviceAccountKey,
+          scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        });
+        await auth.getClient();
+        res.json({ success: true, message: 'Google Sheets API connection successful' });
+      } catch (error) {
+        console.error('[IntegrationsConfig] Google Sheets test failed:', error);
+        res.status(502).json({ error: 'Google Sheets connection failed', detail: error.message });
+      }
     }
   } catch (error) {
     console.error(`[IntegrationsConfig] Error in POST /integrations/config/${req.params.service}/test:`, error);
     res.status(500).json({ error: 'Test connection failed' });
+  }
+});
+
+/**
+ * Build the OAuth redirect URI from the incoming request.
+ * Uses the same host the user is accessing Command Center from.
+ */
+function getOAuthRedirectUri(req) {
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${proto}://${host}/api/integrations/config/gogcli/oauth-redirect`;
+}
+
+/**
+ * POST /integrations/config/gogcli/authorize
+ * Start OAuth flow — returns a URL for the user to visit
+ */
+router.post('/integrations/config/gogcli/authorize', (req, res) => {
+  try {
+    const config = getConfig();
+    const { clientCredentials } = config.gogcli || {};
+    if (!clientCredentials) {
+      return res.status(400).json({ error: 'Upload OAuth Client Credentials JSON first' });
+    }
+    const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
+    if (!cred.client_id || !cred.client_secret) {
+      return res.status(400).json({ error: 'Invalid credentials: missing client_id or client_secret' });
+    }
+    const scopes = [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/userinfo.email',
+    ].join(' ');
+
+    const redirectUri = getOAuthRedirectUri(req);
+    const state = crypto.randomBytes(32).toString('hex');
+    oauthStates.set(state, Date.now());
+    // Clean expired states (older than 10 minutes)
+    for (const [k, v] of oauthStates) {
+      if (Date.now() - v > 600000) oauthStates.delete(k);
+    }
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(cred.client_id)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(scopes)}` +
+      `&access_type=offline` +
+      `&prompt=consent` +
+      `&state=${encodeURIComponent(state)}`;
+    res.json({ success: true, authUrl, redirectUri });
+  } catch (error) {
+    console.error('[IntegrationsConfig] gogcli authorize error:', error);
+    res.status(500).json({ error: 'Failed to generate auth URL' });
+  }
+});
+
+/**
+ * GET /integrations/config/gogcli/oauth-redirect
+ * Google redirects here after user authorizes. No auth required (it's a browser redirect).
+ */
+router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
+  const { code, error: oauthError, state } = req.query;
+  const pageHtml = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+    <style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0}
+    .card{background:#16213e;padding:40px;border-radius:12px;text-align:center;max-width:400px;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+    h2{margin:0 0 12px;color:#4fc3f7} p{color:#aaa;margin:8px 0} .ok{color:#66bb6a} .err{color:#ef5350}</style>
+    </head><body><div class="card">${body}</div></body></html>`;
+
+  if (oauthError) {
+    const safeError = String(oauthError).replace(/[<>&"']/g, '');
+    return res.send(pageHtml('Authorization Failed', `<h2 class="err">Authorization Failed</h2><p>${safeError}</p>`));
+  }
+  if (!code) {
+    return res.send(pageHtml('Error', `<h2 class="err">Error</h2><p>No authorization code received</p>`));
+  }
+  // Validate CSRF state
+  if (!state || !oauthStates.has(state)) {
+    return res.send(pageHtml('Error', `<h2 class="err">Error</h2><p>Invalid or expired OAuth state</p>`));
+  }
+  oauthStates.delete(state);
+
+  try {
+    const config = getConfig();
+    const { clientCredentials } = config.gogcli || {};
+    if (!clientCredentials) {
+      return res.send(pageHtml('Error', `<h2 class="err">Error</h2><p>No client credentials configured</p>`));
+    }
+    const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
+    const redirectUri = getOAuthRedirectUri(req);
+
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: cred.client_id,
+        client_secret: cred.client_secret,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }).toString()
+    });
+
+    const tokens = await tokenResp.json();
+    if (tokens.error) {
+      return res.send(pageHtml('Error', `<h2 class="err">OAuth Error</h2><p>${tokens.error_description || tokens.error}</p>`));
+    }
+
+    // Save tokens
+    const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+
+    // Get user info
+    let email = '';
+    try {
+      const infoResp = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
+        headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+      });
+      if (infoResp.ok) {
+        const info = await infoResp.json();
+        email = info.email || '';
+      }
+    } catch {}
+
+    // Update account in config
+    if (email) {
+      config.gogcli.account = email;
+      config.gogcli.enabled = true;
+      saveConfig(config);
+    }
+
+    recordAudit({ action: 'gogcli.authorized', target: 'gogcli', details: { email }, ip: req.ip });
+    res.send(pageHtml('Authorization Successful',
+      `<h2 class="ok">Authorization Successful!</h2><p>Logged in as <strong>${email || 'OK'}</strong></p><p>You can close this tab and return to Command Center.</p>`));
+  } catch (error) {
+    console.error('[IntegrationsConfig] OAuth redirect error:', error);
+    const safeMsg = String(error.message).replace(/[<>&"']/g, '');
+    res.send(pageHtml('Error', `<h2 class="err">Error</h2><p>${safeMsg}</p>`));
+  }
+});
+
+/**
+ * POST /integrations/config/gogcli/callback
+ * Exchange auth code for tokens (manual code paste fallback)
+ */
+router.post('/integrations/config/gogcli/callback', async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: 'Authorization code is required' });
+    }
+    const config = getConfig();
+    const { clientCredentials } = config.gogcli || {};
+    if (!clientCredentials) {
+      return res.status(400).json({ error: 'No client credentials configured' });
+    }
+    const cred = clientCredentials.installed || clientCredentials.web || clientCredentials;
+    const redirectUri = getOAuthRedirectUri(req);
+
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: cred.client_id,
+        client_secret: cred.client_secret,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      }).toString()
+    });
+
+    const tokens = await tokenResp.json();
+    if (tokens.error) {
+      return res.status(400).json({ error: `Google OAuth error: ${tokens.error_description || tokens.error}` });
+    }
+
+    const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
+    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+
+    let email = '';
+    try {
+      const infoResp = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
+        headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+      });
+      if (infoResp.ok) {
+        const info = await infoResp.json();
+        email = info.email || '';
+      }
+    } catch {}
+
+    if (email) {
+      config.gogcli.account = email;
+      config.gogcli.enabled = true;
+      saveConfig(config);
+    }
+
+    recordAudit({ action: 'gogcli.authorized', target: 'gogcli', details: { email }, ip: req.ip });
+    res.json({ success: true, message: `Authorized as ${email || 'OK'}`, email });
+  } catch (error) {
+    console.error('[IntegrationsConfig] gogcli callback error:', error);
+    res.status(500).json({ error: 'Failed to exchange auth code for tokens' });
   }
 });
 

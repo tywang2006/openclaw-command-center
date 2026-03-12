@@ -12,6 +12,7 @@ import StatusBar from './components/StatusBar'
 import MobileNav from './components/MobileNav'
 import MobileDrawer from './components/MobileDrawer'
 import { BulletinIcon, MemoryIcon, ActivityIcon } from './components/Icons'
+import { useVisibilityInterval } from './hooks/useVisibilityInterval'
 import './App.css'
 
 // Lazy load heavy tabs that aren't needed immediately
@@ -196,14 +197,12 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     else { document.documentElement.requestFullscreen() }
   }
 
-  // Gateway stats
+  // Gateway stats — pauses when tab hidden
   const [gatewayStats, setGatewayStats] = useState<{ connected?: boolean; latencyMs?: number; pendingRequests?: number; uptime?: number; streamBuffers?: number } | null>(null)
-  useEffect(() => {
-    const poll = () => authedFetch('/api/gateway/stats').then(r => r.json()).then(d => setGatewayStats(d.gateway || d)).catch(() => {})
-    poll()
-    const timer = setInterval(poll, 30000)
-    return () => clearInterval(timer)
+  const pollGateway = useCallback(() => {
+    authedFetch('/api/gateway/stats').then(r => r.json()).then(d => setGatewayStats(d.gateway || d)).catch(() => {})
   }, [])
+  useVisibilityInterval(pollGateway, 30000, [pollGateway])
 
   // Notification preferences
   const [notifyPrefs, setNotifyPrefs] = useState(getNotificationPrefs())

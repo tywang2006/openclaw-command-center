@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Activity, Department } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
+import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './ActivityTab.css'
 
 interface ActivityTabProps {
@@ -29,29 +30,25 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
     }
   }, [activities])
 
-  // Poll recording status while recording
-  useEffect(() => {
-    if (!isRecording) {
-      setRecordingStatus(null)
-      return
-    }
-
-    const pollStatus = async () => {
-      try {
-        const res = await authedFetch('/api/replay/status')
-        if (res.ok) {
-          const data = await res.json()
-          setRecordingStatus(data)
-        }
-      } catch (err) {
-        console.error('Failed to poll recording status:', err)
+  // Poll recording status while recording — pauses when tab hidden
+  const pollRecordingStatus = useCallback(async () => {
+    if (!isRecording) return
+    try {
+      const res = await authedFetch('/api/replay/status')
+      if (res.ok) {
+        const data = await res.json()
+        setRecordingStatus(data)
       }
+    } catch (err) {
+      console.error('Failed to poll recording status:', err)
     }
-
-    pollStatus()
-    const interval = setInterval(pollStatus, 2000)
-    return () => clearInterval(interval)
   }, [isRecording])
+
+  useEffect(() => {
+    if (!isRecording) { setRecordingStatus(null) }
+  }, [isRecording])
+
+  useVisibilityInterval(pollRecordingStatus, 2000, [pollRecordingStatus])
 
   // Replay API functions
   const startRecording = async () => {

@@ -588,20 +588,71 @@
   font-style: italic;
 }
 
+.cap-config-guide {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary, rgba(255,255,255,0.04));
+  border-left: 3px solid var(--accent-color, #4fc3f7);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.5;
+}
+
+.cap-oauth-guide {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.cap-oauth-link {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: var(--accent-color, #4fc3f7);
+  color: #000;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+.cap-oauth-link:hover {
+  opacity: 0.85;
+}
+
 .cap-config-toggle {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 4px 0;
+  padding: 6px 0;
+  margin-bottom: 8px;
 }
 
-.cap-config-toggle label {
+.cap-toggle-label {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cap-toggle-btn {
+  padding: 4px 14px;
+  border-radius: 12px;
+  border: none;
   font-size: 11px;
-  color: var(--text-secondary);
+  font-weight: 600;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  transition: all 0.2s;
+}
+.cap-toggle-btn.on {
+  background: #66bb6a;
+  color: #fff;
+}
+.cap-toggle-btn.off {
+  background: var(--bg-secondary, #333);
+  color: var(--text-muted, #888);
+  border: 1px solid var(--border-color, #444);
 }
 
 .cap-config-actions {

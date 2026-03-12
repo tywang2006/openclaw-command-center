@@ -24,6 +24,95 @@ function loadConfig() {
   }
 }
 
+// ---- Integrations config (cached with mtime) ----
+
+const INTEGRATIONS_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
+let _integCache = null;
+let _integMtime = 0;
+
+function loadIntegrations() {
+  try {
+    const stat = fs.statSync(INTEGRATIONS_PATH);
+    if (_integCache && stat.mtimeMs === _integMtime) return _integCache;
+    _integCache = JSON.parse(fs.readFileSync(INTEGRATIONS_PATH, 'utf8'));
+    _integMtime = stat.mtimeMs;
+    return _integCache;
+  } catch {
+    return {};
+  }
+}
+
+// ---- Department Context Builder ----
+
+function loadPersona(deptId) {
+  const p = path.join(BASE_PATH, 'departments', 'personas', `${deptId}.md`);
+  try { return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''; } catch { return ''; }
+}
+
+function buildToolsSection() {
+  const integ = loadIntegrations();
+  const CMD = 'bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh';
+  const lines = [];
+
+  if (integ.gmail?.enabled && integ.gmail?.email) {
+    lines.push(`- 发邮件（已配置 ${integ.gmail.email}）: ${CMD} POST /email/send '{"to":"收件人","subject":"主题","body":"正文"}'`);
+  }
+  if (integ.drive?.enabled) {
+    lines.push(`- Google Drive 文件列表: ${CMD} GET /drive/files`);
+    lines.push(`- Google Drive 上传: ${CMD} POST /drive/upload`);
+    lines.push(`- Google Drive 备份: ${CMD} POST /drive/backup`);
+  }
+  if (integ['google-sheets']?.enabled) {
+    const sid = integ['google-sheets'].defaultSpreadsheetId;
+    lines.push(`- Google Sheets 读写${sid ? '（默认表: ' + sid + '）' : ''}: bash /root/.openclaw/workspace/skills/google-sheet/scripts/sheets.js read "Sheet1!A1:D10"${sid ? ' ' + sid : ''}`);
+  }
+
+  // Always-available tools (from skills)
+  lines.push(`- 网络搜索: bash /root/.openclaw/workspace/skills/cmd-center/tools/web-search.sh "关键词" 5`);
+  lines.push(`- AI 生成图片: bash /root/.openclaw/workspace/skills/cmd-center/tools/image-gen.sh "描述" 1024x1024`);
+  lines.push(`- 语音转文字: bash /root/.openclaw/workspace/skills/cmd-center/tools/voice-transcribe.sh /path/audio.mp3 zh`);
+
+  // Cross-department API
+  lines.push(`- 跨部门对话: ${CMD} POST /departments/{id}/chat '{"message":"..."}'`);
+  lines.push(`- 全员广播: ${CMD} POST /broadcast '{"command":"..."}'`);
+
+  return lines.join('\n');
+}
+
+function buildDepartmentContext(deptId) {
+  const config = loadConfig();
+  const dept = config.departments?.[deptId];
+  const persona = loadPersona(deptId);
+  const bulletin = loadBulletin();
+
+  const parts = [];
+
+  // Persona: strip the old static tools section, use dynamic one
+  if (persona) {
+    const clean = persona.replace(/## 集成工具[\s\S]*$/, '').trim();
+    parts.push(clean);
+  } else if (dept) {
+    parts.push(`你是 ${dept.agent || deptId}，${dept.name} 部门负责人。`);
+  }
+
+  // Dynamic tools section
+  const tools = buildToolsSection();
+  parts.push(`## 可用工具（自动同步，直接调用即可）\n${tools}`);
+
+  // Bulletin (brief)
+  if (bulletin.trim()) {
+    parts.push(`## 公告板\n${bulletin.trim()}`);
+  }
+
+  return parts.join('\n\n');
+}
+
+function wrapWithContext(deptId, userMessage) {
+  const ctx = buildDepartmentContext(deptId);
+  if (!ctx) return userMessage;
+  return `<department_context>\n${ctx}\n</department_context>\n\n${userMessage}`;
+}
+
 /**
  * Build the Telegram session key for a department.
  * Maps deptId -> `agent:main:telegram:group:{groupId}:topic:{telegramTopicId}`
@@ -74,8 +163,8 @@ function saveSubAgents(deptId, data) {
 
 /**
  * Chat with a department agent via OpenClaw Gateway.
- * Uses the same session as the Telegram topic for unified conversation.
- * No context wrapping — OpenClaw handles system prompts natively.
+ * Prepends dynamic department context (persona + enabled tools) to each message.
+ * Tools section is built from integrations.json at runtime — new configs auto-sync.
  */
 async function chat(deptId, userMessage, images) {
   const gateway = getGateway();
@@ -89,6 +178,7 @@ async function chat(deptId, userMessage, images) {
   }
 
   const sessionKey = getSessionKey(deptId);
+  const wrappedMessage = wrapWithContext(deptId, userMessage);
 
   // Build attachments from base64 images
   const attachments = [];
@@ -105,7 +195,7 @@ async function chat(deptId, userMessage, images) {
 
   try {
     const startMs = Date.now();
-    const result = await gateway.sendAgentMessage(sessionKey, userMessage, attachments);
+    const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, attachments);
     const durationMs = Date.now() - startMs;
 
     // Record metrics
@@ -212,7 +302,8 @@ async function broadcastCommand(command) {
     const sessionKey = getSessionKey(dept.id);
     try {
       const startMs = Date.now();
-      const result = await gateway.sendAgentMessage(sessionKey, `[Broadcast] ${command}`);
+      const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
+      const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
       const durationMs = Date.now() - startMs;
 
       recordChat(dept.id, durationMs, !result.text);

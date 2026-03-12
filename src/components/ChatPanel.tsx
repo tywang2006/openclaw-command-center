@@ -472,6 +472,20 @@ export default function ChatPanel({ selectedDeptId, departments, activities, add
     }
   }, [deptActivities.length])
 
+  // Scroll to bottom when department changes or history finishes loading
+  const currentHistory = selectedDeptId ? (historyByDept[selectedDeptId] || []) : []
+  const historyLoaded = currentHistory.length > 0
+  useEffect(() => {
+    if (selectedDeptId && messagesRef.current) {
+      // Use requestAnimationFrame to ensure DOM has rendered
+      requestAnimationFrame(() => {
+        if (messagesRef.current) {
+          messagesRef.current.scrollTop = messagesRef.current.scrollHeight
+        }
+      })
+    }
+  }, [selectedDeptId, historyLoaded])
+
   // Load sub-agents when department changes
   useEffect(() => {
     if (!selectedDeptId) {

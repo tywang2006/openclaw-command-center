@@ -121,6 +121,12 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   const [skillTesting, setSkillTesting] = useState<string | null>(null)
   const [skillSaving, setSkillSaving] = useState<string | null>(null)
 
+  // OAuth authorize flow states
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null)
+  const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null)
+  const [oauthCode, setOauthCode] = useState('')
+  const [oauthLoading, setOauthLoading] = useState(false)
+
   useEffect(() => {
     authedFetch('/api/system/capabilities')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
@@ -168,14 +174,28 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setTestResult(null)
   }
 
+  // Strip frontend-only mask fields before sending to backend
+  const cleanFormForSave = (form: Record<string, any>) => {
+    const clean = { ...form }
+    delete clean.hasAppPassword
+    delete clean.hasServiceAccountKey
+    delete clean.hasApiKeyOverride
+    delete clean.hasUrl
+    delete clean.urlPreview
+    delete clean.hasClientCredentials
+    return clean
+  }
+
   const handleSaveConfig = async (serviceId: string) => {
     setConfigSaving(true)
     setTestResult(null)
     try {
+      const body = cleanFormForSave(configForm)
+      console.log('[IntegConfig] Saving', serviceId, Object.keys(body), 'serviceAccountKey type:', typeof body.serviceAccountKey)
       const res = await authedFetch(`/api/integrations/config/${serviceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(configForm),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (data.success) {
@@ -184,6 +204,8 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
         setIntegConfig(d2)
         setConfigModal(null)
         setConfigForm({})
+      } else {
+        setTestResult({ ok: false, msg: data.error || t('integ.save.failed') })
       }
     } catch {}
     setConfigSaving(false)
@@ -193,10 +215,21 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setConfigTesting(true)
     setTestResult(null)
     try {
+      // Auto-save before testing so backend has the latest config
+      const body = cleanFormForSave(configForm)
+      const saveRes = await authedFetch(`/api/integrations/config/${serviceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const saveData = await saveRes.json()
+      if (!saveData.success) {
+        setTestResult({ ok: false, msg: saveData.error || t('integ.save.failed') })
+        setConfigTesting(false)
+        return
+      }
       const res = await authedFetch(`/api/integrations/config/${serviceId}/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(configForm),
       })
       const data = await res.json()
       setTestResult({ ok: data.success, msg: data.success ? t('integ.test.success') : t('integ.test.failed', { error: data.error || '' }) })
@@ -223,7 +256,12 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
-      setConfigForm({ ...configForm, serviceAccountKey: reader.result as string })
+      try {
+        const parsed = JSON.parse(reader.result as string)
+        setConfigForm(prev => ({ ...prev, serviceAccountKey: parsed }))
+      } catch {
+        setConfigForm(prev => ({ ...prev, serviceAccountKey: reader.result as string }))
+      }
     }
     reader.readAsText(file)
   }
@@ -582,7 +620,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
           <div className="cap-section-title" onClick={() => toggle('services')}>
             <span className="cap-section-arrow">{collapsed.services ? '>' : 'v'}</span>
             <span>{t('integ.section.title')}</span>
-            <span className="cap-section-count">{3 + 1 + (driveConfigured ? 1 : 0)}</span>
+            <span className="cap-section-count">{5 + 1 + (driveConfigured ? 1 : 0)}</span>
           </div>
           {!collapsed.services && (
             <>
@@ -591,13 +629,17 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 { id: 'drive', titleKey: 'integ.drive.title', icon: 'D' },
                 { id: 'voice', titleKey: 'integ.voice.title', icon: 'V' },
                 { id: 'webhook', titleKey: 'integ.webhook.title', icon: 'W' },
+                { id: 'gogcli', titleKey: 'integ.gogcli.title', icon: 'G' },
+                { id: 'google-sheets', titleKey: 'integ.sheets.title', icon: 'S' },
               ].map(service => {
                 const cfg = integConfig?.[service.id]
                 const isConfigured = cfg && (
                   service.id === 'gmail' ? (cfg.email || cfg.hasAppPassword) :
                   service.id === 'drive' ? (cfg.serviceAccountKey || cfg.hasServiceAccountKey) :
-                  service.id === 'voice' ? (cfg.apiKey || cfg.hasApiKeyOverride) :
+                  service.id === 'voice' ? (cfg.apiKeyOverride || cfg.hasApiKeyOverride) :
                   service.id === 'webhook' ? (cfg.url || cfg.hasUrl) :
+                  service.id === 'gogcli' ? (cfg.account || cfg.hasClientCredentials) :
+                  service.id === 'google-sheets' ? (cfg.hasServiceAccountKey || cfg.serviceAccountKey) :
                   false
                 )
                 const isEnabled = cfg?.enabled
@@ -831,28 +873,29 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
       {/* ---- Config Modal (gmail/drive/voice/webhook) ---- */}
       {configModal && (
-        <div className="cap-modal-overlay" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null) }}>
+        <div className="cap-modal-overlay" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>
           <div className="cap-modal" onClick={e => e.stopPropagation()}>
             <div className="cap-modal-header">
               <div className="cap-modal-title">
                 <h2>{t(`integ.${configModal}.title`)}</h2>
               </div>
-              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null) }}>x</button>
+              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>x</button>
             </div>
             <div className="cap-modal-body">
               <div className="cap-config-form">
                 <div className="cap-config-toggle">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={configForm.enabled || false}
-                      onChange={e => setConfigForm({ ...configForm, enabled: e.target.checked })}
-                    />
+                  <span className="cap-toggle-label">{t('integ.enableService')}</span>
+                  <button
+                    type="button"
+                    className={`cap-toggle-btn ${configForm.enabled ? 'on' : 'off'}`}
+                    onClick={() => setConfigForm({ ...configForm, enabled: !configForm.enabled })}
+                  >
                     {configForm.enabled ? t('integ.enabled') : t('integ.disabled')}
-                  </label>
+                  </button>
                 </div>
                 {configModal === 'gmail' && (
                   <>
+                    <div className="cap-config-guide">{t('integ.gmail.guide')}</div>
                     <div className="cap-config-field">
                       <label className="cap-config-label">{t('integ.gmail.email')}</label>
                       <input
@@ -878,6 +921,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 )}
                 {configModal === 'drive' && (
                   <div className="cap-config-field">
+                    <div className="cap-config-guide">{t('integ.drive.guide')}</div>
                     <label className="cap-config-label">{t('integ.drive.serviceAccount')}</label>
                     <div className="cap-file-upload">
                       <input
@@ -898,12 +942,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 )}
                 {configModal === 'voice' && (
                   <div className="cap-config-field">
+                    <div className="cap-config-guide">{t('integ.voice.guide')}</div>
                     <label className="cap-config-label">{t('integ.voice.apiKey')}</label>
                     <input
                       type="password"
                       className="cap-config-input"
-                      value={configForm.apiKey || ''}
-                      onChange={e => setConfigForm({ ...configForm, apiKey: e.target.value })}
+                      value={configForm.apiKeyOverride || ''}
+                      onChange={e => setConfigForm({ ...configForm, apiKeyOverride: e.target.value })}
                       placeholder="sk-..."
                     />
                     <span className="cap-config-hint">{t('integ.voice.fromOpenclaw')}</span>
@@ -911,6 +956,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 )}
                 {configModal === 'webhook' && (
                   <>
+                    <div className="cap-config-guide">{t('integ.webhook.guide')}</div>
                     <div className="cap-config-field">
                       <label className="cap-config-label">{t('integ.webhook.url')}</label>
                       <input
@@ -959,6 +1005,143 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                     </div>
                   </>
                 )}
+                {configModal === 'gogcli' && (
+                  <>
+                    {/* Step 1: Upload credentials */}
+                    <div className="cap-config-field">
+                      <label className="cap-config-label">{t('integ.gogcli.step1')}</label>
+                      <div className="cap-file-upload">
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = () => {
+                              try {
+                                const parsed = JSON.parse(reader.result as string)
+                                setConfigForm(prev => ({ ...prev, clientCredentials: parsed }))
+                              } catch {
+                                setConfigForm(prev => ({ ...prev, clientCredentials: reader.result as string }))
+                              }
+                            }
+                            reader.readAsText(file)
+                          }}
+                          style={{ display: 'none' }}
+                          id="gogcli-cred-upload"
+                        />
+                        <label htmlFor="gogcli-cred-upload" className="cap-file-upload-btn">
+                          {t('integ.gogcli.upload')}
+                        </label>
+                        {(configForm.clientCredentials || configForm.hasClientCredentials) && (
+                          <span className="cap-file-upload-status">{t('integ.gogcli.hasKey')}</span>
+                        )}
+                      </div>
+                      <span className="cap-config-hint">{t('integ.gogcli.hint')}</span>
+                    </div>
+
+                    {/* Step 2: Authorize — only show after credentials saved */}
+                    {(configForm.hasClientCredentials || configForm.clientCredentials) && (
+                      <div className="cap-config-field">
+                        <label className="cap-config-label">{t('integ.gogcli.step2')}</label>
+                        {!oauthUrl ? (
+                          <button
+                            className="cap-file-upload-btn"
+                            disabled={oauthLoading}
+                            onClick={async () => {
+                              setOauthLoading(true)
+                              setTestResult(null)
+                              // Save credentials first if not saved yet
+                              if (configForm.clientCredentials && !configForm.hasClientCredentials) {
+                                await authedFetch('/api/integrations/config/gogcli', {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify(configForm),
+                                })
+                              }
+                              try {
+                                const res = await authedFetch('/api/integrations/config/gogcli/authorize', { method: 'POST' })
+                                const data = await res.json()
+                                if (data.authUrl) {
+                                  setOauthUrl(data.authUrl)
+                                  setOauthRedirectUri(data.redirectUri)
+                                } else {
+                                  setTestResult({ ok: false, msg: data.error || 'Failed' })
+                                }
+                              } catch {
+                                setTestResult({ ok: false, msg: t('common.networkError') })
+                              }
+                              setOauthLoading(false)
+                            }}
+                          >
+                            {oauthLoading ? '...' : t('integ.gogcli.authorize')}
+                          </button>
+                        ) : (
+                          <div className="cap-oauth-guide">
+                            <p>{t('integ.gogcli.step2.desc')}</p>
+                            {oauthRedirectUri && (
+                              <div className="cap-config-guide" style={{ marginTop: '8px', fontSize: '10px', wordBreak: 'break-all' }}>
+                                {t('integ.gogcli.redirectNote')}<br/>
+                                <code>{oauthRedirectUri}</code>
+                              </div>
+                            )}
+                            <a href={oauthUrl} target="_blank" rel="noopener noreferrer" className="cap-oauth-link">
+                              {t('integ.gogcli.openLink')}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Show account if authorized */}
+                    {configForm.account && (
+                      <div className="cap-config-field">
+                        <label className="cap-config-label">{t('integ.gogcli.account')}</label>
+                        <input
+                          type="email"
+                          className="cap-config-input"
+                          value={configForm.account || ''}
+                          disabled
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                {configModal === 'google-sheets' && (
+                  <>
+                    <div className="cap-config-guide">{t('integ.sheets.guide')}</div>
+                    <div className="cap-config-field">
+                      <label className="cap-config-label">{t('integ.sheets.serviceAccount')}</label>
+                      <div className="cap-file-upload">
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={e => handleFileUpload(e, 'google-sheets')}
+                          style={{ display: 'none' }}
+                          id="sheets-key-upload"
+                        />
+                        <label htmlFor="sheets-key-upload" className="cap-file-upload-btn">
+                          {t('integ.sheets.upload')}
+                        </label>
+                        {(configForm.serviceAccountKey || configForm.hasServiceAccountKey) && (
+                          <span className="cap-file-upload-status">{t('integ.sheets.hasKey')}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="cap-config-field">
+                      <label className="cap-config-label">{t('integ.sheets.spreadsheetId')}</label>
+                      <input
+                        type="text"
+                        className="cap-config-input"
+                        value={configForm.defaultSpreadsheetId || ''}
+                        onChange={e => setConfigForm({ ...configForm, defaultSpreadsheetId: e.target.value })}
+                        placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+                      />
+                      <span className="cap-config-hint">{t('integ.sheets.hint')}</span>
+                    </div>
+                  </>
+                )}
                 {testResult && (
                   <div className={`cap-test-result ${testResult.ok ? 'success' : 'error'}`}>
                     {testResult.msg}
@@ -972,7 +1155,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 <button className="primary" onClick={() => handleSaveConfig(configModal)} disabled={configSaving}>
                   {configSaving ? '...' : t('integ.save')}
                 </button>
-                <button onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null) }}>
+                <button onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null) }}>
                   {t('integ.cancel')}
                 </button>
                 <button className="danger" onClick={() => handleResetConfig(configModal)}>
