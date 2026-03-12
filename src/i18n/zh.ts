@@ -584,6 +584,109 @@ export const zh: Record<string, string> = {
   'dept.error.nameRequired': '部门名称不能为空',
   'dept.error.idRequired': '部门ID不能为空',
 
+  // Guide Tab
+  'app.tab.guide': '指南',
+  'guide.title': '使用指南',
+  'guide.subtitle': '从零开始学会使用超哥办公室 - 即使你从未用过 AI 工具',
+  'guide.toc': '目录',
+  'guide.tip': '提示：',
+
+  // Guide Section 1 - Overview
+  'guide.s1.title': '这是什么？',
+  'guide.s1.p1': '超哥办公室是一个 AI 驱动的虚拟办公管理平台。你可以把它想象成一间虚拟办公室，里面有多个"部门"，每个部门都有一个 AI 助手帮你处理各种任务。你只需要用自然语言（说话一样打字）告诉它们你需要什么，它们就会帮你完成。',
+  'guide.s1.f1.title': 'AI 对话',
+  'guide.s1.f1.desc': '用自然语言和各部门 AI 助手聊天，让它们帮你完成任务',
+  'guide.s1.f2.title': '定时任务',
+  'guide.s1.f2.desc': '设置定时器让 AI 自动执行重复性工作，如日报、备份',
+  'guide.s1.f3.title': '集成服务',
+  'guide.s1.f3.desc': '连接 Gmail、Google Drive、语音输入等外部服务',
+  'guide.s1.f4.title': '团队广播',
+  'guide.s1.f4.desc': '一条命令发送给所有部门，收集所有回复',
+
+  // Guide Section 2 - Login
+  'guide.s2.title': '如何登录',
+  'guide.s2.step1': '打开浏览器，访问你的超哥办公室地址（通常是 <strong>bot.chaowang.co.uk</strong> 或本地的 <strong>localhost:5100</strong>）',
+  'guide.s2.step2': '输入管理员密码，点击 <strong>登录</strong> 按钮',
+  'guide.s2.tip': '如果忘记密码，可以联系管理员在系统设置中重置。首次安装后默认密码请查看安装文档。',
+
+  // Guide Section 3 - Layout
+  'guide.s3.title': '界面布局',
+  'guide.s3.p1': '登录后你会看到以下几个区域：',
+  'guide.s3.area.top': '<strong>顶部栏</strong> — 显示应用标题、通知开关、语言切换 (中/EN)、全屏按钮、退出按钮、网关和连接状态、当前时间',
+  'guide.s3.area.left': '<strong>左侧面板</strong> — 像素风格的虚拟办公室画布，显示各部门的 AI 角色。点击角色可以选中对应部门',
+  'guide.s3.area.right': '<strong>右侧面板</strong> — 功能标签页区域，包括：对话、公告、记忆、活动、请求、定时、统计、能力、系统、指南',
+  'guide.s3.area.bottom': '<strong>底部状态栏</strong> — 显示所有部门，点击可以快速切换部门。右键可以编辑或删除部门',
+
+  // Guide Section 4 - Departments
+  'guide.s4.title': '部门管理',
+  'guide.s4.p1': '部门是超哥办公室的核心概念。每个部门代表一个专门的工作领域，有自己的 AI 助手。比如你可以创建"技术部"、"市场部"、"财务部"等。',
+  'guide.s4.step1': '<strong>选择部门</strong> — 点击底部状态栏中的部门名称，或点击左侧画布中的角色',
+  'guide.s4.step2': '<strong>创建部门</strong> — 点击底部状态栏右侧的 <strong>+</strong> 按钮，填写名称、图标、颜色等信息',
+  'guide.s4.step3': '<strong>编辑/删除</strong> — 在底部状态栏中右键点击部门名称，选择编辑或删除',
+  'guide.s4.tip': '每个部门可以有独立的角色设定（Persona），定义 AI 的性格和专长。你可以在"记忆"标签页中切换到"角色"模式来查看和编辑。',
+
+  // Guide Section 5 - Chat
+  'guide.s5.title': '对话 (最常用)',
+  'guide.s5.p1': '对话是你和 AI 助手交流的主要方式。你可以用自然语言发送任何请求，就像和同事聊天一样。',
+  'guide.s5.step1': '<strong>选择部门</strong> — 先在底部状态栏点击一个部门',
+  'guide.s5.step2': '<strong>输入消息</strong> — 在底部输入框中打字，按 <strong>Enter</strong> 发送（<strong>Shift+Enter</strong> 换行）',
+  'guide.s5.step3': '<strong>附件功能</strong> — 输入框上方有工具栏：可以上传图片、文档（PDF/Word/Excel等）、创建定时任务、发送邮件等',
+  'guide.s5.step4': '<strong>子代理</strong> — 点击聊天区顶部的 <strong>+</strong> 可以创建子代理，让它们并行处理不同的子任务',
+  'guide.s5.tip': '你可以使用斜杠命令快速操作：/help 查看所有命令、/broadcast 广播到所有部门、/dept 创建部门、/status 查看系统状态、/export 导出对话、/clear 清空聊天。',
+
+  // Guide Section 6 - Bulletin
+  'guide.s6.title': '公告广播',
+  'guide.s6.p1': '公告功能让你一次性向所有部门发送同一条命令。所有部门会逐一回复它们的执行计划，适合发布全公司通知或收集各部门反馈。',
+  'guide.s6.step1': '切换到 <strong>公告</strong> 标签页',
+  'guide.s6.step2': '在输入框中输入你的命令（例如："请各部门汇报本周工作进展"），按回车发送。等待约 30 秒，各部门会依次回复。',
+
+  // Guide Section 7 - Memory
+  'guide.s7.title': '记忆管理',
+  'guide.s7.p1': '每个部门都有独立的"记忆"，相当于 AI 的笔记本。AI 会自动记录重要信息，你也可以手动编辑。记忆帮助 AI 记住你之前的偏好和上下文。',
+  'guide.s7.step1': '<strong>查看记忆</strong> — 切换到"记忆"标签页，选择一个部门即可查看',
+  'guide.s7.step2': '<strong>编辑记忆</strong> — 点击"编辑记忆"按钮，修改后点击"保存"',
+  'guide.s7.step3': '<strong>角色模式</strong> — 点击顶部的"角色"按钮切换到角色设定视图，查看/编辑该部门 AI 的性格定义',
+
+  // Guide Section 8 - Cron
+  'guide.s8.title': '定时任务',
+  'guide.s8.p1': '定时任务让 AI 按照设定的时间自动执行命令，适合日报生成、数据备份、定期检查等重复性工作。',
+  'guide.s8.step1': '切换到 <strong>定时</strong> 标签页，点击 <strong>+ 创建</strong>',
+  'guide.s8.step2': '填写任务名称、选择部门、设置时间间隔（如"每 60 分钟"或使用 Cron 表达式），输入要执行的消息内容',
+  'guide.s8.step3': '点击创建。之后可以在列表中查看状态、手动执行、暂停或删除任务',
+
+  // Guide Section 9 - Integrations
+  'guide.s9.title': '能力 / 集成服务',
+  'guide.s9.p1': '在"能力"标签页中，你可以连接和管理外部服务，扩展 AI 的能力。点击每个服务的"配置"按钮来设置：',
+  'guide.s9.f1.title': 'Gmail (SMTP)',
+  'guide.s9.f1.desc': '发送邮件。需要 Gmail 应用密码（16位），不是登录密码',
+  'guide.s9.f2.title': 'Google Drive',
+  'guide.s9.f2.desc': '保存文件到云盘。需要 Google Cloud 服务账号 JSON 密钥',
+  'guide.s9.f3.title': '语音 (Whisper)',
+  'guide.s9.f3.desc': '语音转文字输入。使用 OpenAI API Key',
+  'guide.s9.f4.title': 'Webhook',
+  'guide.s9.f4.desc': '接收系统通知到 Discord 或 Slack 频道',
+  'guide.s9.tip': '每个服务都有"测试连接"按钮，配置完成后务必测试一下确保连通。',
+
+  // Guide Section 10 - System
+  'guide.s10.title': '系统设置',
+  'guide.s10.p1': '"系统"标签页用于查看和管理系统的核心配置：',
+  'guide.s10.step1': '<strong>网关状态</strong> — 查看 OpenClaw 网关的连接状态、延迟、运行时间',
+  'guide.s10.step2': '<strong>修改密码</strong> — 在"安全"区域修改你的登录密码',
+  'guide.s10.step3': '<strong>OpenClaw 配置</strong> — 管理 AI 模型服务商的 API Key、Telegram Bot Token 等核心配置',
+
+  // Guide Section 11 - Tips
+  'guide.s11.title': '实用技巧',
+  'guide.s11.t1.title': '语言切换：',
+  'guide.s11.t1.desc': '点击顶部栏的 EN/中 按钮可以随时切换中英文界面',
+  'guide.s11.t2.title': '全屏模式：',
+  'guide.s11.t2.desc': '点击顶部栏的全屏按钮可以进入全屏模式，获得更好的沉浸体验',
+  'guide.s11.t3.title': '面板折叠：',
+  'guide.s11.t3.desc': '点击左右面板之间的箭头按钮可以折叠右侧面板，扩大办公室画布',
+  'guide.s11.t4.title': '通知提醒：',
+  'guide.s11.t4.desc': '点击顶部的铃铛图标开启桌面通知，可以选择接收错误提醒、网关断连提醒和慢响应提醒',
+  'guide.s11.t5.title': '手机使用：',
+  'guide.s11.t5.desc': '超哥办公室支持手机浏览器访问，界面会自动切换为移动版。左右滑动可以切换部门。',
+
   // Slash commands
   'cmd.dept.desc': '创建/管理部门',
   'cmd.dept.hint': '/dept <名称> 快速创建',

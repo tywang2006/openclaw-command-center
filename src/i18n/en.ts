@@ -584,6 +584,109 @@ export const en: Record<string, string> = {
   'dept.error.nameRequired': 'Department name is required',
   'dept.error.idRequired': 'Department ID is required',
 
+  // Guide Tab
+  'app.tab.guide': 'Guide',
+  'guide.title': 'User Guide',
+  'guide.subtitle': 'Learn to use ChaoClaw Office from scratch - even if you\'ve never used AI tools',
+  'guide.toc': 'Contents',
+  'guide.tip': 'Tip:',
+
+  // Guide Section 1 - Overview
+  'guide.s1.title': 'What is this?',
+  'guide.s1.p1': 'ChaoClaw Office is an AI-powered virtual office management platform. Think of it as a virtual office with multiple "departments", each with its own AI assistant. Just tell them what you need in natural language (type like you talk), and they\'ll get it done.',
+  'guide.s1.f1.title': 'AI Chat',
+  'guide.s1.f1.desc': 'Chat with department AI assistants in natural language to complete tasks',
+  'guide.s1.f2.title': 'Scheduled Tasks',
+  'guide.s1.f2.desc': 'Set up timers for AI to automate repetitive work like reports, backups',
+  'guide.s1.f3.title': 'Integrations',
+  'guide.s1.f3.desc': 'Connect Gmail, Google Drive, Voice input and other services',
+  'guide.s1.f4.title': 'Team Broadcast',
+  'guide.s1.f4.desc': 'Send one command to all departments and collect responses',
+
+  // Guide Section 2 - Login
+  'guide.s2.title': 'How to Login',
+  'guide.s2.step1': 'Open your browser and go to your ChaoClaw Office URL (typically <strong>bot.chaowang.co.uk</strong> or <strong>localhost:5100</strong> locally)',
+  'guide.s2.step2': 'Enter the admin password and click <strong>LOGIN</strong>',
+  'guide.s2.tip': 'If you forgot your password, ask the admin to reset it in System settings. Check the install docs for the initial default password.',
+
+  // Guide Section 3 - Layout
+  'guide.s3.title': 'Interface Layout',
+  'guide.s3.p1': 'After logging in, you\'ll see these areas:',
+  'guide.s3.area.top': '<strong>Top Bar</strong> — App title, notification toggle, language switch (EN/CN), fullscreen, logout, gateway & connection status, clock',
+  'guide.s3.area.left': '<strong>Left Panel</strong> — Pixel-art virtual office canvas showing AI characters for each department. Click a character to select that department',
+  'guide.s3.area.right': '<strong>Right Panel</strong> — Feature tabs: Chat, Bulletin, Memory, Activity, Requests, Scheduler, Stats, Capabilities, System, Guide',
+  'guide.s3.area.bottom': '<strong>Bottom Status Bar</strong> — Shows all departments. Click to switch. Right-click to edit or delete',
+
+  // Guide Section 4 - Departments
+  'guide.s4.title': 'Department Management',
+  'guide.s4.p1': 'Departments are the core concept. Each department represents a specialized work area with its own AI assistant. For example: Engineering, Marketing, Finance, etc.',
+  'guide.s4.step1': '<strong>Select</strong> — Click a department name in the bottom status bar, or click a character on the left canvas',
+  'guide.s4.step2': '<strong>Create</strong> — Click the <strong>+</strong> button on the right side of the status bar and fill in name, icon, color',
+  'guide.s4.step3': '<strong>Edit/Delete</strong> — Right-click a department name in the status bar to edit or delete',
+  'guide.s4.tip': 'Each department can have a custom Persona that defines the AI\'s personality and expertise. Switch to "Persona" mode in the Memory tab to view or edit.',
+
+  // Guide Section 5 - Chat
+  'guide.s5.title': 'Chat (Most Used)',
+  'guide.s5.p1': 'Chat is the main way to interact with AI assistants. Just type any request in natural language, like talking to a coworker.',
+  'guide.s5.step1': '<strong>Select Department</strong> — Click a department in the bottom status bar first',
+  'guide.s5.step2': '<strong>Type Message</strong> — Type in the input box at the bottom, press <strong>Enter</strong> to send (<strong>Shift+Enter</strong> for new line)',
+  'guide.s5.step3': '<strong>Attachments</strong> — The toolbar above the input box lets you upload images, documents (PDF/Word/Excel), create timers, send emails, etc.',
+  'guide.s5.step4': '<strong>Sub-agents</strong> — Click <strong>+</strong> at the top of the chat area to create sub-agents that handle different sub-tasks in parallel',
+  'guide.s5.tip': 'Use slash commands for quick actions: /help to see all commands, /broadcast to all departments, /dept to create departments, /status for system info, /export to save chat, /clear to reset.',
+
+  // Guide Section 6 - Bulletin
+  'guide.s6.title': 'Bulletin Broadcast',
+  'guide.s6.p1': 'Bulletin lets you send the same command to all departments at once. Each department responds with their execution plan. Great for company-wide announcements or collecting feedback.',
+  'guide.s6.step1': 'Switch to the <strong>Bulletin</strong> tab',
+  'guide.s6.step2': 'Type your command (e.g., "Report weekly progress") and press Enter. Wait ~30 seconds for departments to respond.',
+
+  // Guide Section 7 - Memory
+  'guide.s7.title': 'Memory Management',
+  'guide.s7.p1': 'Each department has its own "memory" — the AI\'s notebook. The AI automatically records important info, and you can edit it manually. Memory helps the AI remember your preferences and context.',
+  'guide.s7.step1': '<strong>View Memory</strong> — Switch to the Memory tab and select a department',
+  'guide.s7.step2': '<strong>Edit Memory</strong> — Click "Edit Memory", modify, then click "Save"',
+  'guide.s7.step3': '<strong>Persona Mode</strong> — Click the "Persona" button at the top to view/edit the AI\'s personality definition for that department',
+
+  // Guide Section 8 - Cron
+  'guide.s8.title': 'Scheduled Tasks',
+  'guide.s8.p1': 'Scheduled tasks let AI automatically execute commands on a timer — great for daily reports, data backups, periodic checks.',
+  'guide.s8.step1': 'Switch to the <strong>Scheduler</strong> tab, click <strong>+ Create</strong>',
+  'guide.s8.step2': 'Fill in the task name, select department, set interval (e.g., "every 60 minutes" or a Cron expression), and enter the message to execute',
+  'guide.s8.step3': 'Click create. You can then view status, run manually, pause, or delete tasks from the list',
+
+  // Guide Section 9 - Integrations
+  'guide.s9.title': 'Capabilities / Integrations',
+  'guide.s9.p1': 'In the Capabilities tab, connect and manage external services to extend AI capabilities. Click "Configure" on each service:',
+  'guide.s9.f1.title': 'Gmail (SMTP)',
+  'guide.s9.f1.desc': 'Send emails. Requires Gmail App Password (16 chars), not your login password',
+  'guide.s9.f2.title': 'Google Drive',
+  'guide.s9.f2.desc': 'Save files to cloud. Requires Google Cloud Service Account JSON key',
+  'guide.s9.f3.title': 'Voice (Whisper)',
+  'guide.s9.f3.desc': 'Voice-to-text input. Uses OpenAI API Key',
+  'guide.s9.f4.title': 'Webhook',
+  'guide.s9.f4.desc': 'Receive system notifications on Discord or Slack',
+  'guide.s9.tip': 'Each service has a "Test Connection" button — always test after configuration to verify it works.',
+
+  // Guide Section 10 - System
+  'guide.s10.title': 'System Settings',
+  'guide.s10.p1': 'The System tab manages core system configuration:',
+  'guide.s10.step1': '<strong>Gateway Status</strong> — View OpenClaw gateway connection status, latency, uptime',
+  'guide.s10.step2': '<strong>Change Password</strong> — Update your login password in the Security section',
+  'guide.s10.step3': '<strong>OpenClaw Config</strong> — Manage AI model provider API keys, Telegram Bot Token, and other core settings',
+
+  // Guide Section 11 - Tips
+  'guide.s11.title': 'Pro Tips',
+  'guide.s11.t1.title': 'Language Switch:',
+  'guide.s11.t1.desc': 'Click the EN/CN button in the top bar to toggle between English and Chinese',
+  'guide.s11.t2.title': 'Fullscreen:',
+  'guide.s11.t2.desc': 'Click the fullscreen button in the top bar for an immersive experience',
+  'guide.s11.t3.title': 'Panel Collapse:',
+  'guide.s11.t3.desc': 'Click the arrow between panels to collapse the right panel and expand the office canvas',
+  'guide.s11.t4.title': 'Notifications:',
+  'guide.s11.t4.desc': 'Click the bell icon to enable desktop notifications for errors, gateway disconnects, and slow responses',
+  'guide.s11.t5.title': 'Mobile Access:',
+  'guide.s11.t5.desc': 'ChaoClaw Office works on mobile browsers with an auto-adaptive mobile layout. Swipe left/right to switch departments.',
+
   // Slash commands
   'cmd.dept.desc': 'Create/manage department',
   'cmd.dept.hint': '/dept <name> to quick-create',

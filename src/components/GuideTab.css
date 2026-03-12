@@ -1,0 +1,204 @@
+.guide-tab {
+  padding: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  color: var(--text-primary, #e0e0e0);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.guide-tab h2 {
+  font-size: 18px;
+  color: #00d4aa;
+  margin: 0 0 8px 0;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.guide-tab .guide-subtitle {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 24px;
+}
+
+.guide-toc {
+  background: rgba(0, 212, 170, 0.06);
+  border: 1px solid rgba(0, 212, 170, 0.15);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 28px;
+}
+
+.guide-toc h3 {
+  font-size: 13px;
+  color: #00d4aa;
+  margin: 0 0 10px 0;
+  font-weight: 600;
+}
+
+.guide-toc ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.guide-toc li {
+  margin-bottom: 4px;
+}
+
+.guide-toc a {
+  color: #a0a0b0;
+  text-decoration: none;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.guide-toc a:hover {
+  color: #00d4aa;
+}
+
+.guide-section {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.guide-section:last-child {
+  border-bottom: none;
+}
+
+.guide-section h3 {
+  font-size: 15px;
+  color: #fff;
+  margin: 0 0 12px 0;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-section h3 .guide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 212, 170, 0.12);
+  border-radius: 6px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.guide-section p {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #b0b0c0;
+  margin: 0 0 10px 0;
+}
+
+.guide-step {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+
+.guide-step-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  background: #00d4aa;
+  color: #000;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.guide-step-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #b0b0c0;
+}
+
+.guide-step-text strong {
+  color: #e0e0e0;
+}
+
+.guide-tip {
+  background: rgba(255, 200, 50, 0.08);
+  border-left: 3px solid #ffc832;
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  margin: 12px 0;
+  font-size: 12px;
+  color: #c0b080;
+  line-height: 1.6;
+}
+
+.guide-tip strong {
+  color: #ffc832;
+}
+
+.guide-cmd {
+  display: inline-block;
+  background: rgba(0, 212, 170, 0.1);
+  color: #00d4aa;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-family: inherit;
+  margin: 0 2px;
+}
+
+.guide-kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
+}
+
+.guide-feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.guide-feature-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.guide-feature-card h4 {
+  font-size: 12px;
+  color: #00d4aa;
+  margin: 0 0 4px 0;
+  font-weight: 600;
+}
+
+.guide-feature-card p {
+  font-size: 11.5px;
+  color: #888;
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .guide-tab {
+    padding: 16px 12px;
+  }
+  .guide-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

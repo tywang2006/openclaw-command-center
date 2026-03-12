@@ -24,6 +24,7 @@ const DashboardTab = lazy(() => import('./components/DashboardTab'))
 const IntegrationsTab = lazy(() => import('./components/IntegrationsTab'))
 const SystemTab = lazy(() => import('./components/SystemTab'))
 const RequestsTab = lazy(() => import('./components/RequestsTab'))
+const GuideTab = lazy(() => import('./components/GuideTab'))
 
 function TabFallback() {
   return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
@@ -76,7 +77,7 @@ function Clock({ locale }: { locale: string }) {
   return <div className="current-time">{time.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</div>
 }
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'system'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'system' | 'guide'
 
 export default function App() {
   const { t, locale, setLocale } = useLocale()
@@ -280,6 +281,13 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     )},
+    { id: 'guide' as RightTab, label: t('app.tab.guide'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.3" fill="none" />
+        <path d="M6 6a2 2 0 1 1 2 2v1.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+        <circle cx="8" cy="12" r="0.8" fill={color} />
+      </svg>
+    )},
   ], [t])
 
   const handleSubAgentsChange = useCallback((deptId: string, subs: SubAgent[]) => {
@@ -349,6 +357,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
         {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
         {rightTab === 'system' && <SystemTab />}
+        {rightTab === 'guide' && <GuideTab />}
       </Suspense>
     </ErrorBoundary>
   )
