@@ -25,6 +25,7 @@ const IntegrationsTab = lazy(() => import('./components/IntegrationsTab'))
 const SystemTab = lazy(() => import('./components/SystemTab'))
 const RequestsTab = lazy(() => import('./components/RequestsTab'))
 const GuideTab = lazy(() => import('./components/GuideTab'))
+const SkillsTab = lazy(() => import('./components/SkillsTab'))
 
 function TabFallback() {
   return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
@@ -49,17 +50,30 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info)
+    // Auto-reload on stale chunk errors (dynamic import fails after deploy)
+    if (error?.message?.includes('dynamically imported module') || error?.message?.includes('Failed to fetch')) {
+      const reloadKey = 'openclaw-chunk-reload'
+      const last = sessionStorage.getItem(reloadKey)
+      if (!last || Date.now() - Number(last) > 10000) {
+        sessionStorage.setItem(reloadKey, String(Date.now()))
+        window.location.reload()
+      }
+    }
   }
   render() {
     if (this.state.hasError) {
+      const isChunkError = this.state.error?.message?.includes('dynamically imported module') || this.state.error?.message?.includes('Failed to fetch')
       return (
         <div style={{ padding: 40, textAlign: 'center', color: '#ff5555', fontFamily: 'monospace' }}>
           <h2>{document.documentElement.lang === 'zh' ? '出错了' : 'Something went wrong'}</h2>
           <p style={{ color: '#888' }}>{this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false, error: undefined })} style={{
+          <button onClick={() => isChunkError ? window.location.reload() : this.setState({ hasError: false, error: undefined })} style={{
             marginTop: 16, padding: '8px 24px', background: '#00d4aa', border: 'none', color: '#000', cursor: 'pointer', borderRadius: '4px', fontWeight: 600
           }}>
-            {document.documentElement.lang === 'zh' ? '重试' : 'Retry'}
+            {isChunkError
+              ? (document.documentElement.lang === 'zh' ? '刷新页面' : 'Reload Page')
+              : (document.documentElement.lang === 'zh' ? '重试' : 'Retry')
+            }
           </button>
         </div>
       )
@@ -77,7 +91,7 @@ function Clock({ locale }: { locale: string }) {
   return <div className="current-time">{time.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</div>
 }
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'system' | 'guide'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
 
 export default function App() {
   const { t, locale, setLocale } = useLocale()
@@ -219,8 +233,8 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
 
   const toggleNotifications = async () => {
     if (!notifyPrefs.enabled) {
-      const granted = await requestPermission()
-      if (!granted) return
+      // Try to request permission but don't block toggle if unavailable
+      await requestPermission()
     }
     const newPrefs = { ...notifyPrefs, enabled: !notifyPrefs.enabled }
     setNotifyPrefs(newPrefs)
@@ -273,6 +287,11 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         <circle cx="12" cy="5" r="2" stroke={color} strokeWidth="1.3" fill="none" />
         <circle cx="12" cy="11" r="2" stroke={color} strokeWidth="1.3" fill="none" />
         <path d="M7.5 6.5l3-1M7.5 9.5l3 1" stroke={color} strokeWidth="1.3" />
+      </svg>
+    )},
+    { id: 'skills' as RightTab, label: t('app.tab.skills'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+        <path d="M8.5 1.5l1.2 3.8 4 .3-3.2 2.5 1 3.9L8.5 10l-3 2l1-3.9L3.3 5.6l4-.3z" stroke={color} strokeWidth="1.3" fill="none" />
       </svg>
     )},
     { id: 'system' as RightTab, label: t('app.tab.system'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
@@ -356,6 +375,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
         {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
         {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
+        {rightTab === 'skills' && <SkillsTab />}
         {rightTab === 'system' && <SystemTab />}
         {rightTab === 'guide' && <GuideTab />}
       </Suspense>
