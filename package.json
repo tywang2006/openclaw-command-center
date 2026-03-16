@@ -1,14 +1,54 @@
 {
   "name": "openclaw-command-center",
-  "private": true,
-  "version": "1.0.0",
+  "version": "1.4.0",
+  "description": "超哥办公室 — OpenClaw 指挥中心",
   "type": "module",
+  "bin": {
+    "openclaw-cmd": "bin/openclaw-cmd.js"
+  },
+  "files": [
+    "bin/",
+    "server/",
+    "dist/",
+    "install.sh"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "openclaw",
+    "ai-agent",
+    "command-center",
+    "dashboard",
+    "virtual-office",
+    "pixel-art",
+    "multi-agent",
+    "sub-agent",
+    "gateway",
+    "streaming",
+    "cron-jobs",
+    "gmail",
+    "google-drive",
+    "voice",
+    "react",
+    "express",
+    "websocket",
+    "中文",
+    "办公室"
+  ],
+  "author": "tywang2006",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tywang2006/openclaw-command-center"
   },
   "dependencies": {
     "chokidar": "^5.0.0",

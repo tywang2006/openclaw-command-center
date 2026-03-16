@@ -3,16 +3,36 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { DATA_DIR } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration
-const PASSWORD_FILE = path.join(__dirname, '../.auth_password');
+// Configuration — store in persistent DATA_DIR so npm updates don't wipe the password
+const PASSWORD_FILE = path.join(DATA_DIR, '.auth_password');
+
+// Auto-migrate from old location (inside npm package dir) to new persistent location
+const OLD_PASSWORD_FILE = path.join(__dirname, '../.auth_password');
+if (!fs.existsSync(PASSWORD_FILE) && fs.existsSync(OLD_PASSWORD_FILE)) {
+  try {
+    fs.copyFileSync(OLD_PASSWORD_FILE, PASSWORD_FILE);
+    fs.unlinkSync(OLD_PASSWORD_FILE);
+    console.log('[Auth] Migrated password file to persistent location:', PASSWORD_FILE);
+  } catch (err) {
+    console.warn('[Auth] Failed to migrate password file:', err.message);
+  }
+}
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Token storage: Map<token, timestamp>
 const activeTokens = new Map();
+
+/**
+ * Check if a password file exists (i.e. password has been set by user)
+ */
+function isPasswordConfigured() {
+  return fs.existsSync(PASSWORD_FILE);
+}
 
 /**
  * Hash a password using scrypt
@@ -61,18 +81,7 @@ function getStoredPassword() {
   } catch (error) {
     console.error('[Auth] Error reading password file:', error.message);
   }
-  // Generate random password, save hashed version, log plaintext once
-  const generated = crypto.randomBytes(16).toString('hex');
-  try {
-    const hashed = hashPassword(generated);
-    fs.writeFileSync(PASSWORD_FILE, hashed, 'utf8');
-    console.log(`[Auth] No password file found. Generated initial password: ${generated}`);
-    console.log('[Auth] This password will not be shown again. Save it now.');
-    return hashed;
-  } catch (writeErr) {
-    console.error('[Auth] CRITICAL: Failed to write generated password:', writeErr.message);
-    throw new Error('Cannot initialize auth: unable to create password file');
-  }
+  return null;
 }
 
 /**
@@ -177,6 +186,44 @@ setInterval(() => {
 }, 60 * 1000);
 
 /**
+ * GET /api/auth/status
+ * Returns whether a password has been configured (for first-run detection)
+ */
+authRouter.get('/status', (req, res) => {
+  res.json({ passwordSet: isPasswordConfigured() });
+});
+
+/**
+ * POST /api/auth/setup
+ * First-time password creation. Only works if no password file exists yet.
+ * Body: { password: string }
+ */
+authRouter.post('/setup', (req, res) => {
+  if (isPasswordConfigured()) {
+    return res.status(403).json({ success: false, error: 'Password already configured' });
+  }
+
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+  }
+
+  try {
+    const hashed = hashPassword(password);
+    fs.writeFileSync(PASSWORD_FILE, hashed, 'utf8');
+    console.log('[Auth] Initial password set by user via setup wizard');
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to save password' });
+  }
+
+  // Auto-login: issue token immediately
+  const token = crypto.randomUUID();
+  activeTokens.set(token, Date.now());
+
+  res.json({ success: true, token, expiresIn: TOKEN_EXPIRY_MS });
+});
+
+/**
  * POST /api/auth/login
  * Body: { password: string }
  * Returns: { success: true, token: string } or 401 error
@@ -200,6 +247,13 @@ authRouter.post('/login', (req, res) => {
   }
 
   const storedPassword = getStoredPassword();
+
+  if (!storedPassword) {
+    return res.status(403).json({
+      success: false,
+      error: 'No password configured. Use /api/auth/setup first.'
+    });
+  }
 
   if (!verifyPassword(password, storedPassword)) {
     return res.status(401).json({
@@ -262,17 +316,17 @@ authRouter.put('/password', (req, res) => {
 
   const storedPassword = getStoredPassword();
 
-  if (!verifyPassword(currentPassword, storedPassword)) {
+  if (!storedPassword || !verifyPassword(currentPassword, storedPassword)) {
     return res.status(401).json({
       success: false,
       error: 'Current password is incorrect'
     });
   }
 
-  if (newPassword.length < 12) {
+  if (newPassword.length < 8) {
     return res.status(400).json({
       success: false,
-      error: 'New password must be at least 12 characters'
+      error: 'New password must be at least 8 characters'
     });
   }
 
@@ -331,4 +385,4 @@ authRouter.get('/verify', (req, res) => {
   });
 });
 
-export { authRouter };
+export { authRouter, isPasswordConfigured };

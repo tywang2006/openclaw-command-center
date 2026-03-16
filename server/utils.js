@@ -12,6 +12,15 @@ export const BASE_PATH = process.env.OPENCLAW_WORKSPACE || path.join(
 export const OPENCLAW_HOME = path.join(BASE_PATH, '..');
 
 /**
+ * Persistent data directory for Command Center state (password, encryption key, etc.).
+ * Stored under ~/.openclaw/command-center/ so npm package updates don't wipe user data.
+ */
+export const DATA_DIR = path.join(OPENCLAW_HOME, 'command-center');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+/**
  * Safely read JSON file
  */
 export function readJsonFile(filePath) {

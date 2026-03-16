@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
 
@@ -298,6 +298,119 @@ router.put('/departments/:id/persona', (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('[SystemExtras] PUT /departments/:id/persona error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /system/openclaw/version
+ * Check current and latest OpenClaw version
+ */
+router.get('/system/openclaw/version', async (req, res) => {
+  try {
+    let current = null;
+    try {
+      const { stdout } = await execFileAsync('openclaw', ['--version'], { timeout: 5000 });
+      // Parse "OpenClaw 2026.3.11 (29dc654)" → "2026.3.11"
+      const match = stdout.trim().match(/(\d+\.\d+\.\d+)/);
+      current = match ? match[1] : stdout.trim();
+    } catch {}
+
+    let latest = null;
+    try {
+      const { stdout } = await execFileAsync('npm', ['view', 'openclaw', 'version'], { timeout: 10000 });
+      latest = stdout.trim();
+    } catch {}
+
+    const updateAvailable = !!(current && latest && current !== latest);
+    res.json({ current, latest, updateAvailable });
+  } catch (error) {
+    console.error('[SystemExtras] GET /system/openclaw/version error:', error);
+    res.status(500).json({ error: 'Failed to check version' });
+  }
+});
+
+/**
+ * POST /system/openclaw/update
+ * Update OpenClaw via `openclaw update --yes --json`
+ * Streams progress via WebSocket broadcast
+ */
+router.post('/system/openclaw/update', async (req, res) => {
+  const wss = req.app.locals.wss;
+  const broadcast = (message, done = false, error = false) => {
+    const payload = JSON.stringify({
+      event: 'openclaw:update',
+      data: { message, done, error },
+      timestamp: new Date().toISOString(),
+    });
+    wss?.clients?.forEach(c => {
+      if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {}
+    });
+  };
+
+  try {
+    broadcast('Starting OpenClaw update...');
+
+    const result = await new Promise((resolve, reject) => {
+      const proc = spawn('openclaw', ['update', '--yes', '--no-restart'], {
+        env: { ...process.env, FORCE_COLOR: '0' },
+        timeout: 300000,
+      });
+
+      let output = '';
+      proc.stdout?.on('data', (d) => {
+        const line = d.toString().trim();
+        if (line) {
+          output += line + '\n';
+          broadcast(line);
+        }
+      });
+      proc.stderr?.on('data', (d) => {
+        const line = d.toString().trim();
+        if (line) {
+          output += line + '\n';
+          broadcast(line);
+        }
+      });
+      proc.on('close', (code) => {
+        if (code === 0) resolve(output);
+        else reject(new Error(`openclaw update exited with code ${code}`));
+      });
+      proc.on('error', (err) => reject(err));
+    });
+
+    // Get new version after update
+    let newVersion = null;
+    try {
+      const { stdout } = await execFileAsync('openclaw', ['--version'], { timeout: 5000 });
+      newVersion = stdout.trim();
+    } catch {}
+
+    // Restart gateway separately (we used --no-restart to avoid killing PM2)
+    broadcast('Restarting gateway...');
+    try {
+      await execFileAsync('openclaw', ['gateway', 'restart'], { timeout: 30000 });
+      broadcast('Gateway restarted.');
+    } catch (gwErr) {
+      broadcast(`Gateway restart failed: ${gwErr.message}`);
+    }
+
+    // Reconnect command-center's gateway client
+    try {
+      const { getGateway } = await import('../gateway.js');
+      const gw = getGateway();
+      gw.disconnect();
+      gw.shutdownRequested = false;
+      await new Promise(r => setTimeout(r, 2000));
+      await gw.connect();
+      broadcast('Gateway client reconnected.');
+    } catch {}
+
+    broadcast(`Update complete! Version: ${newVersion || 'unknown'}`, true);
+    res.json({ success: true, version: newVersion, output: result });
+  } catch (error) {
+    console.error('[SystemExtras] POST /system/openclaw/update error:', error);
+    broadcast(`Update failed: ${error.message}`, true, true);
     res.status(500).json({ error: error.message });
   }
 });

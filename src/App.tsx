@@ -5,6 +5,7 @@ import { useMobile, useSwipeGesture } from './hooks/useMobile'
 import { getToken, clearToken, setOnUnauthorized, authedFetch } from './utils/api'
 import { getNotificationPrefs, saveNotificationPrefs, requestPermission } from './utils/notifications'
 import LoginPanel from './components/LoginPanel'
+import SetupWizard from './components/SetupWizard'
 import DeptFormModal from './components/DeptFormModal'
 import OfficeCanvas from './components/OfficeCanvas'
 import ChatPanel, { type SubAgent } from './components/ChatPanel'
@@ -96,6 +97,16 @@ type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron
 export default function App() {
   const { t, locale, setLocale } = useLocale()
   const [authToken, setAuthToken] = useState<string | null>(getToken())
+  const [setupReady, setSetupReady] = useState<boolean | null>(null) // null = loading
+
+  // Check OpenClaw setup status on mount
+  const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+  useEffect(() => {
+    fetch(`${API_BASE}/api/setup/status`)
+      .then(r => r.json())
+      .then(data => setSetupReady(data.ready))
+      .catch(() => setSetupReady(true)) // If setup endpoint fails, skip wizard
+  }, [API_BASE])
 
   // Register 401 handler
   useEffect(() => {
@@ -110,6 +121,16 @@ export default function App() {
   const handleLogout = () => {
     clearToken()
     setAuthToken(null)
+  }
+
+  // Show setup wizard if OpenClaw not installed/configured
+  if (setupReady === false) {
+    return <SetupWizard onComplete={() => { setSetupReady(true); window.location.reload() }} />
+  }
+
+  // Still checking setup status
+  if (setupReady === null) {
+    return null
   }
 
   if (!authToken) {

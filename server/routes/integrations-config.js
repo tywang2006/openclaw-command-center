@@ -598,7 +598,8 @@ router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
 
     const tokens = await tokenResp.json();
     if (tokens.error) {
-      return res.send(pageHtml('Error', `<h2 class="err">OAuth Error</h2><p>${tokens.error_description || tokens.error}</p>`));
+      const safeDesc = String(tokens.error_description || tokens.error).replace(/[<>&"']/g, '');
+      return res.send(pageHtml('Error', `<h2 class="err">OAuth Error</h2><p>${safeDesc}</p>`));
     }
 
     // Save tokens

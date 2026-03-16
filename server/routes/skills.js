@@ -1,7 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter } from '../utils.js';
 
 const router = express.Router();
@@ -411,7 +411,7 @@ router.post('/skills/install', (req, res) => {
     // Clone to temp dir
     const tmpDir = path.join(SKILLS_PATH, '.tmp-install-' + Date.now());
     try {
-      execSync(`git clone --depth=1 ${gitUrl} ${tmpDir}`, {
+      execFileSync('git', ['clone', '--depth=1', gitUrl, tmpDir], {
         timeout: 30000,
         stdio: 'pipe'
       });

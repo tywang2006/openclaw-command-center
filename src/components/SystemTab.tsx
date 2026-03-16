@@ -14,6 +14,20 @@ interface Model {
   isFallback: boolean
 }
 
+interface NewProviderForm {
+  id: string
+  baseUrl: string
+  apiKey: string
+  api: string
+  modelId: string
+  modelName: string
+}
+
+interface NewModelForm {
+  id: string
+  name: string
+}
+
 interface Channel {
   id: string
   name: string
@@ -74,6 +88,14 @@ interface TelegramConfig {
   botTokenPreview: string | null
 }
 
+interface GatewayConfig {
+  url: string
+  hasToken: boolean
+  tokenPreview: string | null
+  clientId: string
+  clientMode: string
+}
+
 export default function SystemTab() {
   const { t } = useLocale()
   const [gateway, setGateway] = useState<GatewayStats | null>(null)
@@ -95,8 +117,20 @@ export default function SystemTab() {
   const [providers, setProviders] = useState<ProviderConfig[]>([])
   const [skills, setSkills] = useState<SkillConfig[]>([])
   const [telegram, setTelegram] = useState<TelegramConfig | null>(null)
+  const [gwConfig, setGwConfig] = useState<GatewayConfig | null>(null)
   const [editingKeys, setEditingKeys] = useState<Record<string, string>>({})
   const [configStatus, setConfigStatus] = useState<Record<string, { type: 'ok' | 'err' | 'saving'; msg: string }>>({})
+  const [fallbacks, setFallbacks] = useState<string[]>([])
+  const [showAddProvider, setShowAddProvider] = useState(false)
+  const [newProvider, setNewProvider] = useState<NewProviderForm>({ id: '', baseUrl: '', apiKey: '', api: 'openai-completions', modelId: '', modelName: '' })
+  const [addModelFor, setAddModelFor] = useState<string | null>(null)
+  const [newModel, setNewModel] = useState<NewModelForm>({ id: '', name: '' })
+  const [modelStatus, setModelStatus] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [ocVersion, setOcVersion] = useState<{ current: string | null; latest: string | null; updateAvailable: boolean } | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
 
   const showConfigStatus = (key: string, type: 'ok' | 'err' | 'saving', msg: string) => {
     setConfigStatus(prev => ({ ...prev, [key]: { type, msg } }))
@@ -113,7 +147,7 @@ export default function SystemTab() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [capRes, gwRes, sessRes, devRes, modelsRes, skillsRes, tgRes] = await Promise.all([
+      const [capRes, gwRes, sessRes, devRes, modelsRes, skillsRes, tgRes, gwCfgRes, ocVerRes] = await Promise.all([
         authedFetch('/api/system/capabilities'),
         authedFetch('/api/health').catch(() => null),
         authedFetch('/api/system/sessions').catch(() => null),
@@ -121,6 +155,8 @@ export default function SystemTab() {
         authedFetch('/api/system/config/models').catch(() => null),
         authedFetch('/api/system/config/skills').catch(() => null),
         authedFetch('/api/system/config/telegram').catch(() => null),
+        authedFetch('/api/system/config/gateway').catch(() => null),
+        authedFetch('/api/system/openclaw/version').catch(() => null),
       ])
       const cap = await capRes.json()
       const health = gwRes?.ok ? await gwRes.json() : {}
@@ -147,6 +183,7 @@ export default function SystemTab() {
           ([id, p]: [string, any]) => ({ id, ...p })
         )
         setProviders(provList)
+        setFallbacks(md.fallbacks || [])
       }
       if (skillsRes?.ok) {
         const sd = await skillsRes.json()
@@ -155,6 +192,14 @@ export default function SystemTab() {
       if (tgRes?.ok) {
         const td = await tgRes.json()
         setTelegram(td)
+      }
+      if (gwCfgRes?.ok) {
+        const gc = await gwCfgRes.json()
+        setGwConfig(gc)
+      }
+      if (ocVerRes?.ok) {
+        const vd = await ocVerRes.json()
+        setOcVersion(vd)
       }
     } catch (err) {
       console.error('Failed to fetch system data:', err)
@@ -178,11 +223,171 @@ export default function SystemTab() {
       if (res.ok) {
         setPrimary(modelId)
         setModels(prev => prev.map(m => ({ ...m, isPrimary: m.id === modelId })))
+        showModelStatus('ok', t('system.models.saved'))
       }
     } catch (err) {
       console.error('Failed to switch model:', err)
     }
     setSaving(false)
+  }
+
+  const showModelStatus = (type: 'ok' | 'err', msg: string) => {
+    setModelStatus({ type, msg })
+    setTimeout(() => setModelStatus(null), 3000)
+  }
+
+  const handleToggleFallback = async (modelId: string) => {
+    const isFb = fallbacks.includes(modelId)
+    const newFallbacks = isFb ? fallbacks.filter(f => f !== modelId) : [...fallbacks, modelId]
+    try {
+      const res = await authedFetch('/api/system/config/models', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fallbacks: newFallbacks }),
+      })
+      if (res.ok) {
+        setFallbacks(newFallbacks)
+        setModels(prev => prev.map(m => ({ ...m, isFallback: newFallbacks.includes(m.id) })))
+        showModelStatus('ok', t('system.models.saved'))
+      }
+    } catch (err) {
+      console.error('Failed to toggle fallback:', err)
+    }
+  }
+
+  const handleAddProvider = async () => {
+    if (!newProvider.id || !newProvider.baseUrl || !newProvider.modelId) return
+    try {
+      const res = await authedFetch('/api/system/config/models/provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: newProvider.id,
+          baseUrl: newProvider.baseUrl,
+          apiKey: newProvider.apiKey,
+          api: newProvider.api,
+          model: { id: newProvider.modelId, name: newProvider.modelName || newProvider.modelId },
+        }),
+      })
+      if (res.ok) {
+        showModelStatus('ok', t('system.models.added'))
+        setShowAddProvider(false)
+        setNewProvider({ id: '', baseUrl: '', apiKey: '', api: 'openai-completions', modelId: '', modelName: '' })
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showModelStatus('err', err.error || 'Error')
+      }
+    } catch {
+      showModelStatus('err', 'Network error')
+    }
+  }
+
+  const handleAddModel = async (providerId: string) => {
+    if (!newModel.id) return
+    try {
+      const res = await authedFetch(`/api/system/config/models/provider/${providerId}/model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: newModel.id, name: newModel.name || newModel.id }),
+      })
+      if (res.ok) {
+        showModelStatus('ok', t('system.models.added'))
+        setAddModelFor(null)
+        setNewModel({ id: '', name: '' })
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showModelStatus('err', err.error || 'Error')
+      }
+    } catch {
+      showModelStatus('err', 'Network error')
+    }
+  }
+
+  const handleDeleteProvider = async (providerId: string) => {
+    if (!confirm(t('system.models.confirm.delete'))) return
+    try {
+      const res = await authedFetch(`/api/system/config/models/provider/${providerId}`, { method: 'DELETE' })
+      if (res.ok) {
+        showModelStatus('ok', t('system.models.deleted'))
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showModelStatus('err', err.error || 'Error')
+      }
+    } catch {
+      showModelStatus('err', 'Network error')
+    }
+  }
+
+  const handleInstallOpenClaw = async () => {
+    setInstalling(true)
+    setUpdateMsg(t('system.openclaw.installing'))
+    try {
+      const res = await authedFetch('/api/setup/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setUpdateMsg(t('system.openclaw.installed'))
+        fetchAll()
+      } else {
+        setUpdateMsg(data.error || 'Install failed')
+      }
+    } catch {
+      setUpdateMsg('Network error')
+    }
+    setInstalling(false)
+    setTimeout(() => setUpdateMsg(null), 5000)
+  }
+
+  const handleUpdateOpenClaw = async () => {
+    setUpdating(true)
+    setUpdateMsg(t('system.openclaw.updating'))
+    try {
+      const res = await authedFetch('/api/system/openclaw/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setUpdateMsg(`${t('system.openclaw.updated')} → ${data.version || '?'}`)
+        fetchAll()
+      } else {
+        setUpdateMsg(data.error || 'Update failed')
+      }
+    } catch {
+      setUpdateMsg('Network error')
+    }
+    setUpdating(false)
+    setTimeout(() => setUpdateMsg(null), 5000)
+  }
+
+  const handleSyncModels = async () => {
+    setSyncing(true)
+    showModelStatus('ok', t('system.models.syncing'))
+    try {
+      const res = await authedFetch('/api/system/config/models/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const summary = Object.entries(data.results || {})
+          .map(([id, r]: [string, any]) => r.success ? `${id}: ${r.count}` : `${id}: ${r.error}`)
+          .join(', ')
+        showModelStatus('ok', `${t('system.models.synced')} (${summary})`)
+        fetchAll()
+      } else {
+        const err = await res.json()
+        showModelStatus('err', err.error || 'Sync failed')
+      }
+    } catch {
+      showModelStatus('err', 'Network error')
+    }
+    setSyncing(false)
   }
 
   const handleRunObserver = async () => {
@@ -363,6 +568,61 @@ export default function SystemTab() {
 
   return (
     <div className="system-tab">
+      {/* OpenClaw Version / Install */}
+      <div className="system-section">
+        <button className="system-section-header" onClick={() => toggle('openclaw')}>
+          <span className="system-section-title">OpenClaw</span>
+          <span className="system-chevron">{collapsed.openclaw ? '▸' : '▾'}</span>
+        </button>
+        {!collapsed.openclaw && (
+          <div className="system-section-body">
+            {updateMsg && (
+              <div className={`system-config-status ${(installing || updating) ? 'ok' : updateMsg.includes('fail') || updateMsg.includes('error') || updateMsg.includes('Error') ? 'err' : 'ok'}`}>{updateMsg}</div>
+            )}
+            {!ocVersion || !ocVersion.current ? (
+              <>
+                <div className="system-row">
+                  <span className="system-label">{t('system.openclaw.status')}</span>
+                  <span className="system-badge err">{t('system.openclaw.notinstalled')}</span>
+                </div>
+                <button
+                  className="system-action-btn"
+                  style={{ width: '100%', marginTop: 6 }}
+                  onClick={handleInstallOpenClaw}
+                  disabled={installing}
+                >
+                  {installing ? t('system.openclaw.installing') : t('system.openclaw.install')}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="system-row">
+                  <span className="system-label">{t('system.openclaw.current')}</span>
+                  <span className="system-value">{ocVersion.current}</span>
+                </div>
+                <div className="system-row">
+                  <span className="system-label">{t('system.openclaw.latest')}</span>
+                  <span className="system-value">
+                    {ocVersion.latest || '?'}
+                    {ocVersion.updateAvailable && <span className="system-badge warn" style={{ marginLeft: 6 }}>{t('system.openclaw.new')}</span>}
+                  </span>
+                </div>
+                {ocVersion.updateAvailable && (
+                  <button
+                    className="system-action-btn"
+                    style={{ width: '100%', marginTop: 6 }}
+                    onClick={handleUpdateOpenClaw}
+                    disabled={updating}
+                  >
+                    {updating ? t('system.openclaw.updating') : t('system.openclaw.update')}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Gateway Status */}
       <div className="system-section">
         <button className="system-section-header" onClick={() => toggle('gateway')}>
@@ -396,6 +656,78 @@ export default function SystemTab() {
               <span className="system-value">{gateway.streamBuffers}</span>
             </div>
 
+            {/* Gateway Config */}
+            {gwConfig && (
+              <div className="system-subsection">
+                <div className="system-sublabel">{t('system.gateway.config')}</div>
+                <div className="system-row">
+                  <span className="system-label">URL</span>
+                  <span className="system-value" style={{ fontSize: 11 }}>{gwConfig.url}</span>
+                </div>
+                <div className="system-row">
+                  <span className="system-label">Token</span>
+                  {editingKeys['gw-token'] !== undefined ? (
+                    <span className="system-inline-edit">
+                      <input
+                        type="password"
+                        value={editingKeys['gw-token']}
+                        onChange={e => setEditingKeys(p => ({ ...p, 'gw-token': e.target.value }))}
+                        placeholder="Gateway auth token"
+                        className="system-input"
+                      />
+                      <button className="system-btn-sm ok" onClick={async () => {
+                        showConfigStatus('gw', 'saving', '...')
+                        const body: Record<string, string> = { token: editingKeys['gw-token'] }
+                        if (editingKeys['gw-url']) body.url = editingKeys['gw-url']
+                        const r = await authedFetch('/api/system/config/gateway', {
+                          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(body),
+                        })
+                        if (r.ok) {
+                          showConfigStatus('gw', 'ok', t('system.gateway.saved'))
+                          setEditingKeys(p => { const n = { ...p }; delete n['gw-token']; delete n['gw-url']; return n })
+                          fetchAll()
+                        } else {
+                          showConfigStatus('gw', 'err', 'Failed')
+                        }
+                      }}>Save</button>
+                      <button className="system-btn-sm" onClick={() => setEditingKeys(p => { const n = { ...p }; delete n['gw-token']; delete n['gw-url']; return n })}>Cancel</button>
+                    </span>
+                  ) : (
+                    <span className="system-value">
+                      {gwConfig.hasToken ? gwConfig.tokenPreview : <em style={{ color: '#f44' }}>Not set</em>}
+                      {' '}
+                      <button className="system-btn-sm" onClick={() => setEditingKeys(p => ({ ...p, 'gw-token': '', 'gw-url': gwConfig.url }))}>
+                        {t('system.edit')}
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {editingKeys['gw-url'] !== undefined && (
+                  <div className="system-row">
+                    <span className="system-label">URL</span>
+                    <input
+                      type="text"
+                      value={editingKeys['gw-url']}
+                      onChange={e => setEditingKeys(p => ({ ...p, 'gw-url': e.target.value }))}
+                      placeholder="ws://127.0.0.1:18789"
+                      className="system-input"
+                    />
+                  </div>
+                )}
+                {configStatus['gw'] && (
+                  <div className={`system-config-status ${configStatus['gw'].type}`}>{configStatus['gw'].msg}</div>
+                )}
+                <div className="system-row" style={{ marginTop: 4 }}>
+                  <button className="system-btn-sm" onClick={async () => {
+                    const r = await authedFetch('/api/system/config/gateway/test', { method: 'POST' })
+                    const d = await r.json()
+                    showConfigStatus('gw', d.success ? 'ok' : 'err', d.message || d.error)
+                  }}>{t('system.gateway.test')}</button>
+                </div>
+              </div>
+            )}
+
             {/* Channels */}
             {channels.length > 0 && (
               <div className="system-subsection">
@@ -414,7 +746,7 @@ export default function SystemTab() {
         )}
       </div>
 
-      {/* Model Switcher */}
+      {/* Model Management */}
       <div className="system-section">
         <button className="system-section-header" onClick={() => toggle('models')}>
           <span className="system-section-title">{t('system.models.title')}</span>
@@ -422,25 +754,144 @@ export default function SystemTab() {
         </button>
         {!collapsed.models && (
           <div className="system-section-body">
-            {models.map(m => (
-              <button
-                key={m.id}
-                className={`system-model-card ${m.id === primary ? 'active' : ''}`}
-                onClick={() => handleModelSwitch(m.id)}
-                disabled={saving || m.id === primary}
-              >
-                <div className="system-model-name">
-                  {m.name}
-                  {m.id === primary && <span className="system-primary-badge">{t('cap.status.primary')}</span>}
-                  {m.isFallback && <span className="system-fallback-badge">{t('cap.status.fallback')}</span>}
+            {modelStatus && (
+              <div className={`system-config-status ${modelStatus.type}`}>{modelStatus.msg}</div>
+            )}
+            <button
+              className="system-action-btn"
+              style={{ width: '100%', marginBottom: 8 }}
+              onClick={handleSyncModels}
+              disabled={syncing || providers.length === 0}
+            >
+              {syncing ? t('system.models.syncing') : t('system.models.sync')}
+            </button>
+
+            {/* Group by provider */}
+            {providers.map(prov => {
+              const provModels = models.filter(m => m.provider === prov.id)
+              return (
+                <div key={prov.id} className="system-subsection">
+                  <div className="system-provider-header">
+                    <span className="system-provider-name">{prov.id} <span style={{ opacity: 0.5, fontSize: 10 }}>({prov.api})</span></span>
+                    <span className="system-provider-actions">
+                      <button className="system-btn-xs" onClick={() => { setAddModelFor(addModelFor === prov.id ? null : prov.id); setNewModel({ id: '', name: '' }) }}>+</button>
+                      <button className="system-btn-xs del" onClick={() => handleDeleteProvider(prov.id)}>x</button>
+                    </span>
+                  </div>
+
+                  {provModels.map(m => (
+                    <div key={m.id} className={`system-model-row ${m.id === primary ? 'active' : ''}`}>
+                      <div className="system-model-info">
+                        <span className="system-model-name-text">
+                          {m.name}
+                          {m.id === primary && <span className="system-primary-badge">{t('system.models.primary')}</span>}
+                          {m.isFallback && <span className="system-fallback-badge">{t('system.models.fallback')}</span>}
+                        </span>
+                        <span className="system-model-meta">{m.contextWindowFormatted} · {m.maxTokensFormatted}</span>
+                      </div>
+                      {m.id !== primary && (
+                        <div className="system-model-actions">
+                          <button className="system-btn-xs" onClick={() => handleModelSwitch(m.id)} disabled={saving} title={t('system.models.setprimary')}>&#9733;</button>
+                          <button className={`system-btn-xs ${m.isFallback ? 'active' : ''}`} onClick={() => handleToggleFallback(m.id)} title={m.isFallback ? t('system.models.removefallback') : t('system.models.setfallback')}>F</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Add model form */}
+                  {addModelFor === prov.id && (
+                    <div className="system-add-form">
+                      <input
+                        className="system-config-input"
+                        placeholder={t('system.models.model.id') + ' (e.g. gpt-4o)'}
+                        value={newModel.id}
+                        onChange={e => setNewModel(prev => ({ ...prev, id: e.target.value }))}
+                      />
+                      <input
+                        className="system-config-input"
+                        placeholder={t('system.models.model.name') + ' (e.g. GPT-4o)'}
+                        value={newModel.name}
+                        onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
+                      />
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="system-action-btn" onClick={() => handleAddModel(prov.id)} disabled={!newModel.id}>
+                          {t('system.models.add')}
+                        </button>
+                        <button className="system-btn-sm" onClick={() => setAddModelFor(null)}>
+                          {t('system.models.cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="system-model-meta">
-                  <span>{m.provider}</span>
-                  <span>{m.contextWindowFormatted} ctx</span>
-                  <span>{m.maxTokensFormatted} max</span>
-                </div>
+              )
+            })}
+
+            {/* Add Provider button/form */}
+            {!showAddProvider ? (
+              <button className="system-action-btn" style={{ width: '100%', marginTop: 8 }} onClick={() => setShowAddProvider(true)}>
+                + {t('system.models.addprovider')}
               </button>
-            ))}
+            ) : (
+              <div className="system-subsection system-add-form">
+                <div className="system-sublabel">{t('system.models.addprovider')}</div>
+                <input
+                  className="system-config-input"
+                  placeholder={t('system.models.provider.id') + ' (e.g. openai)'}
+                  value={newProvider.id}
+                  onChange={e => setNewProvider(prev => ({ ...prev, id: e.target.value }))}
+                />
+                <input
+                  className="system-config-input"
+                  placeholder={t('system.models.provider.baseurl') + ' (e.g. https://api.openai.com/v1)'}
+                  value={newProvider.baseUrl}
+                  onChange={e => setNewProvider(prev => ({ ...prev, baseUrl: e.target.value }))}
+                />
+                <input
+                  type="password"
+                  className="system-config-input"
+                  placeholder={t('system.models.provider.apikey')}
+                  value={newProvider.apiKey}
+                  onChange={e => setNewProvider(prev => ({ ...prev, apiKey: e.target.value }))}
+                />
+                <select
+                  className="system-config-input"
+                  value={newProvider.api}
+                  onChange={e => setNewProvider(prev => ({ ...prev, api: e.target.value }))}
+                >
+                  <option value="openai-completions">OpenAI Completions</option>
+                  <option value="google-generative-ai">Google Generative AI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 6, marginTop: 4 }}>
+                  <div className="system-sublabel" style={{ fontSize: 10 }}>{t('system.models.model.id')}</div>
+                </div>
+                <input
+                  className="system-config-input"
+                  placeholder={t('system.models.model.id') + ' (e.g. gpt-4o)'}
+                  value={newProvider.modelId}
+                  onChange={e => setNewProvider(prev => ({ ...prev, modelId: e.target.value }))}
+                />
+                <input
+                  className="system-config-input"
+                  placeholder={t('system.models.model.name') + ' (e.g. GPT-4o)'}
+                  value={newProvider.modelName}
+                  onChange={e => setNewProvider(prev => ({ ...prev, modelName: e.target.value }))}
+                />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    className="system-action-btn"
+                    onClick={handleAddProvider}
+                    disabled={!newProvider.id || !newProvider.baseUrl || !newProvider.modelId}
+                  >
+                    {t('system.models.add')}
+                  </button>
+                  <button className="system-btn-sm" onClick={() => setShowAddProvider(false)}>
+                    {t('system.models.cancel')}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

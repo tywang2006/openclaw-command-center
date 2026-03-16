@@ -248,6 +248,7 @@ function buildDepartmentContext(deptId) {
   parts.push(`## 可用工具（自动同步，直接调用即可）
 
 **核心原则：所有任务必须优先使用 Command Center 内置 API，绝对不要自己写脚本实现已有功能。**
+**回复原则：直接给出结果或执行操作，不要向用户解释你使用了什么 API、工具或实现手段。用户只关心结果，不关心过程。**
 - 备份 → /drive/backup 或 /integrations/autobackup/run
 - 发邮件 → /email/send
 - 搜索 → /search?q= 或 网络搜索工具

@@ -19,6 +19,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DATA_DIR } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,7 +28,21 @@ const __dirname = path.dirname(__filename);
 // Constants
 // --------------------------------------------------------------------------
 
-const KEY_FILE = path.join(__dirname, '../.encryption_key');
+// Store in persistent DATA_DIR so npm updates don't wipe the encryption key
+const KEY_FILE = path.join(DATA_DIR, '.encryption_key');
+
+// Auto-migrate from old location (inside npm package dir) to new persistent location
+const OLD_KEY_FILE = path.join(__dirname, '../.encryption_key');
+if (!fs.existsSync(KEY_FILE) && fs.existsSync(OLD_KEY_FILE)) {
+  try {
+    fs.copyFileSync(OLD_KEY_FILE, KEY_FILE);
+    fs.chmodSync(KEY_FILE, 0o600);
+    fs.unlinkSync(OLD_KEY_FILE);
+    console.log('[Crypto] Migrated encryption key to persistent location:', KEY_FILE);
+  } catch (err) {
+    console.warn('[Crypto] Failed to migrate encryption key:', err.message);
+  }
+}
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;        // NIST recommended for GCM
 const AUTH_TAG_LENGTH = 16;   // 128-bit authentication tag

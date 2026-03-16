@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
 import { chat, chatAsync, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
-import { generateAndSave } from '../layout-generator.js';
+import { generateAndSave, generateLayout } from '../layout-generator.js';
 import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
@@ -385,37 +385,51 @@ router.get('/departments/:id/memory/history/:filename', (req, res) => {
 
 /**
  * GET /api/collaboration
- * Parse bulletin/requests for inter-department references
- * Returns: { links: [{ from: deptId, to: deptId, label: string }] }
+ * Returns inter-department links for the office canvas.
+ * Sources:
+ *   1. Org structure: default department (COO) ↔ all others
+ *   2. Bulletin requests: actual cross-department communications
+ * Returns: { links: [{ from: deptId, to: deptId, label: string, type: 'org'|'request' }] }
  */
 router.get('/collaboration', (req, res) => {
   try {
-    const requestsDir = path.join(BASE_PATH, 'departments', 'bulletin', 'requests');
-    const links = [];
-
-    if (!fs.existsSync(requestsDir)) {
-      return res.json({ links });
-    }
-
-    // Get known department IDs
     const configPath = path.join(BASE_PATH, 'departments', 'config.json');
     const config = readJsonFile(configPath) || { departments: {} };
-    const deptIds = new Set(Object.keys(config.departments || {}));
+    const deptEntries = config.departments || {};
+    const deptIds = Object.keys(deptEntries);
+    const links = [];
+    const seen = new Set();
 
-    const files = fs.readdirSync(requestsDir)
-      .filter(f => f.endsWith('.md') && !f.startsWith('.'));
+    const addLink = (from, to, label, type) => {
+      const key = `${from}:${to}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      links.push({ from, to, label, type });
+    };
 
-    for (const file of files) {
-      const content = readTextFile(path.join(requestsDir, file));
-      // Filename pattern: from-dept_to-dept_*.md or content mentioning dept IDs
-      for (const fromId of deptIds) {
-        if (!content.toLowerCase().includes(fromId)) continue;
-        for (const toId of deptIds) {
-          if (fromId === toId) continue;
-          if (content.toLowerCase().includes(toId)) {
-            // Check for duplicates
-            if (!links.some(l => l.from === fromId && l.to === toId)) {
-              links.push({ from: fromId, to: toId, label: file.replace('.md', '') });
+    // Only show real cross-department request links (not org structure —
+    // the department layout already makes the hierarchy clear visually)
+    const requestsDir = path.join(BASE_PATH, 'departments', 'bulletin', 'requests');
+    if (fs.existsSync(requestsDir)) {
+      const files = fs.readdirSync(requestsDir)
+        .filter(f => f.endsWith('.md') && !f.startsWith('.'));
+
+      const deptIdSet = new Set(deptIds);
+      for (const file of files) {
+        // Parse filename pattern: from_to_date.md
+        const parts = file.replace('.md', '').split('_');
+        if (parts.length >= 2 && deptIdSet.has(parts[0]) && deptIdSet.has(parts[1])) {
+          addLink(parts[0], parts[1], file.replace('.md', ''), 'request');
+          continue;
+        }
+        // Fallback: scan content for dept ID mentions
+        const content = readTextFile(path.join(requestsDir, file));
+        for (const fromId of deptIdSet) {
+          if (!content.toLowerCase().includes(fromId)) continue;
+          for (const toId of deptIdSet) {
+            if (fromId === toId) continue;
+            if (content.toLowerCase().includes(toId)) {
+              addLink(fromId, toId, file.replace('.md', ''), 'request');
             }
           }
         }
@@ -1218,6 +1232,27 @@ router.delete('/departments/:id', (req, res) => {
 // ============================================================
 // Layout Generation API
 // ============================================================
+
+/**
+ * GET /api/layout
+ * Generate and return office layout based on current department configuration.
+ * No file I/O — always reflects the live department config.
+ */
+router.get('/layout', (req, res) => {
+  try {
+    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+    if (!fs.existsSync(configPath)) {
+      return res.json(generateLayout([]));
+    }
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const departments = Object.entries(config.departments || {})
+      .map(([id, dept]) => ({ id, hue: dept.hue ?? 200, order: dept.order ?? 99 }));
+    res.json(generateLayout(departments));
+  } catch (error) {
+    console.error('[Layout] Generate failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * POST /api/layout/rebuild

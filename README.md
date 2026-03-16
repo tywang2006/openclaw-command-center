@@ -1,191 +1,125 @@
-# OpenClaw Command Center
+<div align="center">
 
-A pixel-art office visualization and control panel for [OpenClaw](https://github.com/openclaw) AI agents. Manage departments, chat with AI agents, monitor activity, and orchestrate workflows — all from a retro-style virtual office.
+# 超哥办公室 — OpenClaw 指挥中心
+
+**AI 多代理虚拟办公室控制面板**
+
+**AI Multi-Agent Virtual Office Dashboard**
+
+[![npm version](https://img.shields.io/npm/v/openclaw-command-center.svg?style=flat-square&color=00d4aa)](https://www.npmjs.com/package/openclaw-command-center)
+[![node](https://img.shields.io/node/v/openclaw-command-center.svg?style=flat-square&color=0096ff)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/openclaw-command-center.svg?style=flat-square&color=ffc832)](LICENSE)
+
+将你的 AI 代理变成虚拟办公团队 — 像素风办公室、部门对话、子代理、定时任务、Gateway 流式通信、全套集成。
+
+Turn your AI agents into a virtual office team — pixel-art office, department chat, sub-agents, cron jobs, Gateway streaming, full integrations.
+
+---
+
+[中文](#中文) | [English](#english)
+
+</div>
+
+---
+
+<a id="中文"></a>
+
+## 中文
+
+### 这是什么？
+
+OpenClaw 指挥中心是一个 Web 控制面板，将你的 AI 代理变成虚拟办公团队。每个"部门"都有独立的 AI 助手 — 用自然语言和它们对话、设置自动化任务、从复古像素风界面监控一切。
 
 ```
-Browser (React 18 + Canvas 2D)
-  ├── Pixel Office (department characters + zoom)
-  ├── Right Panel (Chat / Bulletin / Memory / Activity / Scheduler / Stats / Capabilities)
-  └── Bottom Status Bar (department cards + context menu)
+浏览器 (React 19 + Canvas 2D)
+  ├── 像素办公室   ← 每个部门一个动画角色
+  ├── 右侧面板     ← 对话 / 公告 / 记忆 / 定时 / 统计 / ...
+  └── 底部状态栏   ← 部门卡片 + 快速切换
        ↓ WebSocket
-Express + ws (port 5100)
-  ├── chokidar (file watcher)
+Express + ws (端口 5100)
   ├── REST API (/api/*)
-  └── gateway.js → OpenClaw Gateway (ws://127.0.0.1:18789)
+  └── gateway.js → OpenClaw 网关 (ws://127.0.0.1:18789)
 ```
 
-## Quick Start
+### 核心功能
 
-### Interactive Installer
+| 类别 | 功能说明 |
+|------|---------|
+| **AI 对话** | 自然语言与各部门助手交流，流式响应，子代理创建，图片/文档上传 (PDF/DOCX/XLSX)，对话导出 |
+| **像素办公室** | Canvas 渲染的虚拟办公室，动画精灵角色，自动扩展的网格布局，点击角色选中部门 |
+| **部门管理** | UI 内创建/编辑/删除，自定义图标和颜色，Telegram Topic 关联，右键菜单操作 |
+| **定时任务** | 基于 Cron 的自动化，支持间隔或 Cron 表达式，执行历史记录，暂停/恢复/删除 |
+| **集成服务** | Gmail 邮件发送、Google Drive 备份、语音输入 (Whisper)、Webhook 通知、Google Sheets |
+| **全员广播** | 一条命令发给所有部门，收集全部回复，适合公司级协调 |
+| **记忆系统** | 每部门独立 AI 记忆，手动编辑，版本历史，角色 (Persona) 配置 |
+| **监控面板** | 网关状态、Token 用量、实时活动流、性能指标 |
+| **移动端** | 响应式布局，滑动手势，触控优化，移动端抽屉菜单 |
+| **双语界面** | 完整中英文 UI，一键切换 |
+
+**斜杠命令：**
+
+| 命令 | 别名 | 说明 |
+|------|------|------|
+| `/help` | `/帮助` | 显示所有命令 |
+| `/dept` | `/部门` | 创建/管理部门 |
+| `/broadcast` | `/广播` | 广播到所有部门 |
+| `/export` | `/导出` | 导出当前对话 |
+| `/status` | `/状态` | 查看系统状态 |
+| `/clear` | `/清屏` | 清空当前聊天 |
+
+### 快速开始
+
+**方式一：交互式安装器（推荐）**
 
 ```bash
-# Clone and run the interactive installer:
-git clone https://github.com/openclaw/command-center.git ~/.openclaw/workspace/command-center
-cd ~/.openclaw/workspace/command-center
+npx openclaw-command-center
+```
+
+或者克隆后运行：
+
+```bash
+git clone https://github.com/tywang2006/openclaw-command-center.git
+cd openclaw-command-center
 bash install.sh
 ```
 
-The installer offers **two modes**:
+安装器提供两种模式：
+- **新手模式** — 从零搭建（OpenClaw + 网关 + 指挥中心）
+- **已有用户模式** — 仅安装指挥中心（自动检测已有 OpenClaw 配置）
 
-**Beginner Mode** (12 steps) — full setup from scratch:
-1. Check prerequisites (Node.js >= 18, npm, pm2)
-2. Overwrite warning (if existing OpenClaw found)
-3. Install OpenClaw globally
-4. Run `openclaw setup --wizard` (interactive)
-5. Configure model provider
-6. Configure Gateway
-7. Start Gateway service
-8. Verify Gateway health (15 retries)
-9. Install npm dependencies
-10. Set password, generate .env, configure departments
-11. Build frontend + generate office layout + start PM2
-12. Final health check
-
-**Existing User Mode** (8 steps) — Command Center only:
-1. Check prerequisites
-2. Detect OpenClaw config and extract auth token
-3. Verify Gateway is running
-4. Install dependencies
-5. Configure (password, .env, departments)
-6. Build and start service
-7. Auto-configure Nginx (if detected)
-8. Final health check
-
-Features: bilingual (中文/English), whiptail menus with plain-text fallback, retry/skip/abort on failure, animated spinners, Chinese npm mirror hints.
-
-Access at **http://localhost:5100/cmd/**
-
-### Manual Setup
+**方式二：手动安装**
 
 ```bash
-git clone https://github.com/openclaw/command-center.git
-cd command-center
+git clone https://github.com/tywang2006/openclaw-command-center.git
+cd openclaw-command-center
 npm install
-cp .env.example .env          # edit as needed
-npm run build                 # build frontend
-node server/index.js          # start server
+npm run build
+node server/index.js
 ```
 
-## Features
+访问 **http://localhost:5100/cmd/**
 
-**Pixel Office**
-- Canvas-rendered office with animated sprite characters per department
-- Auto-expanding grid layout (4 offices per row, grows with departments)
-- Click a character to select their department for chat
+### 配置说明
 
-**Department Management**
-- Create / edit / delete departments from the UI
-- Right-click (desktop) or long-press (mobile) a status bar card to edit
-- Each department has: name, icon (16 choices), color (8 presets), optional Telegram Topic ID
-- Dynamic config — no code changes needed to add departments
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw 根目录 |
+| `CMD_PORT` | `5100` | 服务端口 |
+| `OPENCLAW_GATEWAY_URL` | `ws://127.0.0.1:18789` | 网关 WebSocket 地址 |
+| `OPENCLAW_AUTH_TOKEN` | *(自动检测)* | 网关认证令牌 |
 
-**AI Chat**
-- Chat with any department's AI agent through OpenClaw Gateway
-- Sub-agent creation for parallel tasks
-- Streaming responses with real-time text display
-- Image and document upload (PDF, DOCX, XLSX, PPTX)
-- Conversation export (Markdown / HTML)
-- Slash commands with autocomplete hints (type `/` to see all)
+部门通过 UI 管理 — 点击状态栏 **+** 按钮，或在对话中输入 `/dept`。
 
-**Slash Commands**
+### 部署
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `/dept` | `/部门` | Create/manage departments |
-| `/broadcast` | `/广播` | Broadcast message to all departments |
-| `/export` | `/导出` | Export current conversation |
-| `/status` | `/状态` | View system status |
-| `/clear` | `/清屏` | Clear current chat |
-| `/help` | `/帮助` | Show all commands |
-
-**Integrations**
-- Telegram bidirectional messaging (auto-syncs with group topics)
-- Gmail SMTP email sending
-- Google Drive backup
-- Voice input (OpenAI Whisper transcription)
-- Webhook notifications
-
-**Monitoring**
-- Real-time activity feed from all departments
-- Gateway connection stats and latency
-- Token usage tracking
-- Scheduled task management (cron)
-- Workflow automation builder
-
-**Mobile**
-- Responsive layout with swipe gestures
-- Mobile navigation bar and drawer menu
-- Touch-optimized department picker
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw root directory |
-| `CMD_PORT` | `5100` | Server port |
-| `OPENCLAW_GATEWAY_URL` | `ws://127.0.0.1:18789` | Gateway WebSocket URL |
-| `OPENCLAW_AUTH_TOKEN` | *(from openclaw.json)* | Gateway auth token |
-| `TELEGRAM_BOT_TOKEN` | | Telegram bot token |
-| `TELEGRAM_GROUP_ID` | | Telegram group ID |
-
-### Department Config
-
-Departments are defined in `~/.openclaw/workspace/departments/config.json`:
-
-```json
-{
-  "departments": {
-    "engineering": {
-      "name": "Engineering",
-      "agent": "CTO",
-      "icon": "wrench",
-      "color": "#00d4aa",
-      "hue": 180,
-      "telegramTopicId": 1430,
-      "order": 1
-    }
-  },
-  "defaultDepartment": "engineering"
-}
-```
-
-Departments can also be managed through the UI:
-- Click the `+` button on the status bar to create
-- Right-click (desktop) or long-press (mobile) a department card to edit/delete
-- Type `/dept` in chat to create via slash command
-
-### Linking Telegram Topics
-
-1. Create a department in Command Center (with or without a Topic ID)
-2. In Telegram, create a topic in your group
-3. Right-click the department card in the status bar → Edit
-4. Enter the Telegram Topic ID and save
-
-The department will now sync bidirectionally with that Telegram topic.
-
-## Development
-
-```bash
-npm run dev        # Vite dev server (hot reload, proxies API to :5100)
-npm run build      # Production build (tsc + vite)
-npm run server     # Start Express server only
-```
-
-Frontend runs on Vite with proxy to the Express backend. The base URL is `/cmd/` for reverse proxy compatibility.
-
-## Deployment
-
-### PM2 (Recommended)
+**PM2（推荐）：**
 
 ```bash
 pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup    # auto-start on reboot
+pm2 save && pm2 startup
 ```
 
-### Nginx Reverse Proxy
+**Nginx 反向代理：**
 
 ```nginx
 location /cmd/ {
@@ -193,66 +127,185 @@ location /cmd/ {
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
 }
 ```
 
-### Health Check
+**健康检查：** `GET /health` — 返回服务器状态、运行时间、网关连接状态。
 
-```
-GET /health
-```
-
-Returns server status, uptime, WebSocket client count, and Gateway connection state.
-
-## Project Structure
+### 项目结构
 
 ```
 command-center/
-├── server/                    # Express backend
-│   ├── index.js               # HTTP + WebSocket server
-│   ├── gateway.js             # OpenClaw Gateway client
-│   ├── agent.js               # AI chat via Gateway
-│   ├── utils.js               # Shared utilities (BASE_PATH, file helpers)
-│   ├── auth.js                # Password auth (scrypt, timing-safe)
-│   ├── watcher.js             # File change monitor
-│   ├── layout-generator.js    # Dynamic office layout
-│   └── routes/                # API route modules
-│       ├── api.js             # Core CRUD + chat
-│       ├── capabilities.js    # System capabilities
-│       ├── cron.js            # Scheduled tasks
-│       ├── workflows.js       # Automation workflows
-│       └── ...                # email, drive, voice, etc.
-├── src/                       # React frontend
-│   ├── App.tsx                # Main app + ErrorBoundary
-│   ├── components/            # UI components
-│   │   ├── OfficeCanvas.tsx   # Pixel office renderer
-│   │   ├── ChatPanel.tsx      # Department chat
-│   │   ├── StatusBar.tsx      # Department cards
-│   │   ├── DeptFormModal.tsx  # Create/edit departments
-│   │   └── ...                # 16 more components
-│   ├── hooks/
-│   │   ├── useAgentState.ts   # WebSocket state manager
-│   │   └── useMobile.ts      # Mobile detection
-│   ├── office/                # Pixel art engine
-│   ├── i18n/                  # Chinese + English translations
-│   └── utils/
-├── scripts/
-│   └── migrate-config.js     # Config format migration
-├── install.sh                 # Interactive installer (bilingual, 2 modes)
-├── ecosystem.config.cjs       # PM2 config
-└── public/assets/             # Sprites + layout
+├── server/                # Express 后端
+│   ├── index.js           #   HTTP + WebSocket 服务器
+│   ├── gateway.js         #   OpenClaw 网关客户端
+│   ├── agent.js           #   通过网关的 AI 对话
+│   ├── auth.js            #   密码认证 (scrypt)
+│   └── routes/            #   API 路由模块
+├── src/                   # React 19 前端
+│   ├── components/        #   20+ UI 组件
+│   ├── office/            #   像素艺术引擎
+│   ├── i18n/              #   中文 + 英文
+│   └── hooks/             #   WebSocket 状态管理
+├── install.sh             # 交互式安装器
+└── dist/                  # 生产构建输出
 ```
 
-## Tech Stack
+### 技术栈
 
-- **Frontend**: React 18, TypeScript, Vite, Canvas 2D
-- **Backend**: Express, WebSocket (ws), chokidar
-- **AI**: OpenClaw Gateway (protocol 3-5)
-- **Auth**: scrypt password hashing + timing-safe comparison
-- **Process**: PM2
-- **i18n**: Chinese / English
+| 层级 | 技术 |
+|------|------|
+| 前端 | React 19, TypeScript 5.9, Vite 7, Canvas 2D |
+| 后端 | Express 5, WebSocket (ws), chokidar |
+| AI | OpenClaw 网关 (协议 3-5) |
+| 认证 | scrypt + 时序安全比较 |
+| 进程 | PM2 |
 
-## License
+---
 
-MIT
+<a id="english"></a>
+
+## English
+
+### What is this?
+
+OpenClaw Command Center is a web-based dashboard that turns your AI agents into a virtual office team. Each "department" has its own AI assistant — chat with them in natural language, set up automated tasks, and monitor everything from a retro pixel-art interface.
+
+```
+Browser (React 19 + Canvas 2D)
+  ├── Pixel Office   ← animated characters per department
+  ├── Right Panel    ← Chat / Bulletin / Memory / Scheduler / Stats / ...
+  └── Status Bar     ← department cards + quick switch
+       ↓ WebSocket
+Express + ws (port 5100)
+  ├── REST API (/api/*)
+  └── gateway.js → OpenClaw Gateway (ws://127.0.0.1:18789)
+```
+
+### Features
+
+| Category | What you get |
+|----------|-------------|
+| **AI Chat** | Natural language conversation with department agents, streaming responses, sub-agent creation, image & document upload (PDF/DOCX/XLSX), conversation export |
+| **Pixel Office** | Canvas-rendered office with animated sprite characters, auto-expanding grid layout, click-to-select departments |
+| **Department Management** | Create / edit / delete from UI, custom icons & colors, Telegram topic linking, right-click context menu |
+| **Scheduled Tasks** | Cron-based automation, interval or cron expression, execution history, pause/resume/delete |
+| **Integrations** | Gmail SMTP, Google Drive backup, Voice input (Whisper), Webhook notifications, Google Sheets |
+| **Team Broadcast** | One command to all departments, collect all responses, ideal for company-wide coordination |
+| **Memory System** | Per-department AI memory, manual editing, version history, persona configuration |
+| **Monitoring** | Gateway stats, token usage, real-time activity feed, performance metrics |
+| **Mobile** | Responsive layout, swipe gestures, touch-optimized, mobile drawer menu |
+| **i18n** | Full Chinese / English UI with one-click toggle |
+
+**Slash Commands:**
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/help` | `/帮助` | Show all commands |
+| `/dept` | `/部门` | Create/manage departments |
+| `/broadcast` | `/广播` | Broadcast to all departments |
+| `/export` | `/导出` | Export current conversation |
+| `/status` | `/状态` | View system status |
+| `/clear` | `/清屏` | Clear current chat |
+
+### Quick Start
+
+**Option A: Interactive Installer (Recommended)**
+
+```bash
+npx openclaw-command-center
+```
+
+Or clone and run:
+
+```bash
+git clone https://github.com/tywang2006/openclaw-command-center.git
+cd openclaw-command-center
+bash install.sh
+```
+
+The installer offers two modes:
+- **Beginner Mode** — full setup from scratch (OpenClaw + Gateway + Command Center)
+- **Existing User Mode** — Command Center only (detects existing OpenClaw config)
+
+**Option B: Manual Setup**
+
+```bash
+git clone https://github.com/tywang2006/openclaw-command-center.git
+cd openclaw-command-center
+npm install
+npm run build
+node server/index.js
+```
+
+Access at **http://localhost:5100/cmd/**
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw root directory |
+| `CMD_PORT` | `5100` | Server port |
+| `OPENCLAW_GATEWAY_URL` | `ws://127.0.0.1:18789` | Gateway WebSocket URL |
+| `OPENCLAW_AUTH_TOKEN` | *(auto-detected)* | Gateway auth token |
+
+Departments are managed through the UI — click **+** in the status bar, or type `/dept` in chat.
+
+### Deployment
+
+**PM2 (Recommended):**
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save && pm2 startup
+```
+
+**Nginx Reverse Proxy:**
+
+```nginx
+location /cmd/ {
+    proxy_pass http://127.0.0.1:5100;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+**Health Check:** `GET /health` — returns server status, uptime, gateway state.
+
+### Project Structure
+
+```
+command-center/
+├── server/                # Express backend
+│   ├── index.js           #   HTTP + WebSocket server
+│   ├── gateway.js         #   OpenClaw Gateway client
+│   ├── agent.js           #   AI chat via Gateway
+│   ├── auth.js            #   Password auth (scrypt)
+│   └── routes/            #   API route modules
+├── src/                   # React 19 frontend
+│   ├── components/        #   20+ UI components
+│   ├── office/            #   Pixel art engine
+│   ├── i18n/              #   Chinese + English
+│   └── hooks/             #   WebSocket state management
+├── install.sh             # Interactive installer
+└── dist/                  # Production build output
+```
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, TypeScript 5.9, Vite 7, Canvas 2D |
+| Backend | Express 5, WebSocket (ws), chokidar |
+| AI | OpenClaw Gateway (protocol 3-5) |
+| Auth | scrypt + timing-safe comparison |
+| Process | PM2 |
+
+---
+
+<div align="center">
+
+MIT License | Made by [@tywang2006](https://github.com/tywang2006)
+
+</div>

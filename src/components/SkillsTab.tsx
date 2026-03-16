@@ -305,10 +305,10 @@ export default function SkillsTab() {
       )}
 
       {/* Create Modal */}
-      {showCreate && <CreateModal t={t} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchSkills() }} />}
+      {showCreate && <CreateModal t={t} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setTimeout(fetchSkills, 300) }} />}
 
       {/* Install Modal */}
-      {showInstall && <InstallModal t={t} onClose={() => setShowInstall(false)} onInstalled={() => { setShowInstall(false); fetchSkills() }} />}
+      {showInstall && <InstallModal t={t} onClose={() => setShowInstall(false)} onInstalled={() => { setShowInstall(false); setTimeout(fetchSkills, 300) }} />}
     </div>
   )
 }

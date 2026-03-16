@@ -1,0 +1,97 @@
+# Changelog
+
+All notable changes to **openclaw-command-center** will be documented in this file.
+
+## [1.4.0] - 2026-03-16
+
+### Fixed
+
+- **Gateway device auth (breaking)**: OpenClaw 2026.3.x requires Ed25519 challenge-response device authentication. Gateway client now generates a per-installation keypair, waits for `connect.challenge` nonce, signs the handshake payload, and includes the `device` field. Fixes `missing scope: operator.write` / `operator.read` errors after OpenClaw upgrade.
+
+### Added
+
+- **System config panel**: Gateway configuration, model management, agent defaults, channel settings directly from the UI (SystemTab)
+- **Setup wizard**: First-run onboarding flow with password creation and OpenClaw detection (SetupWizard)
+- **Login panel improvements**: Better error handling, setup wizard integration
+- **Guide tab redesign**: Responsive layout, improved mobile styling, clearer instructions
+- **Gateway config API**: `GET/PUT /api/system/gateway`, `GET/PUT /api/system/models`, `GET/PUT /api/system/agents`, `GET/PUT /api/system/channels` endpoints
+- **Auth hardening**: Constant-time password comparison, brute-force protection improvements
+
+### Changed
+
+- Package description updated to "超哥办公室 — OpenClaw 指挥中心"
+- Gateway handshake requests `operator.write` and `operator.read` scopes (required since OpenClaw 2026.3.x)
+- i18n keys expanded for new system config, setup, and guide features (en + zh)
+
+## [1.3.1] - 2026-03-12
+
+### Added
+
+- Multi-platform installer (DMG, Windows, npm CLI, Linux .run)
+- Department management and metrics dashboard
+- Integration upgrades (webhooks, Google Sheets)
+- Sub-agent visibility, escalation, and skills management tab
+- In-app Guide tab with beginner-friendly usage instructions
+- OpenClaw config panel in SystemTab
+- App launch menu (launch/reinstall/uninstall)
+- Auto-install OpenClaw in setup, auto-start Gateway on launch
+
+### Fixed
+
+- Gateway `offEvent` + background retry, metrics div-by-zero, workflows error handling
+- WS auth via first-message, streaming performance, error boundaries, broadcast race
+- DMG/installer build audit — branding, password hashing, runtime bugs
+- Inline auto-pair CJS, remove stale layout, auto-generate on startup
+- Gateway auth token resolution + dynamic layout for fresh installs
+- Stop Gateway reconnect loop on fatal errors (NOT_PAIRED, AUTH_FAILED)
+- macOS bash 3.2 compatibility (no associative arrays)
+
+### Security
+
+- Harden server, fix remaining code review findings
+- Fix critical/high findings from codebase security review
+
+## [1.2.0] - 2026-03-09
+
+### Added
+
+- Capabilities dashboard: channels, plugins, skills, models overview
+- Gmail integration (SMTP via App Password)
+- Google Drive backup (Service Account)
+- Voice input (OpenAI Whisper API)
+- Chat export (Markdown / HTML download)
+- Integration config management with test/reset
+
+### Changed
+
+- Merged SkillsTab into IntegrationsTab
+- Rebranded OpenClaw to ChaoClaw across user-facing strings
+
+## [1.1.0] - 2026-03-07
+
+### Added
+
+- Gateway event listening (agent streaming, health, tick, connect.challenge)
+- Telegram messages display in real-time in the app
+- Sub-agent details + pixel office display
+- 4x2 multi-room pixel office layout with department positioning
+- Memory editing in MemoryTab (edit + save)
+- Pixel sprite quality upgrade (8 core sprites rewritten)
+- OpenClaw Telegram plugin enabled
+
+### Fixed
+
+- StatusBar department card height consistency
+- Sub-agents persist after page refresh
+- StatusBar bottom card content truncation
+
+## [1.0.0] - 2026-03-06
+
+### Added
+
+- Initial release: React 19 + Express + WebSocket dashboard
+- OpenClaw Gateway integration (replace direct Kimi API calls)
+- 7-department pixel office with Canvas 2D rendering
+- Department chat, broadcast, sub-agent management
+- Real-time file watching + WebSocket push
+- Zoom slider for pixel office

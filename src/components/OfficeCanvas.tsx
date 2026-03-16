@@ -29,6 +29,7 @@ interface CollabLink {
   from: string
   to: string
   label: string
+  type?: 'org' | 'request'
 }
 
 interface OfficeCanvasProps {
@@ -80,7 +81,7 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     if (departments.length === 0) return
     if (officeStateRef.current) return
 
-    fetch('/cmd/assets/default-layout.json')
+    authedFetch('/api/layout')
       .then(res => res.json())
       .then(layout => {
         officeStateRef.current = new OfficeState(layout)
@@ -386,10 +387,6 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       if (collabLinks.length > 0) {
         collabAnimRef.current = (collabAnimRef.current + 1) % 1000
         ctx.save()
-        ctx.strokeStyle = COLLAB_ARROW_COLOR
-        ctx.lineWidth = Math.max(1, z * 0.5)
-        ctx.setLineDash(COLLAB_ARROW_DASH)
-        ctx.lineDashOffset = -(collabAnimRef.current * COLLAB_ARROW_ANIM_SPEED / 60)
 
         for (const link of collabLinks) {
           const fromIdx = departments.findIndex(d => d.id === link.from)
@@ -404,23 +401,32 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
           const x2 = offsetX + toCh.x * z
           const y2 = offsetY + toCh.y * z
 
+          const isOrg = link.type === 'org'
+
+          // Style: org links are subtle/static, request links are bright/animated
+          ctx.strokeStyle = isOrg ? 'rgba(0, 212, 170, 0.25)' : COLLAB_ARROW_COLOR
+          ctx.lineWidth = Math.max(1, z * (isOrg ? 0.3 : 0.5))
+          ctx.setLineDash(isOrg ? [4, 6] : COLLAB_ARROW_DASH)
+          ctx.lineDashOffset = isOrg ? 0 : -(collabAnimRef.current * COLLAB_ARROW_ANIM_SPEED / 60)
+
           // Draw line
           ctx.beginPath()
           ctx.moveTo(x1, y1)
           ctx.lineTo(x2, y2)
           ctx.stroke()
 
-          // Draw arrowhead at destination
-          const angle = Math.atan2(y2 - y1, x2 - x1)
-          const hs = COLLAB_ARROW_HEAD_SIZE * z * 0.3
-          ctx.setLineDash([])
-          ctx.beginPath()
-          ctx.moveTo(x2, y2)
-          ctx.lineTo(x2 - hs * Math.cos(angle - 0.4), y2 - hs * Math.sin(angle - 0.4))
-          ctx.moveTo(x2, y2)
-          ctx.lineTo(x2 - hs * Math.cos(angle + 0.4), y2 - hs * Math.sin(angle + 0.4))
-          ctx.stroke()
-          ctx.setLineDash(COLLAB_ARROW_DASH)
+          // Draw arrowhead at destination (skip for org links to reduce clutter)
+          if (!isOrg) {
+            const angle = Math.atan2(y2 - y1, x2 - x1)
+            const hs = COLLAB_ARROW_HEAD_SIZE * z * 0.3
+            ctx.setLineDash([])
+            ctx.beginPath()
+            ctx.moveTo(x2, y2)
+            ctx.lineTo(x2 - hs * Math.cos(angle - 0.4), y2 - hs * Math.sin(angle - 0.4))
+            ctx.moveTo(x2, y2)
+            ctx.lineTo(x2 - hs * Math.cos(angle + 0.4), y2 - hs * Math.sin(angle + 0.4))
+            ctx.stroke()
+          }
         }
         ctx.restore()
       }

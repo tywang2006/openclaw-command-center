@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { randomUUID } from 'crypto';
+import crypto, { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,50 +17,118 @@ const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBID
 const MIN_PROTOCOL = 3;
 const MAX_PROTOCOL = 5;
 
+// Client identity for gateway connection (must be from GATEWAY_CLIENT_IDS allowlist)
+const CLIENT_ID = 'gateway-client';
+const CLIENT_MODE = 'backend';
+const CONNECT_ROLE = 'operator';
+const CONNECT_SCOPES = ['operator.admin', 'operator.write', 'operator.read'];
+
+// Ed25519 SPKI header (12 bytes) — raw public key starts after this prefix
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+
+function base64UrlEncode(buf) {
+  return buf.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+}
+
 /**
- * Resolve auth token with fallback chain for forward compatibility.
- * Priority:
- *   1. OPENCLAW_AUTH_TOKEN env var
- *   2. openclaw.json → gateway.auth.token (Gateway shared secret)
- *   3. paired.json → device with clientId "gateway-client" + clientMode "backend"
- *   4. openclaw.json → legacy fields (authToken, token, auth.token)
+ * Load or create an Ed25519 device identity for command-center.
+ */
+function loadOrCreateDeviceIdentity() {
+  const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
+  const identityPath = path.join(home, 'plugins', 'command-center', 'device.json');
+
+  try {
+    if (fs.existsSync(identityPath)) {
+      const parsed = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+      if (parsed?.version === 1 && parsed.deviceId && parsed.publicKeyPem && parsed.privateKeyPem) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // Generate new Ed25519 keypair
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+  // Device ID = SHA-256 of raw public key bytes
+  const spki = publicKey.export({ type: 'spki', format: 'der' });
+  const rawPub = spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+    spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+    ? spki.subarray(ED25519_SPKI_PREFIX.length)
+    : spki;
+  const deviceId = crypto.createHash('sha256').update(rawPub).digest('hex');
+
+  const stored = { version: 1, deviceId, publicKeyPem, privateKeyPem, createdAtMs: Date.now() };
+  fs.mkdirSync(path.dirname(identityPath), { recursive: true });
+  fs.writeFileSync(identityPath, JSON.stringify(stored, null, 2) + '\n', { mode: 0o600 });
+  console.log('[Gateway] Generated new device identity:', deviceId);
+  return stored;
+}
+
+/**
+ * Build the `device` field for the connect handshake (challenge-response signing).
+ */
+function buildDeviceAuthField(identity, nonce, token) {
+  const signedAtMs = Date.now();
+
+  // Build v2 signing payload: version|deviceId|clientId|clientMode|role|scopes|signedAt|token|nonce
+  const version = nonce ? 'v2' : 'v1';
+  const parts = [
+    version,
+    identity.deviceId,
+    CLIENT_ID,
+    CLIENT_MODE,
+    CONNECT_ROLE,
+    CONNECT_SCOPES.join(','),
+    String(signedAtMs),
+    token ?? '',
+  ];
+  if (version === 'v2') {
+    parts.push(nonce ?? '');
+  }
+  const payload = parts.join('|');
+
+  // Sign with Ed25519 private key
+  const key = crypto.createPrivateKey(identity.privateKeyPem);
+  const sig = crypto.sign(null, Buffer.from(payload, 'utf8'), key);
+
+  // Raw public key in base64url
+  const spki = crypto.createPublicKey(identity.publicKeyPem).export({ type: 'spki', format: 'der' });
+  const rawPub = spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+    spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+    ? spki.subarray(ED25519_SPKI_PREFIX.length)
+    : spki;
+
+  const field = {
+    id: identity.deviceId,
+    publicKey: base64UrlEncode(rawPub),
+    signature: base64UrlEncode(sig),
+    signedAt: signedAtMs,
+  };
+  if (nonce) field.nonce = nonce;
+  return field;
+}
+
+/**
+ * Resolve gateway auth token (shared secret).
  */
 function resolveAuthToken() {
   if (process.env.OPENCLAW_AUTH_TOKEN) return process.env.OPENCLAW_AUTH_TOKEN;
 
   const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
-
-  // Try openclaw.json → gateway.auth.token first (most common)
   try {
     const configPath = path.join(home, 'openclaw.json');
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       if (config.gateway?.auth?.token) return config.gateway.auth.token;
-      // Legacy field names
       if (config.authToken || config.token || config.auth?.token) {
         return config.authToken || config.token || config.auth?.token;
       }
     }
   } catch {}
-
-  // Try paired.json — find our device's token
-  try {
-    const pairedPath = path.join(home, 'devices', 'paired.json');
-    if (fs.existsSync(pairedPath)) {
-      const devices = JSON.parse(fs.readFileSync(pairedPath, 'utf8'));
-      for (const entry of Object.values(devices)) {
-        if (entry.clientId === 'gateway-client' && entry.clientMode === 'backend') {
-          const token = entry.tokens?.operator?.token;
-          if (token) return token;
-        }
-      }
-    }
-  } catch {}
-
   return '';
 }
-
-const AUTH_TOKEN = resolveAuthToken();
 
 class GatewayClient {
   constructor() {
@@ -137,6 +205,10 @@ class GatewayClient {
         }
       }
 
+      // Reset handshake state for new connection
+      this._handshakeSent = false;
+      this._challengeNonce = null;
+
       try {
         this.ws = new WebSocket(GATEWAY_URL);
       } catch (err) {
@@ -200,30 +272,55 @@ class GatewayClient {
   // --- Internal ---
 
   _handleOpen() {
-    console.log('[Gateway] WebSocket connected, sending handshake...');
+    console.log('[Gateway] WebSocket connected, waiting for challenge...');
     this.connected = true;
     this.reconnectAttempt = 0;
+    this._challengeNonce = null;
 
-    this._send({
-      type: 'req',
-      id: 'connect',
-      method: 'connect',
-      params: {
-        minProtocol: MIN_PROTOCOL,
-        maxProtocol: MAX_PROTOCOL,
-        client: {
-          id: 'gateway-client',
-          version: '1.0.0',
-          platform: process.platform || 'linux',
-          mode: 'backend',
-          displayName: 'Command Center',
-        },
-        role: 'operator',
-        scopes: ['operator.admin'],
-        caps: ['tool-events', 'agent-events', 'channel-events'],
-        auth: { token: AUTH_TOKEN },
+    // If no challenge arrives within 2s, send handshake without nonce (fallback)
+    this._challengeTimer = setTimeout(() => {
+      if (!this._handshakeSent) {
+        console.log('[Gateway] No challenge received, sending handshake without nonce');
+        this._sendHandshake(null);
+      }
+    }, 2000);
+  }
+
+  _handleChallenge(nonce) {
+    if (this._challengeTimer) {
+      clearTimeout(this._challengeTimer);
+      this._challengeTimer = null;
+    }
+    this._challengeNonce = nonce;
+    this._sendHandshake(nonce);
+  }
+
+  _sendHandshake(nonce) {
+    if (this._handshakeSent) return;
+    this._handshakeSent = true;
+
+    const token = resolveAuthToken();
+    const identity = loadOrCreateDeviceIdentity();
+
+    const params = {
+      minProtocol: MIN_PROTOCOL,
+      maxProtocol: MAX_PROTOCOL,
+      client: {
+        id: CLIENT_ID,
+        version: '1.4.0',
+        platform: process.platform || 'linux',
+        mode: CLIENT_MODE,
+        displayName: 'Command Center',
       },
-    });
+      role: CONNECT_ROLE,
+      scopes: CONNECT_SCOPES,
+      caps: ['tool-events', 'agent-events', 'channel-events'],
+      auth: { token },
+      device: buildDeviceAuthField(identity, nonce, token),
+    };
+
+    console.log('[Gateway] Sending handshake with device auth (deviceId:', identity.deviceId.substring(0, 12) + '..., nonce:', nonce ? 'yes' : 'no', ')');
+    this._send({ type: 'req', id: 'connect', method: 'connect', params });
   }
 
   _handleMessage(raw) {
@@ -238,6 +335,16 @@ class GatewayClient {
     try {
       frame = JSON.parse(str);
     } catch {
+      return;
+    }
+
+    // Intercept connect.challenge before authentication completes
+    if (frame.type === 'event' && frame.event === 'connect.challenge') {
+      const nonce = frame.payload?.nonce;
+      console.log('[Gateway] Received connect.challenge, nonce:', nonce ? nonce.substring(0, 8) + '...' : 'none');
+      if (nonce) {
+        this._handleChallenge(nonce);
+      }
       return;
     }
 
@@ -294,7 +401,13 @@ class GatewayClient {
 
       this.authenticated = true;
       this._connectedAt = Date.now();
-      console.log('[Gateway] Authenticated successfully');
+      // Log granted scopes if present in hello-ok response
+      const auth = frame.payload?.auth;
+      if (auth?.scopes) {
+        console.log('[Gateway] Authenticated, granted scopes:', auth.scopes.join(', '));
+      } else {
+        console.log('[Gateway] Authenticated successfully');
+      }
       this._startHeartbeat();
 
       if (this._connectResolve) {

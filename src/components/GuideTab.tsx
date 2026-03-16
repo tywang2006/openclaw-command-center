@@ -8,27 +8,36 @@ export default function GuideTab() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const tocItems = [
+    { id: 'guide-overview', key: 's1' },
+    { id: 'guide-login', key: 's2' },
+    { id: 'guide-layout', key: 's3' },
+    { id: 'guide-dept', key: 's4' },
+    { id: 'guide-chat', key: 's5' },
+    { id: 'guide-bulletin', key: 's6' },
+    { id: 'guide-memory', key: 's7' },
+    { id: 'guide-cron', key: 's8' },
+    { id: 'guide-integ', key: 's9' },
+    { id: 'guide-system', key: 's10' },
+    { id: 'guide-tips', key: 's11' },
+  ]
+
   return (
     <div className="guide-tab">
-      <h2>{t('guide.title')}</h2>
-      <div className="guide-subtitle">{t('guide.subtitle')}</div>
+      {/* Hero */}
+      <div className="guide-hero">
+        <h2>{t('guide.title')}</h2>
+        <p className="guide-subtitle">{t('guide.subtitle')}</p>
+      </div>
 
-      {/* Table of contents */}
+      {/* Quick nav pills */}
       <div className="guide-toc">
-        <h3>{t('guide.toc')}</h3>
-        <ol>
-          <li><a onClick={() => scrollTo('guide-overview')}>{t('guide.s1.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-login')}>{t('guide.s2.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-layout')}>{t('guide.s3.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-dept')}>{t('guide.s4.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-chat')}>{t('guide.s5.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-bulletin')}>{t('guide.s6.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-memory')}>{t('guide.s7.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-cron')}>{t('guide.s8.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-integ')}>{t('guide.s9.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-system')}>{t('guide.s10.title')}</a></li>
-          <li><a onClick={() => scrollTo('guide-tips')}>{t('guide.s11.title')}</a></li>
-        </ol>
+        {tocItems.map((s, i) => (
+          <a key={s.id} className="guide-toc-pill" onClick={() => scrollTo(s.id)}>
+            <span className="guide-toc-num">{i + 1}</span>
+            {t(`guide.${s.key}.title`)}
+          </a>
+        ))}
       </div>
 
       {/* 1. Overview */}
@@ -75,21 +84,19 @@ export default function GuideTab() {
       <div className="guide-section" id="guide-layout">
         <h3><span className="guide-icon">3</span> {t('guide.s3.title')}</h3>
         <p>{t('guide.s3.p1')}</p>
-        <div className="guide-step">
-          <span className="guide-step-num">A</span>
-          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s3.area.top') }} />
-        </div>
-        <div className="guide-step">
-          <span className="guide-step-num">B</span>
-          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s3.area.left') }} />
-        </div>
-        <div className="guide-step">
-          <span className="guide-step-num">C</span>
-          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s3.area.right') }} />
-        </div>
-        <div className="guide-step">
-          <span className="guide-step-num">D</span>
-          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s3.area.bottom') }} />
+        <div className="guide-layout-grid">
+          <div className="guide-layout-item" data-label="A">
+            <span dangerouslySetInnerHTML={{ __html: t('guide.s3.area.top') }} />
+          </div>
+          <div className="guide-layout-item" data-label="B">
+            <span dangerouslySetInnerHTML={{ __html: t('guide.s3.area.left') }} />
+          </div>
+          <div className="guide-layout-item" data-label="C">
+            <span dangerouslySetInnerHTML={{ __html: t('guide.s3.area.right') }} />
+          </div>
+          <div className="guide-layout-item" data-label="D">
+            <span dangerouslySetInnerHTML={{ __html: t('guide.s3.area.bottom') }} />
+          </div>
         </div>
       </div>
 
@@ -114,8 +121,8 @@ export default function GuideTab() {
         </div>
       </div>
 
-      {/* 5. Chat */}
-      <div className="guide-section" id="guide-chat">
+      {/* 5. Chat (highlighted as core feature) */}
+      <div className="guide-section guide-section-highlight" id="guide-chat">
         <h3><span className="guide-icon">5</span> {t('guide.s5.title')}</h3>
         <p>{t('guide.s5.p1')}</p>
         <div className="guide-step">
@@ -237,20 +244,27 @@ export default function GuideTab() {
       {/* 11. Tips */}
       <div className="guide-section" id="guide-tips">
         <h3><span className="guide-icon">11</span> {t('guide.s11.title')}</h3>
-        <div className="guide-tip">
-          <strong>{t('guide.s11.t1.title')}</strong> {t('guide.s11.t1.desc')}
-        </div>
-        <div className="guide-tip">
-          <strong>{t('guide.s11.t2.title')}</strong> {t('guide.s11.t2.desc')}
-        </div>
-        <div className="guide-tip">
-          <strong>{t('guide.s11.t3.title')}</strong> {t('guide.s11.t3.desc')}
-        </div>
-        <div className="guide-tip">
-          <strong>{t('guide.s11.t4.title')}</strong> {t('guide.s11.t4.desc')}
-        </div>
-        <div className="guide-tip">
-          <strong>{t('guide.s11.t5.title')}</strong> {t('guide.s11.t5.desc')}
+        <div className="guide-tips-grid">
+          <div className="guide-tip-card">
+            <strong>{t('guide.s11.t1.title')}</strong>
+            <span>{t('guide.s11.t1.desc')}</span>
+          </div>
+          <div className="guide-tip-card">
+            <strong>{t('guide.s11.t2.title')}</strong>
+            <span>{t('guide.s11.t2.desc')}</span>
+          </div>
+          <div className="guide-tip-card">
+            <strong>{t('guide.s11.t3.title')}</strong>
+            <span>{t('guide.s11.t3.desc')}</span>
+          </div>
+          <div className="guide-tip-card">
+            <strong>{t('guide.s11.t4.title')}</strong>
+            <span>{t('guide.s11.t4.desc')}</span>
+          </div>
+          <div className="guide-tip-card">
+            <strong>{t('guide.s11.t5.title')}</strong>
+            <span>{t('guide.s11.t5.desc')}</span>
+          </div>
         </div>
       </div>
     </div>

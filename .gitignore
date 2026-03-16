@@ -5,6 +5,7 @@ dist/
 .env
 .env.local
 .auth_password
+.auth_password.plain
 .encryption_key
 integrations.json
 integrations.bak.*
@@ -18,3 +19,5 @@ outputs/
 notifications.json
 chaoagent.md
 replays/
+audit.jsonl
+tsconfig.tsbuildinfo

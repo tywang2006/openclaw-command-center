@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { OPENCLAW_HOME } from '../utils.js';
+import { getGateway } from '../gateway.js';
 
 const router = express.Router();
 const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
@@ -39,6 +40,91 @@ function maskKey(key) {
   if (key.length <= 12) return '***';
   return key.substring(0, 8) + '...' + key.substring(key.length - 4);
 }
+
+// ================================================
+// Feature 1: Gateway Configuration
+// ================================================
+
+/**
+ * GET /system/config/gateway
+ * Return gateway connection settings with masked token
+ */
+router.get('/system/config/gateway', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const gw = config.gateway || {};
+    const token = gw.auth?.token || '';
+
+    // Also read current runtime status
+    let stats = null;
+    try { stats = getGateway().stats; } catch {}
+
+    res.json({
+      url: process.env.OPENCLAW_GATEWAY_URL || gw.url || 'ws://127.0.0.1:18789',
+      hasToken: !!token,
+      tokenPreview: maskKey(token),
+      clientId: gw.clientId || 'gateway-client',
+      clientMode: gw.clientMode || 'backend',
+      stats,
+    });
+  } catch (error) {
+    console.error('[SystemConfig] GET /system/config/gateway error:', error);
+    res.status(500).json({ error: 'Failed to fetch gateway config' });
+  }
+});
+
+/**
+ * PUT /system/config/gateway
+ * Update gateway URL and/or auth token
+ * Body: { url?, token?, clientId?, clientMode? }
+ */
+router.put('/system/config/gateway', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    if (!config.gateway) config.gateway = {};
+    if (!config.gateway.auth) config.gateway.auth = {};
+
+    const { url, token, clientId, clientMode } = req.body;
+    if (url !== undefined) config.gateway.url = url;
+    if (token !== undefined) config.gateway.auth.token = token;
+    if (clientId !== undefined) config.gateway.clientId = clientId;
+    if (clientMode !== undefined) config.gateway.clientMode = clientMode;
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true, hint: 'Restart the server for changes to take effect.' });
+  } catch (error) {
+    console.error('[SystemConfig] PUT /system/config/gateway error:', error);
+    res.status(500).json({ error: 'Failed to update gateway config' });
+  }
+});
+
+/**
+ * POST /system/config/gateway/test
+ * Test gateway connectivity by checking current connection stats
+ */
+router.post('/system/config/gateway/test', async (req, res) => {
+  try {
+    const gw = getGateway();
+    const stats = gw.stats;
+
+    if (stats.connected && stats.authenticated) {
+      res.json({ success: true, message: `Connected (protocol ${stats.protocol || '?'})` });
+    } else if (stats.connected) {
+      res.json({ success: false, message: 'Connected but not authenticated — check token' });
+    } else {
+      res.json({ success: false, message: 'Not connected — check gateway URL and that openclaw gateway is running' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: `Test failed: ${error.message}` });
+  }
+});
 
 // ================================================
 // Feature 2: AI Model Configuration
@@ -132,6 +218,142 @@ router.put('/system/config/models', (req, res) => {
 });
 
 /**
+ * POST /system/config/models/provider
+ * Add a new provider with at least one model
+ * Body: { id, baseUrl, apiKey, api, model: { id, name, contextWindow?, maxTokens? } }
+ */
+router.post('/system/config/models/provider', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const { id, baseUrl, apiKey, api, model } = req.body;
+    if (!id || !baseUrl || !api) {
+      return res.status(400).json({ error: 'id, baseUrl, and api are required' });
+    }
+    if (!model || !model.id) {
+      return res.status(400).json({ error: 'model with id is required' });
+    }
+
+    if (!config.models) config.models = {};
+    if (!config.models.providers) config.models.providers = {};
+
+    if (config.models.providers[id]) {
+      return res.status(409).json({ error: `Provider "${id}" already exists` });
+    }
+
+    config.models.providers[id] = {
+      baseUrl,
+      apiKey: apiKey || '',
+      api,
+      models: [{
+        id: model.id,
+        name: model.name || model.id,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: model.contextWindow || 128000,
+        maxTokens: model.maxTokens || 8192,
+      }],
+    };
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true, fullModelId: `${id}/${model.id}` });
+  } catch (error) {
+    console.error('[SystemConfig] POST /system/config/models/provider error:', error);
+    res.status(500).json({ error: 'Failed to add provider' });
+  }
+});
+
+/**
+ * POST /system/config/models/provider/:providerId/model
+ * Add a model to an existing provider
+ * Body: { id, name?, contextWindow?, maxTokens? }
+ */
+router.post('/system/config/models/provider/:providerId/model', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const { providerId } = req.params;
+    const provider = config.models?.providers?.[providerId];
+    if (!provider) {
+      return res.status(404).json({ error: `Provider "${providerId}" not found` });
+    }
+
+    const { id, name, contextWindow, maxTokens } = req.body;
+    if (!id) {
+      return res.status(400).json({ error: 'model id is required' });
+    }
+
+    if (provider.models.some(m => m.id === id)) {
+      return res.status(409).json({ error: `Model "${id}" already exists in ${providerId}` });
+    }
+
+    provider.models.push({
+      id,
+      name: name || id,
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: contextWindow || 128000,
+      maxTokens: maxTokens || 8192,
+    });
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true, fullModelId: `${providerId}/${id}` });
+  } catch (error) {
+    console.error('[SystemConfig] POST model error:', error);
+    res.status(500).json({ error: 'Failed to add model' });
+  }
+});
+
+/**
+ * DELETE /system/config/models/provider/:providerId
+ * Remove a provider and all its models. Also cleans up primary/fallbacks references.
+ */
+router.delete('/system/config/models/provider/:providerId', (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const { providerId } = req.params;
+    if (!config.models?.providers?.[providerId]) {
+      return res.status(404).json({ error: `Provider "${providerId}" not found` });
+    }
+
+    // Clean up primary/fallbacks references
+    const prefix = `${providerId}/`;
+    const modelDefaults = config.agents?.defaults?.model;
+    if (modelDefaults) {
+      if (modelDefaults.primary?.startsWith(prefix)) {
+        modelDefaults.primary = '';
+      }
+      if (Array.isArray(modelDefaults.fallbacks)) {
+        modelDefaults.fallbacks = modelDefaults.fallbacks.filter(f => !f.startsWith(prefix));
+      }
+    }
+
+    delete config.models.providers[providerId];
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[SystemConfig] DELETE provider error:', error);
+    res.status(500).json({ error: 'Failed to delete provider' });
+  }
+});
+
+/**
  * POST /system/config/models/test
  * Test provider API key
  * Body: { provider: "moonshot" | "google" }
@@ -174,6 +396,120 @@ router.post('/system/config/models/test', async (req, res) => {
     res.status(500).json({ error: 'Test failed' });
   }
 });
+
+/**
+ * POST /system/config/models/sync
+ * Fetch all available models from each provider's API and update openclaw.json.
+ * Preserves existing model metadata (cost, reasoning overrides) when possible.
+ */
+router.post('/system/config/models/sync', async (req, res) => {
+  try {
+    const config = readConfig();
+    if (!config) return res.status(500).json({ error: 'Failed to read config' });
+
+    const providers = config.models?.providers || {};
+    const results = {};
+
+    for (const [id, prov] of Object.entries(providers)) {
+      if (!prov.apiKey) {
+        results[id] = { success: false, error: 'No API key' };
+        continue;
+      }
+
+      try {
+        let fetched = [];
+
+        if (prov.api === 'openai-completions') {
+          // OpenAI-compatible API
+          const response = await fetch(`${prov.baseUrl}/models`, {
+            headers: { 'Authorization': `Bearer ${prov.apiKey}` },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!response.ok) throw new Error(`API returned ${response.status}`);
+          const data = await response.json();
+          for (const m of (data.data || [])) {
+            const input = ['text'];
+            if (m.supports_image_in) input.push('image');
+            fetched.push({
+              id: m.id,
+              name: humanName(m.id),
+              reasoning: !!m.supports_reasoning,
+              input,
+              contextWindow: m.context_length || 128000,
+              maxTokens: 8192,
+            });
+          }
+        } else if (prov.api === 'google-generative-ai') {
+          // Google Generative AI
+          const response = await fetch(
+            `${prov.baseUrl}/v1beta/models?key=${prov.apiKey}`,
+            { signal: AbortSignal.timeout(15000) }
+          );
+          if (!response.ok) throw new Error(`API returned ${response.status}`);
+          const data = await response.json();
+          for (const m of (data.models || [])) {
+            const methods = m.supportedGenerationMethods || [];
+            if (!methods.includes('generateContent')) continue;
+            const modelId = (m.name || '').replace('models/', '');
+            if (!modelId) continue;
+            fetched.push({
+              id: modelId,
+              name: m.displayName || modelId,
+              reasoning: !!m.thinking,
+              input: ['text', 'image'],
+              contextWindow: m.inputTokenLimit || 128000,
+              maxTokens: m.outputTokenLimit || 8192,
+            });
+          }
+        } else {
+          results[id] = { success: false, error: `Unsupported API type: ${prov.api}` };
+          continue;
+        }
+
+        // Merge: keep existing model metadata (cost overrides etc.), add new ones
+        const existingMap = new Map((prov.models || []).map(m => [m.id, m]));
+        const merged = [];
+        for (const fm of fetched) {
+          const existing = existingMap.get(fm.id);
+          if (existing) {
+            // Preserve user's cost/alias overrides, update capabilities from API
+            merged.push({
+              ...fm,
+              cost: existing.cost || undefined,
+            });
+          } else {
+            merged.push(fm);
+          }
+        }
+
+        prov.models = merged;
+        results[id] = { success: true, count: merged.length };
+      } catch (err) {
+        results[id] = { success: false, error: err.message };
+      }
+    }
+
+    if (!writeConfig(config)) {
+      return res.status(500).json({ error: 'Failed to save config' });
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('[SystemConfig] POST /system/config/models/sync error:', error);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
+/** Convert model ID to human-readable name */
+function humanName(id) {
+  return id
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\bV(\d)/gi, 'V$1')
+    .replace(/\b(\d+)k\b/gi, '$1K')
+    .replace(/\bPreview\b/g, 'Preview')
+    .replace(/\bVision\b/g, 'Vision');
+}
 
 // ================================================
 // Feature 3: Telegram Settings

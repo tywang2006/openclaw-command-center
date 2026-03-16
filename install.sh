@@ -644,56 +644,16 @@ do_prereqs() {
 }
 
 do_install_deps() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
-
-  # If we're running from the repo already, use it
-  if [[ -f "${script_dir}/package.json" ]]; then
-    CMD_DIR="$script_dir"
-  fi
-
-  # If CMD_DIR doesn't have package.json, try to clone or locate
-  if [[ ! -f "${CMD_DIR}/package.json" ]]; then
-    if [[ -n "$script_dir" ]] && [[ -f "${script_dir}/package.json" ]]; then
-      # Running from repo, copy to target (cp -a instead of rsync)
-      if [[ "$script_dir" != "$CMD_DIR" ]]; then
-        info "$(t install_deps_clone)"
-        mkdir -p "$CMD_DIR"
-        # Copy everything except build artifacts and user config
-        cp -a "$script_dir"/. "$CMD_DIR"/
-        rm -rf "${CMD_DIR}/node_modules" "${CMD_DIR}/dist" "${CMD_DIR}/logs" "${CMD_DIR}/tsconfig.tsbuildinfo"
-      fi
-    elif command -v git &>/dev/null; then
-      info "$(t install_deps_clone)"
-      mkdir -p "$(dirname "$CMD_DIR")"
-      git clone https://github.com/openclaw/command-center.git "$CMD_DIR" 2>/dev/null || {
-        warn "$(t git_clone_fail)"
-      }
-    fi
-  else
-    # Existing install — update if git available
-    if [[ -d "${CMD_DIR}/.git" ]] && command -v git &>/dev/null; then
-      info "$(t install_deps_update)"
-      (cd "$CMD_DIR" && git pull --rebase 2>/dev/null) || warn "$(t git_pull_fail)"
-    fi
-  fi
-
-  if [[ ! -f "${CMD_DIR}/package.json" ]]; then
-    err "$(printf "$(t pkg_not_found)" "${CMD_DIR}")"
-    return 1
-  fi
-
-  cd "$CMD_DIR" || return 1
-
-  # npm ci (deterministic) if lockfile exists, else npm install
+  # Install command-center globally via npm (pre-built, no git/build needed)
   info "$(t install_deps_npm)"
-  local npm_cmd
-  if [[ -f "${CMD_DIR}/package-lock.json" ]]; then
-    npm_cmd="npm ci --no-fund --no-audit"
-  else
-    npm_cmd="npm install --no-fund --no-audit"
-  fi
-  if run_with_spinner "npm install" $npm_cmd; then
+  if run_with_spinner "npm install -g openclaw-command-center" npm install -g openclaw-command-center@latest; then
+    # Resolve global package path for PM2
+    CMD_DIR=$(node -e "console.log(require.resolve('openclaw-command-center/package.json').replace('/package.json',''))" 2>/dev/null || echo "")
+    if [[ -z "$CMD_DIR" ]] || [[ ! -f "${CMD_DIR}/package.json" ]]; then
+      # Fallback: find via npm root
+      CMD_DIR="$(npm root -g)/openclaw-command-center"
+    fi
+    log "Installed at ${CMD_DIR}"
     return 0
   else
     err "$(t install_deps_npm_fail)"
@@ -776,20 +736,7 @@ do_configure() {
     log "$(t configure_password_ok)"
   fi
 
-  # --- integrations.json (needed by server/routes/integrations-config.js) ---
-  local integ_path="${CMD_DIR}/integrations.json"
-  if [[ ! -f "$integ_path" ]]; then
-    cat > "$integ_path" <<'INTEGEOF'
-{
-  "gmail": { "enabled": false, "email": "", "appPassword": "" },
-  "drive": { "enabled": false, "serviceAccountKey": null, "folderId": null },
-  "voice": { "enabled": true, "source": "openclaw", "apiKeyOverride": null },
-  "webhook": { "enabled": false, "url": "", "secret": "" },
-  "google-sheets": { "enabled": false }
-}
-INTEGEOF
-    log "integrations.json created"
-  fi
+  # integrations.json — server auto-generates on first run
 
   # --- bulletin/board.md (needed by server) ---
   local board_path="${OPENCLAW_HOME}/workspace/departments/bulletin/board.md"
@@ -846,18 +793,7 @@ DEPTEOF
 do_build_start() {
   cd "$CMD_DIR" || return 1
 
-  # Build frontend
-  info "$(t build_run)"
-  if ! run_with_spinner "$(t build_run)" npm run build; then
-    err "$(t build_fail)"
-    return 1
-  fi
-  if [[ ! -f "${CMD_DIR}/dist/index.html" ]]; then
-    err "$(t build_fail)"
-    return 1
-  fi
-
-  # Layout generation skipped — server auto-generates on startup (layout-generator.js)
+  # No build needed — npm package ships pre-built dist/
 
   # Check port conflict (fallback chain: ss → lsof → netstat)
   local port_in_use=0
@@ -878,35 +814,22 @@ do_build_start() {
     fi
   fi
 
-  # Generate ecosystem config with CMD_PORT and OPENCLAW_HOME
-  cat > "${CMD_DIR}/ecosystem.config.cjs" <<PMEOF
-const path = require('path');
-const home = process.env.HOME || '/root';
+  # Find the global bin path
+  local CMD_BIN
+  CMD_BIN=$(which openclaw-cmd 2>/dev/null || echo "")
+  if [[ -z "$CMD_BIN" ]]; then
+    err "openclaw-cmd not found in PATH"
+    return 1
+  fi
 
-module.exports = {
-  apps: [{
-    name: '${PM2_NAME}',
-    script: 'server/index.js',
-    cwd: '${CMD_DIR}',
-    node_args: '--max-old-space-size=256',
-    max_memory_restart: '400M',
-    autorestart: true,
-    exp_backoff_restart_delay: 1000,
-    watch: false,
-    log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    env: {
-      NODE_ENV: 'production',
-      CMD_PORT: '${CMD_PORT}',
-      OPENCLAW_HOME: '${OPENCLAW_HOME}',
-    }
-  }]
-};
-PMEOF
-
-  # PM2 start
+  # PM2 start using the global bin
   info "$(t build_pm2_start)"
   pm2 delete "$PM2_NAME" 2>/dev/null || true
-  pm2 start "${CMD_DIR}/ecosystem.config.cjs" &>/dev/null || return 1
+  CMD_PORT="${CMD_PORT}" OPENCLAW_HOME="${OPENCLAW_HOME}" \
+    pm2 start "$CMD_BIN" --name "$PM2_NAME" --interpreter node \
+    --node-args="--max-old-space-size=256" \
+    --max-memory-restart="400M" \
+    --log-date-format="YYYY-MM-DD HH:mm:ss" &>/dev/null || return 1
 
   # Enable auto-start on system reboot (non-fatal)
   pm2 startup 2>/dev/null || true
@@ -1247,7 +1170,7 @@ show_summary() {
   echo -e "    ${DIM}$(t done_cmd_logs)${NC}     pm2 logs ${PM2_NAME}"
   echo -e "    ${DIM}$(t done_cmd_restart)${NC}  pm2 restart ${PM2_NAME}"
   echo -e "    ${DIM}$(t done_cmd_stop)${NC}     pm2 stop ${PM2_NAME}"
-  echo -e "    ${DIM}$(t done_cmd_deploy)${NC}   bash ${CMD_DIR}/scripts/deploy.sh"
+  echo -e "    ${DIM}$(t done_cmd_deploy)${NC}   npm update -g openclaw-command-center && pm2 restart ${PM2_NAME}"
   echo -e "    ${DIM}$(t done_cmd_password)${NC}  curl -X PUT http://localhost:${CMD_PORT}/api/auth/password"
   echo ""
   echo -e "  ${TEAL}${BOLD}$(printf '%.0s━' {1..50})${NC}"

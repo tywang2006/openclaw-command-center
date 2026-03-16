@@ -25,6 +25,7 @@ import auditRoutes, { recordAudit } from './routes/audit.js';
 import notificationsRoutes, { notifyError, notifyWarning, notifyInfo } from './routes/notifications.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
+import setupRoutes, { checkSetupStatus } from './routes/setup.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { BASE_PATH } from './utils.js';
@@ -104,6 +105,9 @@ app.use((req, res, next) => {
 
 // Authentication routes (must be BEFORE authMiddleware)
 app.use('/api/auth', authRouter);
+
+// Setup routes (no auth required — needed for first-run wizard)
+app.use('/api', setupRoutes);
 
 // Health check (no auth required)
 const healthHandler = (req, res) => {
@@ -190,7 +194,10 @@ app.get('/cmd/{*splat}', (req, res) => {
   }
 });
 
-// Redirect root /cmd to /cmd/
+// Redirect root to /cmd/
+app.get('/', (req, res) => {
+  res.redirect('/cmd/');
+});
 app.get('/cmd', (req, res) => {
   res.redirect('/cmd/');
 });
@@ -210,6 +217,16 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+// Throttle noisy WS logs — only log unauthorized once per IP per 30s
+const _wsUnauthLog = new Map();
+// Cleanup stale entries every 60s to prevent unbounded growth
+setInterval(() => {
+  const cutoff = Date.now() - 60000;
+  for (const [ip, ts] of _wsUnauthLog) {
+    if (ts < cutoff) _wsUnauthLog.delete(ip);
+  }
+}, 60000);
+
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
   let authenticated = false;
@@ -217,7 +234,6 @@ wss.on('connection', (ws, req) => {
   // Auth via first message — client must send { type: 'auth', token } within 5s
   const authTimeout = setTimeout(() => {
     if (!authenticated) {
-      console.log(`[WebSocket] Auth timeout for ${clientIp}`);
       ws.close(1008, 'Auth timeout');
     }
   }, 5000);
@@ -231,7 +247,12 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(str);
 
       if (msg.type !== 'auth' || !validateToken(msg.token)) {
-        console.log(`[WebSocket] Unauthorized connection from ${clientIp}`);
+        const now = Date.now();
+        const last = _wsUnauthLog.get(clientIp) || 0;
+        if (now - last > 30000) {
+          console.log(`[WebSocket] Unauthorized connection from ${clientIp}`);
+          _wsUnauthLog.set(clientIp, now);
+        }
         ws.close(1008, 'Unauthorized');
         return;
       }
@@ -241,8 +262,7 @@ wss.on('connection', (ws, req) => {
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
 
-      console.log(`[WebSocket] Client authenticated from ${clientIp}`);
-      console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
+      console.log(`[WebSocket] Client authenticated from ${clientIp} (total: ${wss.clients.size})`);
 
       // Send initial state after successful auth
       try {
@@ -277,8 +297,9 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     clearTimeout(authTimeout);
-    console.log(`[WebSocket] Client disconnected from ${clientIp}`);
-    console.log(`[WebSocket] Total clients: ${wss.clients.size}`);
+    if (authenticated) {
+      console.log(`[WebSocket] Client disconnected from ${clientIp} (total: ${wss.clients.size})`);
+    }
   });
 
   ws.on('error', (error) => {
@@ -487,15 +508,14 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 1000);
 });
 
-// Auto-generate layout if missing (first run or fresh install)
+// Always regenerate layout from actual department config on startup.
+// The bundled default-layout.json reflects the dev environment and won't
+// match a fresh install's department list.
 try {
-  const layoutPath = path.join(__dirname, '..', 'dist', 'assets', 'default-layout.json');
-  if (!fs.existsSync(layoutPath)) {
-    const { generateAndSave } = await import('./layout-generator.js');
-    const result = generateAndSave();
-    if (result.departmentCount > 0) {
-      console.log(`[Startup] Generated layout: ${result.departmentCount} departments`);
-    }
+  const { generateAndSave } = await import('./layout-generator.js');
+  const result = generateAndSave({ distPath });
+  if (result.departmentCount > 0) {
+    console.log(`[Startup] Generated layout: ${result.departmentCount} departments`);
   }
 } catch (err) {
   console.warn('[Startup] Layout generation skipped:', err.message);
