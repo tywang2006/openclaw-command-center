@@ -2,6 +2,34 @@
 
 All notable changes to **openclaw-command-center** will be documented in this file.
 
+## [1.5.0] - 2026-03-17
+
+### Added
+
+- **Meeting Room**: Real-time multi-department discussion with sequential responses — each department sees previous responses for genuine cross-department interaction
+- **Meeting templates**: Quick-create standup, weekly review, tech review, product sync with SVG icons
+- **Auto-send topic**: Meeting topic auto-sent on creation to kick off department discussion immediately
+- **Meeting minutes export**: Auto-export to Google Drive on meeting end with formatted markdown
+- **Tab bar redesign**: 2-row 6-column CSS grid layout fitting 12 tabs with shortened labels
+- **Command Palette (Cmd+K)**: Fuzzy search for departments, tabs, and actions with keyboard navigation
+- **PWA support**: Progressive Web App with service worker, manifest.json, offline shell caching, iOS/Android install
+- **Chat panel decomposition**: Split into ChatInput, ChatMessages, ChatToolbar, SubAgentPanel components
+- **Chat retry route**: Retry failed department messages via `/api/chat-retry`
+- **Push notifications route**: Web Push subscription management via `/api/push`
+- **Passive wheel fix**: OfficeCanvas uses native `addEventListener` with `{ passive: false }` — no more console errors
+
+### Changed
+
+- MeetingRoom CSS: all hardcoded purple colors replaced with charcoal theme CSS variables
+- Meeting department responses: sequential instead of parallel (real discussion vs broadcast)
+- i18n labels shortened for compact tab layout (en + zh)
+- Package description and keywords updated for npm discoverability
+
+### Security
+
+- Input sanitization and auth hardening improvements
+- Rate limiting enhancements on sensitive routes
+
 ## [1.4.0] - 2026-03-16
 
 ### Fixed
