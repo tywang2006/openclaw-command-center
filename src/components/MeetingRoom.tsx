@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Department } from '../hooks/useAgentState'
+import { consumeMeetingDeptResponse, consumeMeetingRoundComplete, consumeMeetingEvent, useMeetingEvents } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import { authedFetch } from '../utils/api'
 import './MeetingRoom.css'
@@ -40,10 +41,18 @@ const MEETING_TEMPLATES = [
 ]
 
 interface MeetingMessage {
-  role: 'user' | 'dept'
+  role: 'user' | 'dept' | 'system'
   deptId: string
   text: string
   timestamp: number
+  negotiationId?: string
+}
+
+interface ActionItem {
+  task: string
+  owner: string
+  priority: 'high' | 'medium' | 'low'
+  deadline_hint?: string
 }
 
 interface Meeting {
@@ -53,6 +62,7 @@ interface Meeting {
   messages: MeetingMessage[]
   status: string
   createdAt: number
+  actionItems?: ActionItem[]
 }
 
 interface MeetingRoomProps {
@@ -70,6 +80,8 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   const [selectedDepts, setSelectedDepts] = useState<string[]>([])
   const [driveLink, setDriveLink] = useState<string | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const currentRoundIdRef = useRef<string | null>(null)
+
 
   // Load meetings list — auto-enter first active meeting
   useEffect(() => {
@@ -138,12 +150,13 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
         body: JSON.stringify({ message: msg }),
       })
       const data = await res.json()
-      if (data.success) {
-        // Reload full meeting to get all dept responses
-        await loadMeeting(meetingId)
+      if (data.status === 'accepted') {
+        // Store roundId to track this round
+        currentRoundIdRef.current = data.roundId
+        // Department responses will arrive via WebSocket
       }
     } catch {}
-    setSending(false)
+    // Don't set sending=false here, wait for round-complete event
   }
 
   // Send message to meeting (triggers all depts to respond)
@@ -156,6 +169,18 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
   const [meetingEnded, setMeetingEnded] = useState(false)
   const [ending, setEnding] = useState(false)
+
+  // Negotiation state
+  const [negotiating, setNegotiating] = useState(false)
+  const [showNegotiateForm, setShowNegotiateForm] = useState(false)
+  const [negotiationProposal, setNegotiationProposal] = useState('')
+  const [negotiationRounds, setNegotiationRounds] = useState(3)
+  const [negotiationVotes, setNegotiationVotes] = useState<Array<{ deptId: string; stance: string; reason: string; suggestion: string; round: number }>>([])
+  const [negotiationRound, setNegotiationRound] = useState(0)
+  const [negotiationMaxRounds, setNegotiationMaxRounds] = useState(3)
+  const [negotiationResult, setNegotiationResult] = useState<string | null>(null)
+  const [negotiationAgreeCount, setNegotiationAgreeCount] = useState(0)
+  const [negotiationTotal, setNegotiationTotal] = useState(0)
 
   // End meeting
   const endMeeting = async () => {
@@ -172,6 +197,127 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     setEnding(false)
     setMeetings(prev => prev.filter(m => m.id !== activeMeeting.id))
   }
+
+  // Start negotiation
+  const startNegotiation = async () => {
+    if (!activeMeeting || !negotiationProposal.trim()) return
+    setNegotiating(true)
+    setNegotiationVotes([])
+    setNegotiationResult(null)
+    try {
+      const res = await authedFetch(`/api/meetings/${activeMeeting.id}/negotiate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal: negotiationProposal.trim(), maxRounds: negotiationRounds })
+      })
+      const data = await res.json()
+      if (data.status === 'accepted') {
+        setNegotiationProposal('')
+        setShowNegotiateForm(false)
+      }
+    } catch {
+      setNegotiating(false)
+    }
+  }
+
+  // Process negotiation WebSocket events
+  const meetingEvents = useMeetingEvents()
+  useEffect(() => {
+    let event = consumeMeetingEvent()
+    while (event) {
+      const e = event as any
+      if (e.type === 'meeting:negotiation-vote' && e.meetingId === activeMeeting?.id) {
+        setNegotiationVotes(prev => [...prev, { deptId: e.deptId, stance: e.stance, reason: e.reason, suggestion: e.suggestion, round: e.round }])
+      } else if (e.type === 'meeting:negotiation-round' && e.meetingId === activeMeeting?.id) {
+        setNegotiationRound(e.round)
+        setNegotiationMaxRounds(e.maxRounds)
+        setNegotiationAgreeCount(e.agreeCount)
+        setNegotiationTotal(e.total)
+      } else if (e.type === 'meeting:negotiation-end' && e.meetingId === activeMeeting?.id) {
+        setNegotiating(false)
+        setNegotiationResult(e.result)
+        setNegotiationAgreeCount(e.agreeCount || 0)
+        setNegotiationTotal(e.total || 0)
+        if (activeMeeting) loadMeeting(activeMeeting.id)
+      }
+      event = consumeMeetingEvent()
+    }
+  }, [meetingEvents, activeMeeting?.id])
+
+  // Stance color helper
+  const getStanceColor = (stance: string): string => {
+    switch (stance) {
+      case 'agree': return '#10b981'
+      case 'disagree': return '#ef4444'
+      case 'modify': return '#f59e0b'
+      default: return 'var(--text-muted)'
+    }
+  }
+
+  const getStanceLabel = (stance: string): string => {
+    switch (stance) {
+      case 'agree': return '同意'
+      case 'disagree': return '反对'
+      case 'modify': return '修改'
+      default: return '弃权'
+    }
+  }
+
+  // Poll for real-time department responses
+  useEffect(() => {
+    if (!activeMeeting) return
+
+    const interval = setInterval(() => {
+      let response = consumeMeetingDeptResponse()
+      while (response) {
+        const currentResponse = response
+        if (currentResponse.meetingId === activeMeeting.id) {
+          // Add department response to meeting
+          setActiveMeeting(prev => {
+            if (!prev || prev.id !== currentResponse.meetingId) return prev
+
+            // Check if this message already exists (avoid duplicates)
+            const exists = prev.messages.some(m =>
+              m.deptId === currentResponse.deptId &&
+              m.timestamp === currentResponse.timestamp
+            )
+            if (exists) return prev
+
+            return {
+              ...prev,
+              messages: [...prev.messages, {
+                role: 'dept',
+                deptId: currentResponse.deptId,
+                text: currentResponse.text,
+                timestamp: currentResponse.timestamp
+              }]
+            }
+          })
+        }
+        response = consumeMeetingDeptResponse()
+      }
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [activeMeeting?.id])
+
+  // Poll for round complete events
+  useEffect(() => {
+    if (!activeMeeting) return
+
+    const interval = setInterval(() => {
+      let complete = consumeMeetingRoundComplete()
+      while (complete) {
+        if (complete.meetingId === activeMeeting.id && currentRoundIdRef.current === complete.roundId) {
+          setSending(false)
+          currentRoundIdRef.current = null
+        }
+        complete = consumeMeetingRoundComplete()
+      }
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [activeMeeting?.id])
 
   // Auto-scroll
   useEffect(() => {
@@ -223,6 +369,8 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
   const getDeptName = (deptId: string): string => {
     if (deptId === 'user') return '你'
+    if (deptId === 'negotiation') return '谈判系统'
+    if (deptId === 'action-items') return '行动事项'
     return departments.find(d => d.id === deptId)?.name || deptId
   }
 
@@ -326,6 +474,28 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                 查看 Google Drive 纪要
               </a>
             )}
+
+            {/* Action Items Section */}
+            {activeMeeting.actionItems && activeMeeting.actionItems.length > 0 && (
+              <div className="meeting-action-items">
+                <h5>行动事项</h5>
+                {activeMeeting.actionItems.map((item, i) => (
+                  <div key={i} className="meeting-action-item">
+                    <span className={`action-priority ${item.priority}`}>
+                      {item.priority === 'high' ? 'HIGH' : item.priority === 'medium' ? 'MED' : 'LOW'}
+                    </span>
+                    <span className="action-task">{item.task}</span>
+                    <span className="action-owner" style={{ color: getDeptColor(item.owner) }}>
+                      {getDeptName(item.owner)}
+                    </span>
+                    {item.deadline_hint && (
+                      <span className="action-deadline">{item.deadline_hint}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="meeting-minutes">
               <h5>会议记录</h5>
               {activeMeeting.messages.map((msg, i) => (
@@ -358,29 +528,111 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
             {/* Messages */}
             <div className="meeting-messages" ref={messagesRef}>
-              {activeMeeting.messages.map((msg, i) => (
-                <div key={`${msg.deptId}-${msg.timestamp}-${i}`} className={`meeting-msg ${msg.deptId === 'user' ? 'user' : 'dept'}`}>
-                  <div className="meeting-msg-meta">
-                    {msg.deptId !== 'user' && <DeptIcon deptId={msg.deptId} size={12} />}
-                    <span className="meeting-msg-sender" style={{ color: getDeptColor(msg.deptId) }}>
-                      {getDeptName(msg.deptId)}
-                    </span>
-                    <span className="meeting-msg-time">
-                      {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                    </span>
+              {activeMeeting.messages.map((msg, i) => {
+                // Negotiation system messages
+                if (msg.negotiationId && msg.role === 'system') {
+                  return (
+                    <div key={`${msg.deptId}-${msg.timestamp}-${i}`} className="negotiation-system-msg">
+                      <div className="meeting-msg-text" style={{ background: 'var(--bg-panel)', borderLeft: '3px solid var(--accent-color)' }}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  )
+                }
+                // Negotiation department votes
+                if (msg.negotiationId && msg.role === 'dept') {
+                  const roundMatch = msg.text.match(/\[Round (\d+)\] (\w+): (.*)/)
+                  if (roundMatch) {
+                    const stance = roundMatch[2].toLowerCase()
+                    const reason = roundMatch[3]
+                    const lines = msg.text.split('\n')
+                    const suggestion = lines[1]?.startsWith('Suggestion:') ? lines[1].substring(12).trim() : ''
+                    return (
+                      <div key={`${msg.deptId}-${msg.timestamp}-${i}`} className="negotiation-vote" style={{ borderColor: getStanceColor(stance) }}>
+                        <div className="negotiation-vote-header">
+                          <DeptIcon deptId={msg.deptId} size={14} />
+                          <span className="negotiation-vote-dept" style={{ color: getDeptColor(msg.deptId) }}>{getDeptName(msg.deptId)}</span>
+                          <span className="negotiation-vote-stance" style={{ color: getStanceColor(stance) }}>{getStanceLabel(stance)}</span>
+                        </div>
+                        <div className="negotiation-vote-reason">{reason}</div>
+                        {suggestion && <div className="negotiation-vote-suggestion">建议: {suggestion}</div>}
+                      </div>
+                    )
+                  }
+                }
+                // Regular messages
+                return (
+                  <div key={`${msg.deptId}-${msg.timestamp}-${i}`} className={`meeting-msg ${msg.deptId === 'user' ? 'user' : 'dept'}`}>
+                    <div className="meeting-msg-meta">
+                      {msg.deptId !== 'user' && <DeptIcon deptId={msg.deptId} size={12} />}
+                      <span className="meeting-msg-sender" style={{ color: getDeptColor(msg.deptId) }}>
+                        {getDeptName(msg.deptId)}
+                      </span>
+                      <span className="meeting-msg-time">
+                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                      </span>
+                    </div>
+                    <div className="meeting-msg-text">{msg.text}</div>
                   </div>
-                  <div className="meeting-msg-text">{msg.text}</div>
+                )
+              })}
+
+              {/* Negotiation progress indicator */}
+              {negotiating && negotiationRound > 0 && (
+                <div className="negotiation-progress">
+                  <div className="negotiation-progress-header">轮次 {negotiationRound}/{negotiationMaxRounds}</div>
+                  <div className="negotiation-progress-bar">
+                    <div className="negotiation-progress-fill" style={{
+                      width: `${negotiationTotal > 0 ? (negotiationAgreeCount / negotiationTotal) * 100 : 0}%`,
+                      background: negotiationAgreeCount === negotiationTotal ? '#10b981' : 'var(--accent-color)'
+                    }} />
+                  </div>
+                  <div className="negotiation-progress-text">{negotiationAgreeCount}/{negotiationTotal} 同意</div>
                 </div>
-              ))}
+              )}
+
+              {/* Negotiation result banner */}
+              {negotiationResult && (
+                <div className={`negotiation-result negotiation-result-${negotiationResult}`}>
+                  <strong>{negotiationResult === 'consensus' ? '达成共识' : negotiationResult === 'majority' ? '多数同意' : '未达共识'}</strong>
+                  <span> - {negotiationAgreeCount}/{negotiationTotal} 同意</span>
+                </div>
+              )}
+
               {sending && (
                 <div className="meeting-msg dept">
                   <div className="meeting-msg-meta">
                     <span className="meeting-msg-sender">各部门思考中...</span>
                   </div>
-                  <div className="chat-typing"><span></span><span></span><span></span></div>
+                  <div className="meeting-typing"><span></span><span></span><span></span></div>
                 </div>
               )}
             </div>
+
+            {/* Negotiate form */}
+            {showNegotiateForm && !negotiating && (
+              <div className="meeting-negotiate-form">
+                <textarea
+                  className="meeting-input"
+                  value={negotiationProposal}
+                  onChange={e => setNegotiationProposal(e.target.value)}
+                  placeholder="输入需要各部门讨论的提案..."
+                  rows={3}
+                />
+                <div className="meeting-negotiate-form-row">
+                  <label>
+                    轮次:
+                    <input type="number" min="1" max="5" value={negotiationRounds}
+                      onChange={e => setNegotiationRounds(parseInt(e.target.value) || 3)}
+                      style={{ width: '60px', marginLeft: '8px' }} />
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="meeting-btn" onClick={() => { setShowNegotiateForm(false); setNegotiationProposal('') }}>取消</button>
+                    <button className="meeting-btn create" onClick={startNegotiation} disabled={!negotiationProposal.trim()}>开始谈判</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Input */}
             <div className="meeting-input-row">
@@ -390,9 +642,12 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                 onChange={e => setText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder="输入会议议题或指令..."
-                disabled={sending}
+                disabled={sending || negotiating}
               />
-              <button className="meeting-btn send" onClick={sendMessage} disabled={sending || !text.trim()}>
+              {!showNegotiateForm && !negotiating && (
+                <button className="meeting-btn" onClick={() => setShowNegotiateForm(true)} title="发起谈判">谈判</button>
+              )}
+              <button className="meeting-btn send" onClick={sendMessage} disabled={sending || !text.trim() || negotiating}>
                 {sending ? '...' : '发送'}
               </button>
             </div>

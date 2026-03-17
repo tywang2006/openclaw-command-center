@@ -443,7 +443,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         )}
         {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
         {rightTab === 'meeting' && <MeetingRoom departments={agentState.departments} onClose={() => setRightTab('chat')} />}
-        {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
+        {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} onSwitchTab={setRightTab} />}
         {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
         {rightTab === 'skills' && <SkillsTab />}
         {rightTab === 'system' && <SystemTab />}

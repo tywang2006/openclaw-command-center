@@ -4,11 +4,47 @@ import { chat } from '../agent.js';
 import { hasDriveAuth, getDriveClient, getOrCreateBackupFolder, getDriveConfig } from './drive.js';
 import { notify } from './notifications.js';
 import { Readable } from 'stream';
+import fs from 'fs';
+import path from 'path';
+import { safeWriteFileSync, BASE_PATH } from '../utils.js';
 
 const router = express.Router();
 
 // Active meetings store
 const meetings = new Map();
+
+// Ensure meetings directory exists
+const MEETINGS_DIR = path.join(BASE_PATH, 'departments', 'meetings');
+if (!fs.existsSync(MEETINGS_DIR)) {
+  fs.mkdirSync(MEETINGS_DIR, { recursive: true });
+}
+
+// Load meetings from disk on startup
+function loadMeetingsFromDisk() {
+  const dir = path.join(BASE_PATH, 'departments', 'meetings');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    return;
+  }
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+  for (const file of files) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+      if (data.id && data.status === 'active') {
+        meetings.set(data.id, data);
+      }
+    } catch {}
+  }
+  console.log(`[Meetings] Loaded ${meetings.size} active meetings from disk`);
+}
+loadMeetingsFromDisk();
+
+// Persist meeting to disk
+function persistMeeting(meeting) {
+  const dir = path.join(BASE_PATH, 'departments', 'meetings');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  safeWriteFileSync(path.join(dir, `${meeting.id}.json`), JSON.stringify(meeting, null, 2));
+}
 
 /**
  * POST /api/meetings
@@ -32,6 +68,7 @@ router.post('/', async (req, res) => {
     createdAt: Date.now(),
   };
   meetings.set(meetingId, meeting);
+  persistMeeting(meeting);
 
   console.log(`[Meetings] Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
 
@@ -50,7 +87,7 @@ router.post('/', async (req, res) => {
       });
       let sent = 0;
       wss.clients.forEach(c => {
-        if (c.readyState === 1) {
+        if (c.readyState === 1 && c._authenticated) {
           try { c.send(msg); sent++; } catch {}
         }
       });
@@ -100,6 +137,8 @@ router.get('/:id', (req, res) => {
  * If fromDeptId is provided, the message is sent as context to all OTHER departments.
  * Each department gets the meeting context + conversation history and generates a response.
  * This creates REAL cross-department interaction.
+ *
+ * Returns immediately with a roundId, then streams department responses via WebSocket.
  */
 router.post('/:id/message', async (req, res) => {
   const meeting = meetings.get(req.params.id);
@@ -108,6 +147,8 @@ router.post('/:id/message', async (req, res) => {
   const { message, fromDeptId } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
 
+  const roundId = randomUUID();
+
   // Record user/initiator message
   meeting.messages.push({
     role: fromDeptId ? 'dept' : 'user',
@@ -115,23 +156,32 @@ router.post('/:id/message', async (req, res) => {
     text: message,
     timestamp: Date.now(),
   });
+  persistMeeting(meeting);
 
   // Send to all departments in meeting (real Gateway calls)
   const targetDepts = fromDeptId
     ? meeting.deptIds.filter(id => id !== fromDeptId)
     : meeting.deptIds;
 
-  const results = [];
+  // Return immediately - processing happens in background
+  res.json({ status: 'accepted', roundId, targetDepts: targetDepts.length });
 
-  // Sequential: each dept sees previous depts' responses (real discussion)
-  for (const deptId of targetDepts) {
-    // Rebuild context each iteration so new responses are visible
-    const recentHistory = meeting.messages.slice(-20).map(m => {
-      const sender = m.deptId === 'user' ? '用户' : m.deptId;
-      return `[${sender}]: ${m.text}`;
-    }).join('\n');
+  // Process departments in background
+  const wss = req.app.locals.wss;
+  setImmediate(async () => {
+    const results = [];
 
-    const meetingPrompt = `[会议模式] 主题: ${meeting.topic}
+    // Sequential: each dept sees previous depts' responses (real discussion)
+    for (let deptIndex = 0; deptIndex < targetDepts.length; deptIndex++) {
+      const deptId = targetDepts[deptIndex];
+
+      // Rebuild context each iteration so new responses are visible
+      const recentHistory = meeting.messages.slice(-20).map(m => {
+        const sender = m.deptId === 'user' ? '用户' : m.deptId;
+        return `[${sender}]: ${m.text}`;
+      }).join('\n');
+
+      const meetingPrompt = `[会议模式] 主题: ${meeting.topic}
 参会部门: ${meeting.deptIds.join(', ')}
 
 最近对话:
@@ -139,44 +189,87 @@ ${recentHistory}
 
 你是 ${deptId} 部门。请根据你的部门专长，回应会议中的讨论。注意其他部门已经发表的观点，不要重复，提出你的独特视角。简洁回答，不超过200字。`;
 
-    try {
-      const result = await chat(deptId, meetingPrompt);
-      const reply = result.success ? result.reply : `[Error] ${result.error}`;
+      try {
+        const result = await chat(deptId, meetingPrompt);
+        const reply = result.success ? result.reply : `[Error] ${result.error}`;
 
-      // Record department response — next dept will see this
-      meeting.messages.push({
-        role: 'dept',
-        deptId,
-        text: reply,
-        timestamp: Date.now(),
-      });
+        // Record department response — next dept will see this
+        meeting.messages.push({
+          role: 'dept',
+          deptId,
+          text: reply,
+          timestamp: Date.now(),
+        });
+        persistMeeting(meeting);
 
-      results.push({ deptId, reply, success: result.success });
-    } catch (err) {
-      results.push({ deptId, reply: `[Error] ${err.message}`, success: false });
+        results.push({ deptId, reply, success: result.success });
+
+        // Broadcast department response immediately via WebSocket
+        if (wss) {
+          const deptMsg = JSON.stringify({
+            event: 'meeting:dept-response',
+            data: {
+              meetingId: meeting.id,
+              deptId,
+              text: reply,
+              roundId,
+              deptIndex,
+              totalDepts: targetDepts.length,
+              timestamp: Date.now(),
+            },
+          });
+          wss.clients.forEach(c => {
+            if (c.readyState === 1 && c._authenticated) {
+              try { c.send(deptMsg); } catch {}
+            }
+          });
+        }
+      } catch (err) {
+        const errorReply = `[Error] ${err.message}`;
+        results.push({ deptId, reply: errorReply, success: false });
+
+        // Broadcast error via WebSocket
+        if (wss) {
+          const deptMsg = JSON.stringify({
+            event: 'meeting:dept-response',
+            data: {
+              meetingId: meeting.id,
+              deptId,
+              text: errorReply,
+              roundId,
+              deptIndex,
+              totalDepts: targetDepts.length,
+              timestamp: Date.now(),
+            },
+          });
+          wss.clients.forEach(c => {
+            if (c.readyState === 1 && c._authenticated) {
+              try { c.send(deptMsg); } catch {}
+            }
+          });
+        }
+      }
     }
-  }
 
-  // Broadcast meeting update to WebSocket clients
-  try {
-    const wss = req.app.locals.wss;
+    // Broadcast round complete
     if (wss) {
-      const payload = JSON.stringify({
-        event: 'meeting:update',
-        data: { meetingId: meeting.id, messages: meeting.messages.slice(-10), results },
+      const completeMsg = JSON.stringify({
+        event: 'meeting:round-complete',
+        data: {
+          meetingId: meeting.id,
+          roundId,
+          messageCount: meeting.messages.length,
+          results,
+        },
         timestamp: new Date().toISOString(),
       });
       wss.clients.forEach(c => {
         if (c.readyState === 1 && c._authenticated) {
-          try { c.send(payload); } catch {}
+          try { c.send(completeMsg); } catch {}
         }
       });
     }
-  } catch (err) {
-    console.error('[Meetings] Broadcast error:', err.message);
-  }
-
-  res.json({ success: true, results, messageCount: meeting.messages.length });
+  });
 });
 
 /**
@@ -219,11 +312,17 @@ router.post('/:id/end', async (req, res) => {
 
   meeting.status = 'ended';
   meeting.endedAt = Date.now();
+  persistMeeting(meeting);
   console.log(`[Meetings] Ended ${meeting.id}: ${meeting.topic}`);
+
+  // Extract action items via AI (async, don't block response)
+  const wss = req.app.locals.wss;
+  extractActionItems(meeting, wss).catch(err => {
+    console.error('[Meetings] Action item extraction failed:', err.message);
+  });
 
   // Broadcast meeting:end event to WebSocket clients
   try {
-    const wss = req.app.locals.wss;
     if (wss) {
       const msg = JSON.stringify({
         event: 'meeting:end',
@@ -234,7 +333,7 @@ router.post('/:id/end', async (req, res) => {
         timestamp: new Date().toISOString()
       });
       wss.clients.forEach(c => {
-        if (c.readyState === 1) {
+        if (c.readyState === 1 && c._authenticated) {
           try { c.send(msg); } catch {}
         }
       });
@@ -298,5 +397,260 @@ router.post('/:id/end', async (req, res) => {
 
   res.json({ success: true, driveResult });
 });
+
+/**
+ * Extract action items from meeting transcript using AI
+ */
+async function extractActionItems(meeting, wss) {
+  if (meeting.messages.length < 3) return; // Too short
+
+  // Build transcript
+  const transcript = meeting.messages.map(m => {
+    const sender = m.deptId === 'user' ? 'User' : m.deptId;
+    return `[${sender}]: ${m.text}`;
+  }).join('\n');
+
+  const prompt = `Analyze this meeting transcript and extract action items.
+
+Meeting topic: ${meeting.topic}
+Departments: ${meeting.deptIds.join(', ')}
+
+Transcript:
+${transcript.substring(0, 8000)}
+
+Respond with ONLY a JSON array of action items:
+[{"task": "description", "owner": "department_id", "priority": "high/medium/low", "deadline_hint": "suggested timeframe"}]
+
+Extract 3-8 action items. Use actual department IDs from the transcript. Be specific and actionable.`;
+
+  try {
+    // Use the first department to extract (or a specific dept if available)
+    const extractorDept = meeting.deptIds[0];
+    const result = await chat(extractorDept, prompt);
+
+    if (result.success && result.reply) {
+      const jsonMatch = result.reply.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const actionItems = JSON.parse(jsonMatch[0]);
+        meeting.actionItems = actionItems;
+
+        // Record in meeting messages
+        meeting.messages.push({
+          role: 'system', deptId: 'action-items',
+          text: `[Action Items Extracted]\n${actionItems.map((item, i) =>
+            `${i+1}. [${item.priority.toUpperCase()}] ${item.task} (Owner: ${item.owner}${item.deadline_hint ? ', ' + item.deadline_hint : ''})`
+          ).join('\n')}`,
+          timestamp: Date.now()
+        });
+
+        persistMeeting(meeting);
+
+        // Broadcast to UI
+        const msg = JSON.stringify({
+          event: 'meeting:action-items',
+          data: { meetingId: meeting.id, actionItems },
+          timestamp: new Date().toISOString()
+        });
+        wss.clients.forEach(c => {
+          if (c.readyState === 1 && c._authenticated) {
+            try { c.send(msg); } catch {}
+          }
+        });
+
+        console.log(`[Meetings] Extracted ${actionItems.length} action items for ${meeting.id}`);
+      }
+    }
+  } catch (err) {
+    console.error('[Meetings] Action item extraction error:', err.message);
+  }
+}
+
+/**
+ * GET /api/meetings/:id/action-items
+ * Get action items for a meeting
+ */
+router.get('/:id/action-items', (req, res) => {
+  const meeting = meetings.get(req.params.id);
+  if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+  res.json({ actionItems: meeting.actionItems || [], meetingId: meeting.id });
+});
+
+/**
+ * POST /api/meetings/:id/negotiate
+ * Start negotiation mode - departments debate, vote, and reach consensus
+ */
+router.post('/:id/negotiate', async (req, res) => {
+  const { id } = req.params;
+  const { proposal, maxRounds = 3 } = req.body;
+  const meeting = meetings.get(id);
+  if (!meeting || meeting.status !== 'active') {
+    return res.status(404).json({ error: 'Meeting not found or not active' });
+  }
+
+  // Validate
+  if (!proposal || typeof proposal !== 'string' || proposal.length > 5000) {
+    return res.status(400).json({ error: 'Invalid proposal' });
+  }
+
+  const roundsCapped = Math.min(Math.max(1, maxRounds), 5);
+
+  // Return immediately, process in background
+  const negotiationId = `neg_${Date.now().toString(36)}`;
+  res.json({ status: 'accepted', negotiationId, maxRounds: roundsCapped });
+
+  // Run negotiation rounds in background
+  runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss);
+});
+
+/**
+ * Run negotiation rounds: each dept evaluates proposal and votes
+ */
+async function runNegotiation(meeting, proposal, maxRounds, negotiationId, wss) {
+  const targetDepts = meeting.deptIds;
+  let currentProposal = proposal;
+  let round = 0;
+  const positions = {}; // { deptId: { stance: 'agree'|'disagree'|'modify', reason, suggestion } }
+
+  // Record proposal in meeting messages
+  meeting.messages.push({
+    role: 'system', deptId: 'negotiation',
+    text: `[Negotiation Started] Proposal: ${proposal}`,
+    timestamp: Date.now(), negotiationId
+  });
+  persistMeeting(meeting);
+
+  // Broadcast negotiation start
+  broadcastToMeeting(wss, meeting.id, 'meeting:negotiation-start', {
+    meetingId: meeting.id, negotiationId, proposal, maxRounds, deptIds: targetDepts
+  });
+
+  while (round < maxRounds) {
+    round++;
+    const roundPositions = {};
+
+    // Each department evaluates the proposal
+    for (const deptId of targetDepts) {
+      const prompt = round === 1
+        ? `[Negotiation Mode - Round ${round}/${maxRounds}]
+You are evaluating this proposal: "${currentProposal}"
+
+Based on your department's expertise, respond with EXACTLY this JSON format:
+{"stance": "agree" or "disagree" or "modify", "reason": "your reasoning in 1-2 sentences", "suggestion": "your counter-proposal or modification if stance is modify/disagree, empty string if agree"}
+
+Be concise. Consider trade-offs from your department's perspective.`
+        : `[Negotiation Mode - Round ${round}/${maxRounds}]
+Previous positions from other departments:
+${Object.entries(positions).map(([d, p]) => `- ${d}: ${p.stance} - ${p.reason}`).join('\n')}
+
+Current proposal: "${currentProposal}"
+
+Based on your department's expertise and considering other departments' positions, respond with EXACTLY this JSON format:
+{"stance": "agree" or "disagree" or "modify", "reason": "your reasoning in 1-2 sentences", "suggestion": "your counter-proposal or modification if stance is modify/disagree, empty string if agree"}
+
+Try to find common ground. Be concise.`;
+
+      try {
+        const result = await chat(deptId, prompt);
+        let parsed;
+        try {
+          // Try to extract JSON from response
+          const jsonMatch = result.reply.match(/\{[\s\S]*?\}/);
+          parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { stance: 'abstain', reason: result.reply, suggestion: '' };
+        } catch {
+          parsed = { stance: 'abstain', reason: result.reply.substring(0, 200), suggestion: '' };
+        }
+
+        roundPositions[deptId] = parsed;
+        positions[deptId] = parsed;
+
+        // Record in meeting messages
+        meeting.messages.push({
+          role: 'dept', deptId,
+          text: `[Round ${round}] ${parsed.stance.toUpperCase()}: ${parsed.reason}${parsed.suggestion ? '\nSuggestion: ' + parsed.suggestion : ''}`,
+          timestamp: Date.now(), negotiationId
+        });
+        persistMeeting(meeting);
+
+        // Broadcast each dept's position
+        broadcastToMeeting(wss, meeting.id, 'meeting:negotiation-vote', {
+          meetingId: meeting.id, negotiationId, round, deptId,
+          stance: parsed.stance, reason: parsed.reason, suggestion: parsed.suggestion
+        });
+      } catch (err) {
+        roundPositions[deptId] = { stance: 'abstain', reason: 'Error: ' + err.message, suggestion: '' };
+      }
+    }
+
+    // Check consensus
+    const stances = Object.values(roundPositions).map(p => p.stance);
+    const agreeCount = stances.filter(s => s === 'agree').length;
+    const total = stances.length;
+
+    // Broadcast round summary
+    broadcastToMeeting(wss, meeting.id, 'meeting:negotiation-round', {
+      meetingId: meeting.id, negotiationId, round, maxRounds,
+      positions: roundPositions,
+      consensus: agreeCount === total,
+      agreeCount, total
+    });
+
+    if (agreeCount === total) {
+      // Consensus reached!
+      meeting.messages.push({
+        role: 'system', deptId: 'negotiation',
+        text: `[Consensus Reached in Round ${round}] All ${total} departments agree on: ${currentProposal}`,
+        timestamp: Date.now(), negotiationId
+      });
+      persistMeeting(meeting);
+
+      broadcastToMeeting(wss, meeting.id, 'meeting:negotiation-end', {
+        meetingId: meeting.id, negotiationId, result: 'consensus', round,
+        finalProposal: currentProposal, positions
+      });
+      return;
+    }
+
+    // If most agree but some modify, adopt the most popular modification
+    if (agreeCount >= total * 0.5) {
+      const modifications = Object.values(roundPositions)
+        .filter(p => p.stance === 'modify' && p.suggestion)
+        .map(p => p.suggestion);
+      if (modifications.length > 0) {
+        currentProposal = modifications[0]; // Use first modification as new proposal
+      }
+    }
+  }
+
+  // Max rounds reached without full consensus
+  const finalStances = Object.entries(positions);
+  const agreeCount = finalStances.filter(([,p]) => p.stance === 'agree').length;
+  const result = agreeCount > finalStances.length / 2 ? 'majority' : 'no-consensus';
+
+  meeting.messages.push({
+    role: 'system', deptId: 'negotiation',
+    text: `[Negotiation Complete - ${result === 'majority' ? 'Majority Agreement' : 'No Consensus'}] After ${maxRounds} rounds: ${agreeCount}/${finalStances.length} agree`,
+    timestamp: Date.now(), negotiationId
+  });
+  persistMeeting(meeting);
+
+  broadcastToMeeting(wss, meeting.id, 'meeting:negotiation-end', {
+    meetingId: meeting.id, negotiationId, result, round: maxRounds,
+    finalProposal: currentProposal, positions,
+    agreeCount, total: finalStances.length
+  });
+}
+
+/**
+ * Broadcast message to all authenticated WebSocket clients
+ */
+function broadcastToMeeting(wss, meetingId, event, data) {
+  if (!wss) return;
+  const msg = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
+  wss.clients.forEach(c => {
+    if (c.readyState === 1 && c._authenticated) {
+      try { c.send(msg); } catch {}
+    }
+  });
+}
 
 export default router;

@@ -284,6 +284,9 @@ router.put('/integrations/config/:service', async (req, res) => {
       if (updates.url !== undefined && typeof updates.url !== 'string') {
         return res.status(400).json({ error: 'url must be a string' });
       }
+      if (updates.url && isPrivateUrl(updates.url)) {
+        return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
+      }
       if (updates.platform !== undefined && !['discord', 'slack', 'feishu', 'custom'].includes(updates.platform)) {
         return res.status(400).json({ error: 'platform must be one of: discord, slack, feishu, custom' });
       }

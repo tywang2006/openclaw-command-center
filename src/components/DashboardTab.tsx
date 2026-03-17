@@ -14,8 +14,11 @@ interface DailyData {
   avgResponseMs: number
 }
 
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'meeting' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
+
 interface DashboardTabProps {
   departments: Department[]
+  onSwitchTab?: (tab: RightTab) => void
 }
 
 interface MetricsData {
@@ -70,7 +73,25 @@ interface DepartmentHealth {
   todayMessages: number
 }
 
-export default function DashboardTab({ departments }: DashboardTabProps) {
+interface TrustScoreData {
+  rank: number
+  deptId: string
+  score: number
+  breakdown: {
+    reliability: number
+    speed: number
+    activity: number
+    consistency: number
+  }
+  stats: {
+    totalMessages: number
+    totalErrors: number
+    errorRate: number
+    avgResponseMs: number
+  }
+}
+
+export default function DashboardTab({ departments, onSwitchTab }: DashboardTabProps) {
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [gatewayStats, setGatewayStats] = useState<GatewayStats | null>(null)
   const [permissions, setPermissions] = useState<PermissionEvent[]>([])
@@ -78,6 +99,7 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
   const [loading, setLoading] = useState(true)
   const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [healthStatus, setHealthStatus] = useState<Record<string, { consecutiveErrors: number; status: string }>>({})
+  const [trustScores, setTrustScores] = useState<TrustScoreData[]>([])
   const { t } = useLocale()
 
   const fetchMetrics = useCallback(async () => {
@@ -173,6 +195,18 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
     }
   }, [])
 
+  const fetchTrustScores = useCallback(async () => {
+    try {
+      const res = await authedFetch('/api/metrics/trust-scores')
+      const raw = await res.json()
+      if (raw.leaderboard) {
+        setTrustScores(raw.leaderboard)
+      }
+    } catch (err) {
+      console.error('Failed to fetch trust scores:', err)
+    }
+  }, [])
+
   useEffect(() => {
     fetchMetrics().then(() => setLoading(false))
   }, [fetchMetrics])
@@ -181,6 +215,7 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
   useVisibilityInterval(fetchGatewayStats, 10000, [fetchGatewayStats])
   useVisibilityInterval(fetchPermissions, 30000, [fetchPermissions])
   useVisibilityInterval(fetchIntegrations, 60000, [fetchIntegrations])
+  useVisibilityInterval(fetchTrustScores, 15000, [fetchTrustScores])
 
   const formatUptime = (seconds: number): string => {
     if (seconds < 60) return `${Math.floor(seconds)}s`
@@ -224,7 +259,11 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
   }
 
   const handleStartMeeting = () => {
-    alert('Meeting feature coming soon!')
+    if (onSwitchTab) {
+      onSwitchTab('meeting')
+    } else {
+      alert('Meeting feature coming soon!')
+    }
   }
 
   const handleCreateWorkflow = () => {
@@ -529,6 +568,44 @@ export default function DashboardTab({ departments }: DashboardTabProps) {
                     />
                   </div>
                   <div className="token-bar-value">{totalTokens.toLocaleString()}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Trust Leaderboard Section */}
+      {trustScores.length > 0 && (
+        <div className="trust-leaderboard">
+          <h3>{t('dashboard.trust.title')}</h3>
+          <div className="trust-list">
+            {trustScores.map((entry) => {
+              const dept = departments.find(d => d.id === entry.deptId)
+              if (!dept) return null
+
+              const rankClass = entry.rank === 1 ? 'gold' : entry.rank === 2 ? 'silver' : entry.rank === 3 ? 'bronze' : ''
+
+              return (
+                <div key={entry.deptId} className="trust-entry">
+                  <div className={`trust-rank ${rankClass}`}>#{entry.rank}</div>
+                  <div className="trust-dept-info">
+                    <DeptIcon deptId={entry.deptId} size={16} />
+                    <span className="trust-dept-name" style={{ color: `var(--dept-${entry.deptId})` }}>
+                      {dept.name}
+                    </span>
+                  </div>
+                  <div className="trust-bar-container">
+                    <div
+                      className="trust-bar-fill"
+                      style={{
+                        width: `${entry.score}%`,
+                        backgroundColor: `var(--dept-${entry.deptId})`
+                      }}
+                      title={`${t('dashboard.trust.reliability')}: ${entry.breakdown.reliability}, ${t('dashboard.trust.speed')}: ${entry.breakdown.speed}, ${t('dashboard.trust.activity')}: ${entry.breakdown.activity}, ${t('dashboard.trust.consistency')}: ${entry.breakdown.consistency}`}
+                    />
+                  </div>
+                  <div className="trust-score-label">{entry.score}</div>
                 </div>
               )
             })}

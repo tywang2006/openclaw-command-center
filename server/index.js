@@ -114,8 +114,19 @@ app.use('/api/auth', authRouter);
 // Setup routes (no auth required — needed for first-run wizard)
 app.use('/api', setupRoutes);
 
-// Health check (no auth required)
-const healthHandler = (req, res) => {
+// Health check (no auth required) — minimal info only
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Apply authentication middleware to all API routes
+app.use('/api', authMiddleware);
+
+// Authenticated health check — full details
+app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -123,12 +134,7 @@ const healthHandler = (req, res) => {
     wsClients: wss.clients.size,
     gateway: getGateway().stats,
   });
-};
-app.get('/health', healthHandler);
-app.get('/api/health', healthHandler);
-
-// Apply authentication middleware to all API routes
-app.use('/api', authMiddleware);
+});
 
 // Rate limiting for resource-intensive endpoints (LLM calls, email, file ops)
 const heavyLimiter = rateLimit({

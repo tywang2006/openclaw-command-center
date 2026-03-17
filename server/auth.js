@@ -305,6 +305,14 @@ authRouter.post('/logout', (req, res) => {
  * Body: { currentPassword, newPassword }
  */
 authRouter.put('/password', (req, res) => {
+  const clientIp = req.ip || req.socket.remoteAddress;
+  if (!checkLoginRateLimit(clientIp)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many attempts. Try again in 1 minute.'
+    });
+  }
+
   const { currentPassword, newPassword } = req.body;
 
   if (!currentPassword || !newPassword) {

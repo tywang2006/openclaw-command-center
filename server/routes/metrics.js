@@ -391,4 +391,75 @@ router.get('/gateway/stats', (req, res) => {
   }
 });
 
+/**
+ * Calculate trust score from existing metrics
+ */
+function calculateTrustScore(deptId) {
+  const dept = metrics.departments[deptId];
+  if (!dept) return { score: 50, breakdown: {} };
+
+  const totalMessages = dept.messageCount || 0;
+  const totalErrors = dept.errorCount || 0;
+  const avgResponseMs = dept.avgResponseMs || 0;
+
+  // Reliability: fewer errors = higher score (0-30 points)
+  const errorRate = totalMessages > 0 ? totalErrors / totalMessages : 0;
+  const reliability = Math.max(0, 30 * (1 - errorRate * 5));
+
+  // Speed: faster responses = higher score (0-25 points)
+  const speed = avgResponseMs < 5000 ? 25 :
+                avgResponseMs < 15000 ? 20 :
+                avgResponseMs < 30000 ? 15 :
+                avgResponseMs < 60000 ? 10 : 5;
+
+  // Activity: more messages = higher engagement (0-25 points)
+  const activity = Math.min(25, totalMessages * 0.5);
+
+  // Consistency: check daily metrics if available (0-20 points)
+  const today = new Date().toISOString().split('T')[0];
+  const dailyData = metrics.daily[today];
+  const consistency = dailyData && dailyData[deptId] ? 20 : 10;
+
+  const total = Math.round(reliability + speed + activity + consistency);
+
+  return {
+    score: Math.min(100, Math.max(0, total)),
+    breakdown: {
+      reliability: Math.round(reliability),
+      speed: Math.round(speed),
+      activity: Math.round(activity),
+      consistency: Math.round(consistency)
+    },
+    stats: {
+      totalMessages,
+      totalErrors,
+      errorRate: Math.round(errorRate * 100),
+      avgResponseMs: Math.round(avgResponseMs)
+    }
+  };
+}
+
+/**
+ * GET /api/metrics/trust-scores
+ * Get trust scores for all departments
+ */
+router.get('/trust-scores', (req, res) => {
+  try {
+    const scores = {};
+    for (const deptId of Object.keys(metrics.departments)) {
+      scores[deptId] = calculateTrustScore(deptId);
+    }
+
+    // Sort by score descending for leaderboard
+    const leaderboard = Object.entries(scores)
+      .sort(([,a], [,b]) => b.score - a.score)
+      .map(([deptId, data], rank) => ({ rank: rank + 1, deptId, ...data }));
+
+    res.json({ leaderboard, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('[Metrics] Error getting trust scores:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

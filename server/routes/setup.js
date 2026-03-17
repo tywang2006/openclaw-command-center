@@ -27,6 +27,12 @@ router.get('/setup/status', (req, res) => {
  * Streams progress via WebSocket broadcast
  */
 router.post('/setup/install', async (req, res) => {
+  const clientIp = req.ip || req.connection?.remoteAddress || '';
+  const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+  if (!isLocal) {
+    return res.status(403).json({ error: 'Setup only allowed from localhost' });
+  }
+
   // Block if system is already configured (first-run only)
   if (isPasswordConfigured()) {
     return res.status(403).json({ error: 'Setup is disabled after initial configuration. Use the admin panel.' });

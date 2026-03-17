@@ -142,6 +142,67 @@ export function useMeetingEvents(): MeetingEvent[] {
   )
 }
 
+// Meeting department responses store — decoupled for real-time updates
+interface MeetingDeptResponse {
+  meetingId: string
+  deptId: string
+  text: string
+  roundId: string
+  deptIndex: number
+  totalDepts: number
+  timestamp: number
+}
+
+let meetingDeptResponses: MeetingDeptResponse[] = []
+const meetingDeptListeners = new Set<() => void>()
+
+function emitMeetingDeptChange() {
+  for (const fn of meetingDeptListeners) fn()
+}
+
+export function consumeMeetingDeptResponse(): MeetingDeptResponse | undefined {
+  return meetingDeptResponses.shift()
+}
+
+export function useMeetingDeptResponses(): MeetingDeptResponse[] {
+  return useSyncExternalStore(
+    (cb) => {
+      meetingDeptListeners.add(cb)
+      return () => { meetingDeptListeners.delete(cb) }
+    },
+    () => meetingDeptResponses
+  )
+}
+
+// Meeting round complete store
+interface MeetingRoundComplete {
+  meetingId: string
+  roundId: string
+  messageCount: number
+  timestamp: number
+}
+
+let meetingRoundCompletes: MeetingRoundComplete[] = []
+const meetingRoundListeners = new Set<() => void>()
+
+function emitMeetingRoundChange() {
+  for (const fn of meetingRoundListeners) fn()
+}
+
+export function consumeMeetingRoundComplete(): MeetingRoundComplete | undefined {
+  return meetingRoundCompletes.shift()
+}
+
+export function useMeetingRoundCompletes(): MeetingRoundComplete[] {
+  return useSyncExternalStore(
+    (cb) => {
+      meetingRoundListeners.add(cb)
+      return () => { meetingRoundListeners.delete(cb) }
+    },
+    () => meetingRoundCompletes
+  )
+}
+
 function parseDepartment(d: any): Department {
   return {
     id: d.id || d.name,
@@ -430,6 +491,44 @@ export function useAgentState() {
           timestamp: Date.now()
         })
         emitMeetingChange()
+        break
+
+      case 'meeting:negotiation-start':
+      case 'meeting:negotiation-vote':
+      case 'meeting:negotiation-round':
+      case 'meeting:negotiation-end':
+        // Negotiation events - forward to meeting components via meeting events
+        meetingEvents.push({
+          type: event,
+          ...data,
+          timestamp: Date.now()
+        } as any)
+        emitMeetingChange()
+        break
+
+      case 'meeting:dept-response':
+        console.log('[WS] meeting:dept-response received:', data)
+        meetingDeptResponses.push({
+          meetingId: data.meetingId,
+          deptId: data.deptId,
+          text: data.text,
+          roundId: data.roundId,
+          deptIndex: data.deptIndex,
+          totalDepts: data.totalDepts,
+          timestamp: data.timestamp || Date.now()
+        })
+        emitMeetingDeptChange()
+        break
+
+      case 'meeting:round-complete':
+        console.log('[WS] meeting:round-complete received:', data)
+        meetingRoundCompletes.push({
+          meetingId: data.meetingId,
+          roundId: data.roundId,
+          messageCount: data.messageCount,
+          timestamp: Date.now()
+        })
+        emitMeetingRoundChange()
         break
 
       case 'departments:updated':

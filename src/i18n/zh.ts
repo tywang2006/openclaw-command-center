@@ -928,4 +928,26 @@ export const zh: Record<string, string> = {
   'health.alert': '健康告警',
   'health.consecutiveErrors': '连续错误: {count}',
   'health.slowResponse': '响应变慢',
+
+  // Trust Score & Action Items
+  'dashboard.trust.title': '部门信任排行',
+  'dashboard.trust.reliability': '可靠性',
+  'dashboard.trust.speed': '响应速度',
+  'dashboard.trust.activity': '活跃度',
+  'dashboard.trust.consistency': '一致性',
+  'meeting.actionItems': '行动事项',
+  'meeting.actionItems.extracting': '正在提取行动事项...',
+
+  // Agent Negotiation Protocol
+  'meeting.negotiate': '发起谈判',
+  'meeting.negotiate.proposal': '提案内容',
+  'meeting.negotiate.rounds': '最大轮数',
+  'meeting.negotiate.start': '开始谈判',
+  'meeting.negotiate.agree': '同意',
+  'meeting.negotiate.disagree': '反对',
+  'meeting.negotiate.modify': '修改',
+  'meeting.negotiate.consensus': '达成共识',
+  'meeting.negotiate.majority': '多数通过',
+  'meeting.negotiate.noconsensus': '未达共识',
+  'meeting.negotiate.round': '谈判轮次',
 }

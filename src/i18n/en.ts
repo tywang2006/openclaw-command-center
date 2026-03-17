@@ -928,4 +928,26 @@ export const en: Record<string, string> = {
   'health.alert': 'Health Alert',
   'health.consecutiveErrors': 'Consecutive errors: {count}',
   'health.slowResponse': 'Slow Response',
+
+  // Trust Score & Action Items
+  'dashboard.trust.title': 'Department Trust Leaderboard',
+  'dashboard.trust.reliability': 'Reliability',
+  'dashboard.trust.speed': 'Speed',
+  'dashboard.trust.activity': 'Activity',
+  'dashboard.trust.consistency': 'Consistency',
+  'meeting.actionItems': 'Action Items',
+  'meeting.actionItems.extracting': 'Extracting action items...',
+
+  // Agent Negotiation Protocol
+  'meeting.negotiate': 'Negotiate',
+  'meeting.negotiate.proposal': 'Proposal',
+  'meeting.negotiate.rounds': 'Max Rounds',
+  'meeting.negotiate.start': 'Start Negotiation',
+  'meeting.negotiate.agree': 'Agree',
+  'meeting.negotiate.disagree': 'Disagree',
+  'meeting.negotiate.modify': 'Modify',
+  'meeting.negotiate.consensus': 'Consensus Reached',
+  'meeting.negotiate.majority': 'Majority Agreement',
+  'meeting.negotiate.noconsensus': 'No Consensus',
+  'meeting.negotiate.round': 'Negotiation Round',
 }
