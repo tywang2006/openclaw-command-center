@@ -1,6 +1,6 @@
 {
   "name": "openclaw-command-center",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "超哥办公室 — OpenClaw AI 多部门指挥中心：像素办公室、会议室(跨部门顺序讨论)、子代理、定时任务、工作流、公告板、记忆系统、仪表盘、Gmail/Drive/Sheets集成、语音输入、Webhook、PWA、命令面板(Cmd+K)、中英双语 | Pixel-art virtual office with multi-agent chat, meeting room (sequential cross-dept discussion), sub-agents, cron scheduler, workflows, bulletin board, memory system, dashboard & metrics, Gmail/Drive/Sheets integration, voice input, webhooks, PWA, command palette, i18n (zh/en)",
   "type": "module",
   "bin": {
@@ -56,7 +56,7 @@
     "会议室"
   ],
   "author": "tywang2006",
-  "license": "MIT",
+  "license": "Elastic-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/tywang2006/openclaw-command-center"

@@ -396,6 +396,10 @@ command-center/
 
 <div align="center">
 
-MIT License | Made by [@tywang2006](https://github.com/tywang2006)
+[Elastic License 2.0](LICENSE) | Made by [@tywang2006](https://github.com/tywang2006)
+
+可以免费使用，禁止修改源码再分发，禁止作为托管服务出售。
+
+Free to use. Cannot modify and redistribute. Cannot provide as a hosted service.
 
 </div>
