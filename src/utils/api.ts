@@ -28,7 +28,7 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  const fullUrl = url.startsWith('/api') ? `${API_BASE}${url}` : url
+  const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : url
   const res = await fetch(fullUrl, { ...options, headers })
   if (res.status === 401) {
     clearToken()

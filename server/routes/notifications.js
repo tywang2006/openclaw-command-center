@@ -57,6 +57,18 @@ export function notify({ severity = 'info', category = 'system', title, body = '
     notifications = notifications.slice(-MAX_NOTIFICATIONS);
   }
   _dirty = true;
+
+  // Send web push for critical/error notifications
+  if (severity === 'error' || severity === 'critical') {
+    import('./push.js').then(({ sendPush }) => {
+      sendPush({
+        title: `[${severity.toUpperCase()}] ${category}`,
+        body: title,
+        category: severity
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
   return notif;
 }
 

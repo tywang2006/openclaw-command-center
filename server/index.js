@@ -8,7 +8,7 @@ import { createWatcher, getInitialState } from './watcher.js';
 import apiRoutes from './routes/api.js';
 import skillsRoutes from './routes/skills.js';
 import cronRoutes from './routes/cron.js';
-import metricsRoutes, { recordPermission, flushMetrics } from './routes/metrics.js';
+import metricsRoutes, { recordPermission, flushMetrics, setWss } from './routes/metrics.js';
 import workflowsRoutes from './routes/workflows.js';
 import replayRoutes, { isRecording, addReplayEvent } from './routes/replay.js';
 import capabilitiesRoutes from './routes/capabilities.js';
@@ -23,6 +23,9 @@ import voiceRoutes from './routes/voice.js';
 import searchRoutes from './routes/search.js';
 import auditRoutes, { recordAudit } from './routes/audit.js';
 import notificationsRoutes, { notifyError, notifyWarning, notifyInfo } from './routes/notifications.js';
+import meetingsRoutes from './routes/meetings.js';
+import chatRetryRouter from './routes/chat-retry.js';
+import pushRouter from './routes/push.js';
 import { getGateway } from './gateway.js';
 import { authRouter, authMiddleware, validateToken } from './auth.js';
 import setupRoutes, { checkSetupStatus } from './routes/setup.js';
@@ -58,7 +61,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'", "ws:", "wss:"],
@@ -94,11 +97,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rewrite /cmd/api/* → /api/* so frontend (BASE_URL=/cmd/) hits the right routes.
-// One middleware, covers all current and future /api routes automatically.
+// Rewrite /cmd/* → /* so frontend (BASE_URL=/cmd/) hits the right routes.
+// Covers /cmd/api/*, /cmd/health, etc.
 app.use((req, res, next) => {
   if (req.url.startsWith('/cmd/api')) {
     req.url = req.url.replace('/cmd/api', '/api');
+  } else if (req.url.startsWith('/cmd/health')) {
+    req.url = req.url.replace('/cmd/health', '/health');
   }
   next();
 });
@@ -134,7 +139,7 @@ const heavyLimiter = rateLimit({
   message: { error: 'Too many requests, please slow down' },
 });
 app.use('/api/departments/:id/chat', heavyLimiter);
-app.use('/api/departments/:id/broadcast', heavyLimiter);
+app.use('/api/broadcast', heavyLimiter);
 app.use('/api/email/send', heavyLimiter);
 app.use('/api/voice/transcribe', heavyLimiter);
 app.use('/api/drive/upload', heavyLimiter);
@@ -159,6 +164,9 @@ app.use('/api', voiceRoutes);
 app.use('/api', searchRoutes);
 app.use('/api', auditRoutes);
 app.use('/api', notificationsRoutes);
+app.use('/api/meetings', meetingsRoutes);
+app.use('/api/departments', chatRetryRouter);
+app.use('/api/push', pushRouter);
 
 // Global Express error handler
 app.use((err, req, res, next) => {
@@ -203,8 +211,9 @@ app.get('/cmd', (req, res) => {
 });
 
 // WebSocket server — accept both /ws and /cmd/ws
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1048576 });
 app.locals.wss = wss; // Expose to routes for broadcasting
+setWss(wss); // Pass to metrics for health alerts
 
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
@@ -262,7 +271,25 @@ wss.on('connection', (ws, req) => {
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
 
+      // Connection limit check
+      const authCount = [...wss.clients].filter(c => c._authenticated).length;
+      if (authCount > 10) {
+        console.warn(`[WebSocket] Connection limit reached (${authCount}), rejecting`);
+        ws.close(1013, 'Max connections reached');
+        return;
+      }
+
       console.log(`[WebSocket] Client authenticated from ${clientIp} (total: ${wss.clients.size})`);
+
+      // Start ping interval only after auth succeeds
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === 1) {
+          ws.ping();
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 30000);
+      ws.on('close', () => { clearInterval(pingInterval); });
 
       // Send initial state after successful auth
       try {
@@ -306,18 +333,6 @@ wss.on('connection', (ws, req) => {
     console.error(`[WebSocket] Error for ${clientIp}:`, error.message);
   });
 
-  // Send a ping every 30 seconds to keep connection alive
-  const pingInterval = setInterval(() => {
-    if (ws.readyState === 1) { // WebSocket.OPEN
-      ws.ping();
-    } else {
-      clearInterval(pingInterval);
-    }
-  }, 30000);
-
-  ws.on('close', () => {
-    clearInterval(pingInterval);
-  });
 });
 
 // Create file watcher and attach to WebSocket server

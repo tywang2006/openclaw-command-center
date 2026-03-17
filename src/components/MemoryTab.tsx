@@ -298,7 +298,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
                   <span>{departments.find(d => d.id === r.deptId)?.name || r.deptId}</span>
                 </div>
                 {r.matches.map((m, i) => (
-                  <div key={i} className="memory-search-match">
+                  <div key={`${r.deptId}-match-${m.line}-${i}`} className="memory-search-match">
                     <span className="memory-search-line">{t('memory.search.line', { line: m.line })}</span>
                     <span className="memory-search-text">{m.text}</span>
                   </div>

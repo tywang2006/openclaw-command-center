@@ -92,7 +92,7 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
         <div className="broadcast-responses">
           <div className="broadcast-responses-title">{t('bulletin.responses.title', { count: responses.length })}</div>
           {responses.map((resp, i) => (
-            <div key={i} className={`broadcast-response ${resp.reply.startsWith('[Error]') ? 'error' : ''}`}>
+            <div key={`resp-${resp.deptId}-${i}`} className={`broadcast-response ${resp.reply.startsWith('[Error]') ? 'error' : ''}`}>
               <div className="broadcast-response-header">
                 <DeptIcon deptId={resp.deptId} size={14} />
                 <span className="broadcast-dept-name">{resp.name}</span>

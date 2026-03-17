@@ -4,13 +4,14 @@ export const zh: Record<string, string> = {
   'app.tab.chat': '对话',
   'app.tab.bulletin': '公告',
   'app.tab.memory': '记忆',
-  'app.tab.activity': '活动',
+  'app.tab.activity': '动态',
   'app.tab.requests': '请求',
   'app.tab.cron': '定时',
   'app.tab.skills': '技能',
+  'app.tab.meeting': '会议',
   'app.panel.expand': '展开面板',
   'app.panel.collapse': '收起面板',
-  'app.tab.dashboard': '统计',
+  'app.tab.dashboard': '面板',
   'app.fullscreen.enter': '全屏',
   'app.fullscreen.exit': '退出全屏',
   'app.status.online': 'Online',
@@ -335,6 +336,33 @@ export const zh: Record<string, string> = {
   'workflow.delete.failed': '删除失败',
   'workflow.load.failed': '加载失败',
   'workflow.lastrun': '上次运行: {status}',
+  'workflow.templates': '模板',
+  'workflow.view.form': '表单',
+  'workflow.view.pipeline': '流程图',
+  'workflow.pipeline.delay': '延迟',
+  'workflow.pipeline.if': '如果输出',
+  'workflow.pipeline.yes': '是',
+  'workflow.pipeline.no': '否',
+  'workflow.condition.add': '添加条件分支',
+  'workflow.condition.contains': '包含',
+  'workflow.condition.not_contains': '不包含',
+  'workflow.condition.equals': '等于',
+  'workflow.condition.value.placeholder': '要检查的文本',
+  'workflow.condition.if_true': '如果为真，跳转到步骤',
+  'workflow.condition.if_false': '如果为假，跳转到步骤',
+
+  // Dashboard enhancements (Phase 4C)
+  'dashboard.action.broadcast': '广播所有部门',
+  'dashboard.action.meeting': '发起会议',
+  'dashboard.action.workflow': '创建工作流',
+  'dashboard.system.title': '系统状态',
+  'dashboard.system.gateway': '网关',
+  'dashboard.system.integrations': '集成服务',
+  'dashboard.system.active': '活跃',
+  'dashboard.health.title': '部门健康',
+  'dashboard.health.today': '今日',
+  'dashboard.health.response': '响应时间',
+  'dashboard.health.errors': '错误',
 
   // Session Replay (F13)
   'replay.title': '回放',
@@ -352,7 +380,7 @@ export const zh: Record<string, string> = {
   'replay.stop.playback': '停止',
 
   // Capabilities Dashboard (IntegrationsTab)
-  'app.tab.integrations': '能力',
+  'app.tab.integrations': '集成',
   'app.tab.system': '系统',
 
   // SystemTab
@@ -856,4 +884,48 @@ export const zh: Record<string, string> = {
   'system.config.bottoken.placeholder': '输入 Bot Token...',
   'system.config.nokey': '未配置',
   'system.config.configured': '已配置',
+
+  // F1: Meeting Minutes Export
+  'meeting.export.title': '会议纪要已导出',
+  'meeting.export.message': '会议已结束，纪要已自动导出',
+  'meeting.export.drive': '在 Google Drive 中查看',
+  'meeting.export.close': '关闭',
+  'meeting.ended': '会议已结束',
+
+  // F2: @Mentions
+  'chat.mention.forwarding': '正在转发到 @{dept}...',
+  'chat.mention.response': '[@{dept}] 回复',
+
+  // F3: Global Search
+  'search.loading': '搜索中...',
+  'search.noResults': '未找到结果',
+  'search.category.memory': '记忆',
+  'search.category.daily': '日志',
+  'search.category.chat': '对话',
+  'search.category.bulletin': '公告',
+
+  // F4: Push Notifications
+  'push.title': '推送通知',
+  'push.enable': '启用浏览器推送',
+  'push.enabled': '已启用',
+  'push.disabled': '已禁用',
+
+  // F5: Dashboard Trends
+  'dashboard.trends': '趋势分析',
+  'dashboard.trends.messages': '每日消息量',
+  'dashboard.trends.responseTime': '响应时间趋势',
+  'dashboard.trends.tokens': 'Token 使用趋势',
+
+  // F6: Meeting Templates
+  'meeting.templates': '快速开始',
+  'meeting.templates.or': '或自定义',
+  'meeting.template.standup': '每日站会',
+  'meeting.template.weekly': '每周总结',
+  'meeting.template.techReview': '技术评审',
+  'meeting.template.productSync': '产品同步',
+
+  // F7: Health Monitoring
+  'health.alert': '健康告警',
+  'health.consecutiveErrors': '连续错误: {count}',
+  'health.slowResponse': '响应变慢',
 }

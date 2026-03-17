@@ -407,12 +407,21 @@ router.get('/collaboration', (req, res) => {
       links.push({ from, to, label, type });
     };
 
-    // Only show real cross-department request links (not org structure —
-    // the department layout already makes the hierarchy clear visually)
+    // Only show RECENT cross-department request links (last 1 hour)
+    // Old/completed requests should not show visual collaboration
     const requestsDir = path.join(BASE_PATH, 'departments', 'bulletin', 'requests');
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const now = Date.now();
     if (fs.existsSync(requestsDir)) {
       const files = fs.readdirSync(requestsDir)
-        .filter(f => f.endsWith('.md') && !f.startsWith('.'));
+        .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+        .filter(f => {
+          // Only include files modified within the last hour
+          try {
+            const stat = fs.statSync(path.join(requestsDir, f));
+            return (now - stat.mtimeMs) < ONE_HOUR_MS;
+          } catch { return false; }
+        });
 
       const deptIdSet = new Set(deptIds);
       for (const file of files) {
@@ -629,6 +638,15 @@ router.post('/departments/:id/chat', async (req, res) => {
           if (c.readyState === 1 && c._authenticated) try { c.send(visitPayload); } catch {}
         });
       }
+
+      // Send push notification for cross-dept message
+      import('./push.js').then(({ sendPush }) => {
+        sendPush({
+          title: '跨部门消息',
+          body: `来自 ${sourceDept}: ${msgText.slice(0, 100)}`,
+          category: 'mention'
+        }).catch(() => {});
+      }).catch(() => {});
 
       // Create request file in bulletin/requests/ so it shows in the UI
       try {

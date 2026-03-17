@@ -2,13 +2,12 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
-import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, getConfigValue } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
-const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const UPLOAD_DIR = path.join(BASE_PATH, '..', 'command-center', 'uploads');
 
 // Ensure upload directory exists
@@ -69,8 +68,7 @@ function getApiKey() {
   }
 
   // Try openclaw.json
-  const openclawConfig = readJsonFile(OPENCLAW_CONFIG);
-  const apiKey = openclawConfig?.skills?.entries?.['openai-whisper-api']?.apiKey;
+  const apiKey = getConfigValue('skills.entries.openai-whisper-api.apiKey');
   return apiKey || null;
 }
 

@@ -4,7 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { getGateway } from '../gateway.js';
 import { safeWriteFileSync } from '../utils.js';
-import { OPENCLAW_HOME } from '../utils.js';
+import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
 
 const router = express.Router();
 
@@ -487,6 +487,69 @@ router.post('/jobs/:id/run', async (req, res) => {
   } catch (error) {
     console.error(`Error in POST /api/cron/jobs/${req.params.id}/run:`, error);
     res.status(500).json({ error: 'Failed to trigger cron job run' });
+  }
+});
+
+/**
+ * POST /api/cron/briefing/template
+ * Create a morning briefing cron job template (9:00 AM daily)
+ * Sends briefing request to each department, collects responses, broadcasts to bulletin
+ */
+router.post('/briefing/template', async (req, res) => {
+  try {
+    // Read existing jobs
+    const data = readCronJobs();
+
+    // Create a daily briefing job for each department
+    const config = JSON.parse(fs.readFileSync(path.join(BASE_PATH, 'departments', 'config.json'), 'utf8'));
+    const departments = config.departments || {};
+
+    // Morning briefing job at 9:00 AM daily
+    const now = Date.now();
+    const briefingJob = {
+      id: randomUUID(),
+      agentId: 'main',
+      name: '每日晨会简报',
+      enabled: true,
+      createdAtMs: now,
+      updatedAtMs: now,
+      deptId: 'coo', // Assign to COO to coordinate
+      schedule: {
+        kind: 'cron',
+        expr: '0 9 * * *' // 9:00 AM every day
+      },
+      sessionTarget: 'isolated',
+      wakeMode: 'now',
+      payload: {
+        kind: 'agentTurn',
+        message: '早上好！请协调各部门进行每日简报汇总：\n\n1. 向每个部门发送简报请求（使用 POST /departments/{id}/chat API）\n2. 请求内容：「请提供今日简报：你的部门状态、待处理事项、今日重点工作」\n3. 收集所有部门的回复\n4. 将汇总后的简报发布到公告板（使用 POST /bulletin API）\n\n请开始执行。',
+        timeoutSeconds: 300
+      },
+      delivery: {
+        mode: 'none'
+      },
+      state: {
+        consecutiveErrors: 0
+      }
+    };
+
+    // Add to jobs array
+    data.jobs.push(briefingJob);
+
+    // Write back to file
+    if (!writeCronJobs(data)) {
+      return res.status(500).json({ error: 'Failed to save briefing template' });
+    }
+
+    console.log(`[Cron] Created morning briefing template job ${briefingJob.id}`);
+    res.status(201).json({
+      success: true,
+      message: 'Morning briefing template created',
+      job: briefingJob
+    });
+  } catch (error) {
+    console.error('Error in POST /api/cron/briefing/template:', error);
+    res.status(500).json({ error: 'Failed to create briefing template' });
   }
 });
 

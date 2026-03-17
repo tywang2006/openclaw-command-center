@@ -82,6 +82,7 @@ export interface DeptVisit {
   from: string
   to: string
   id: number
+  message?: string
 }
 let _deptVisits: DeptVisit[] = []
 let _visitVersion = 0
@@ -103,9 +104,42 @@ export function useDeptVisits(): DeptVisit[] {
   return useSyncExternalStore(subscribeVisits, getVisitSnapshot)
 }
 
-export function consumeVisit(id: number) {
-  _deptVisits = _deptVisits.filter(v => v.id !== id)
-  _notifyVisitListeners()
+/** Pop the next visit from the queue (does NOT trigger re-renders) */
+export function consumeVisit(): DeptVisit | undefined {
+  if (_deptVisits.length === 0) return undefined
+  const visit = _deptVisits[0]
+  _deptVisits = _deptVisits.slice(1)
+  return visit
+}
+
+// Meeting events store — decoupled for performance
+interface MeetingEvent {
+  type: 'start' | 'end'
+  meetingId: string
+  topic?: string
+  deptIds: string[]
+  timestamp: number
+}
+
+let meetingEvents: MeetingEvent[] = []
+const meetingListeners = new Set<() => void>()
+
+function emitMeetingChange() {
+  for (const fn of meetingListeners) fn()
+}
+
+export function consumeMeetingEvent(): MeetingEvent | undefined {
+  return meetingEvents.shift()
+}
+
+export function useMeetingEvents(): MeetingEvent[] {
+  return useSyncExternalStore(
+    (cb) => {
+      meetingListeners.add(cb)
+      return () => { meetingListeners.delete(cb) }
+    },
+    () => meetingEvents
+  )
 }
 
 function parseDepartment(d: any): Department {
@@ -331,9 +365,17 @@ export function useAgentState() {
 
       case 'chat:stream':
         if (mountedRef.current && data?.deptId && data?.chunk) {
+          let chunk = data.chunk
+          // Strip context tags from streaming chunks
+          if (chunk.includes('<department_context>') || chunk.includes('<subagent_context>')) {
+            chunk = chunk
+              .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
+              .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '')
+          }
+          if (!chunk) break
           _streamingTexts = new Map(_streamingTexts)
           const existing = _streamingTexts.get(data.deptId) || ''
-          _streamingTexts.set(data.deptId, existing + data.chunk)
+          _streamingTexts.set(data.deptId, existing + chunk)
           _notifyStreamListeners()
         }
         break
@@ -358,9 +400,36 @@ export function useAgentState() {
 
       case 'dept:visit':
         if (data?.from && data?.to) {
-          _deptVisits = [..._deptVisits, { from: data.from, to: data.to, id: Date.now() + Math.random() }]
+          _deptVisits = [..._deptVisits, {
+            from: data.from,
+            to: data.to,
+            id: Date.now() + Math.random(),
+            message: data.message
+          }]
           _notifyVisitListeners()
         }
+        break
+
+      case 'meeting:start':
+        console.log('[WS] meeting:start received:', data)
+        meetingEvents.push({
+          type: 'start',
+          meetingId: data.meetingId,
+          topic: data.topic,
+          deptIds: data.deptIds,
+          timestamp: Date.now()
+        })
+        emitMeetingChange()
+        break
+
+      case 'meeting:end':
+        meetingEvents.push({
+          type: 'end',
+          meetingId: data.meetingId,
+          deptIds: data.deptIds,
+          timestamp: Date.now()
+        })
+        emitMeetingChange()
         break
 
       case 'departments:updated':

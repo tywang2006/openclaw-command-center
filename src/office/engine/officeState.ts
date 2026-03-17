@@ -525,7 +525,7 @@ export class OfficeState {
 
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id)
-    if (ch) {
+    if (ch && ch.isActive !== active) {
       ch.isActive = active
       if (!active) {
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
@@ -628,6 +628,45 @@ export class OfficeState {
     ch.emotionTimer = emotion === 'error' ? ERROR_FLASH_DURATION_SEC : 0
   }
 
+  showSpeechBubble(agentId: number, text: string, durationSec = 6): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+    // Truncate text to 30 chars (add "..." if longer)
+    let truncated = text
+    if (text.length > 30) {
+      truncated = text.substring(0, 30) + '...'
+    }
+    ch.speechBubbleText = truncated
+    ch.speechBubbleTimer = durationSec
+  }
+
+  clearSpeechBubble(agentId: number): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+    ch.speechBubbleText = null
+    ch.speechBubbleTimer = 0
+  }
+
+  setCollabColor(agentId: number, color: string | null): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+    ch.collabColor = color
+  }
+
+  faceToward(agentId: number, targetCol: number, targetRow: number): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+    // Compute direction based on relative position
+    const dc = targetCol - ch.tileCol
+    const dr = targetRow - ch.tileRow
+    // Prioritize horizontal direction if significant
+    if (Math.abs(dc) > Math.abs(dr)) {
+      ch.dir = dc > 0 ? Direction.RIGHT : Direction.LEFT
+    } else {
+      ch.dir = dr > 0 ? Direction.DOWN : Direction.UP
+    }
+  }
+
   showWaitingBubble(id: number): void {
     const ch = this.characters.get(id)
     if (ch) {
@@ -691,6 +730,15 @@ export class OfficeState {
         if (ch.emotionTimer <= 0) {
           ch.emotionState = null
           ch.emotionTimer = 0
+        }
+      }
+
+      // Speech bubble timers
+      if (ch.speechBubbleText && ch.speechBubbleTimer > 0) {
+        ch.speechBubbleTimer -= dt
+        if (ch.speechBubbleTimer <= 0) {
+          ch.speechBubbleText = null
+          ch.speechBubbleTimer = 0
         }
       }
     }

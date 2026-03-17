@@ -33,6 +33,51 @@ function writeWorkflows(data) {
 }
 
 /**
+ * GET /api/workflows/templates
+ * Get workflow templates
+ */
+router.get('/templates', (req, res) => {
+  try {
+    const templates = [
+      {
+        id: 'morning-briefing',
+        name: 'Morning Briefing',
+        description: 'Daily morning report from all departments',
+        steps: [
+          { deptId: 'sales', message: 'Provide yesterday\'s sales summary', delayMs: 0 },
+          { deptId: 'ops', message: 'Report operational status and any issues', delayMs: 2000 },
+          { deptId: 'dev', message: 'Summary of completed tasks and today\'s priorities', delayMs: 2000 },
+        ]
+      },
+      {
+        id: 'multi-dept-review',
+        name: 'Multi-Department Review',
+        description: 'Sequential review process across departments',
+        steps: [
+          { deptId: 'dev', message: 'Review and summarize the latest feature development', delayMs: 0 },
+          { deptId: 'qa', message: 'Test plan for the new features mentioned above', delayMs: 3000 },
+          { deptId: 'sales', message: 'Create sales pitch for the new features', delayMs: 3000 },
+        ]
+      },
+      {
+        id: 'customer-report',
+        name: 'Customer Report Pipeline',
+        description: 'Generate comprehensive customer report',
+        steps: [
+          { deptId: 'sales', message: 'List top 5 customer accounts and recent activity', delayMs: 0 },
+          { deptId: 'support', message: 'Summarize recent customer support tickets and trends', delayMs: 3000 },
+          { deptId: 'finance', message: 'Revenue analysis for top accounts', delayMs: 3000 },
+        ]
+      }
+    ];
+    res.json({ success: true, templates });
+  } catch (err) {
+    console.error('[Workflows] GET /templates error:', err.message);
+    res.status(500).json({ error: 'Failed to get templates' });
+  }
+});
+
+/**
  * GET /api/workflows
  * List all workflows
  */
@@ -180,6 +225,7 @@ router.delete('/:id', (req, res) => {
 /**
  * POST /api/workflows/:id/run
  * Execute a workflow: run each step sequentially via chat()
+ * Supports conditional branching based on step output
  */
 router.post('/:id/run', async (req, res) => {
   try {
@@ -189,12 +235,23 @@ router.post('/:id/run', async (req, res) => {
 
     console.log(`[Workflows] Running "${wf.name}" (${wf.steps.length} steps)`);
     const results = [];
+    const stepStatus = wf.steps.map(() => 'pending'); // Track status for each step
+    let currentStepIndex = 0;
+    const visitedSteps = new Set(); // Prevent infinite loops
 
-    for (let i = 0; i < wf.steps.length; i++) {
-      const step = wf.steps[i];
+    while (currentStepIndex < wf.steps.length) {
+      // Check for infinite loops
+      if (visitedSteps.has(currentStepIndex)) {
+        console.error(`[Workflows] Infinite loop detected at step ${currentStepIndex + 1}`);
+        break;
+      }
+      visitedSteps.add(currentStepIndex);
 
-      // Delay between steps (except first)
-      if (i > 0 && step.delayMs > 0) {
+      const step = wf.steps[currentStepIndex];
+      stepStatus[currentStepIndex] = 'running';
+
+      // Delay between steps
+      if (results.length > 0 && step.delayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, Math.min(step.delayMs, 60000)));
       }
 
@@ -202,16 +259,49 @@ router.post('/:id/run', async (req, res) => {
       const result = await chat(step.deptId, step.message);
       const durationMs = Date.now() - startMs;
 
-      results.push({
-        step: i + 1,
+      const stepResult = {
+        step: currentStepIndex + 1,
         deptId: step.deptId,
         message: step.message,
         success: result.success,
         reply: result.reply || result.error || '',
+        error: result.error,
         durationMs,
-      });
+        status: result.success ? 'done' : 'error',
+      };
 
-      console.log(`[Workflows] Step ${i + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
+      results.push(stepResult);
+      stepStatus[currentStepIndex] = result.success ? 'done' : 'error';
+
+      console.log(`[Workflows] Step ${currentStepIndex + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
+
+      // Check for conditional branching
+      if (step.condition && result.success) {
+        const { type, value, nextStepOnTrue, nextStepOnFalse } = step.condition;
+        const output = (result.reply || '').toLowerCase();
+        const conditionValue = (value || '').toLowerCase();
+        let conditionMet = false;
+
+        if (type === 'contains') {
+          conditionMet = output.includes(conditionValue);
+        } else if (type === 'not_contains') {
+          conditionMet = !output.includes(conditionValue);
+        } else if (type === 'equals') {
+          conditionMet = output.trim() === conditionValue.trim();
+        }
+
+        const nextStep = conditionMet ? nextStepOnTrue : nextStepOnFalse;
+        console.log(`[Workflows] Condition ${conditionMet ? 'MET' : 'NOT MET'}: jumping to step ${nextStep + 1}`);
+
+        // Validate next step index
+        if (nextStep >= 0 && nextStep < wf.steps.length && nextStep !== currentStepIndex + 1) {
+          currentStepIndex = nextStep;
+          continue;
+        }
+      }
+
+      // Move to next step
+      currentStepIndex++;
     }
 
     // Update last run info
@@ -223,7 +313,9 @@ router.post('/:id/run', async (req, res) => {
       success: true,
       workflow: { id: wf.id, name: wf.name },
       results,
+      stepStatus,
       totalSteps: wf.steps.length,
+      executedSteps: results.length,
       successCount: results.filter(r => r.success).length,
     });
   } catch (error) {

@@ -252,6 +252,23 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
     }
   };
 
+  const handleCreateBriefingTemplate = async () => {
+    try {
+      const response = await authedFetch('/api/cron/briefing/template', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      await fetchJobs();
+      showToast(locale === 'zh' ? '晨会简报模板已创建' : 'Morning briefing template created');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : (locale === 'zh' ? '创建失败' : 'Failed to create'));
+    }
+  };
+
   const formatSchedule = (schedule: CronJob['schedule']): string => {
     if (schedule.kind === 'every' && schedule.everyMs) {
       const minutes = schedule.everyMs / (60 * 1000);
@@ -319,12 +336,22 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
     <div className="cron-tab">
       <div className="cron-header">
         <h2>{t('cron.title')}</h2>
-        <button
-          className="btn-create-toggle"
-          onClick={() => setShowCreateForm(!showCreateForm)}
-        >
-          {showCreateForm ? t('cron.cancel') : t('cron.create')}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn-create-toggle"
+            onClick={handleCreateBriefingTemplate}
+            style={{ background: '#fbbf24', color: '#0a0a14' }}
+            title={locale === 'zh' ? '创建每日晨会简报（9:00 AM）' : 'Create daily morning briefing (9:00 AM)'}
+          >
+            {locale === 'zh' ? '快速添加：晨会简报' : 'Quick Add: Morning Briefing'}
+          </button>
+          <button
+            className="btn-create-toggle"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+          >
+            {showCreateForm ? t('cron.cancel') : t('cron.create')}
+          </button>
+        </div>
       </div>
 
       {showCreateForm && (

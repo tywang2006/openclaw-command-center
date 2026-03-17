@@ -772,7 +772,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                     {sk.tags.length > 0 && (
                       <div className="cap-card-tags">
                         {sk.tags.slice(0, 5).map((tag, i) => (
-                          <span key={i} className={`cap-tag ${getTagColor(tag)}`}>{tag}</span>
+                          <span key={`${sk.slug}-tag-${tag}-${i}`} className={`cap-tag ${getTagColor(tag)}`}>{tag}</span>
                         ))}
                         {sk.tags.length > 5 && <span className="cap-tag tag-more">+{sk.tags.length - 5}</span>}
                       </div>
@@ -847,7 +847,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                     <h3>{t('cap.skills.detail.tags')}</h3>
                     <div className="cap-card-tags">
                       {selectedSkill.tags.map((tag, i) => (
-                        <span key={i} className={`cap-tag ${getTagColor(tag)}`}>{tag}</span>
+                        <span key={`modal-tag-${tag}-${i}`} className={`cap-tag ${getTagColor(tag)}`}>{tag}</span>
                       ))}
                     </div>
                   </div>

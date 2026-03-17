@@ -199,4 +199,10 @@ export interface Character {
   emotionState: 'thinking' | 'error' | null
   /** Timer for emotion (thinking: animation cycle, error: flash countdown) */
   emotionTimer: number
+  /** Active speech bubble text, or null if none showing */
+  speechBubbleText: string | null
+  /** Countdown timer for speech bubble (counts down to 0) */
+  speechBubbleTimer: number
+  /** Collaboration highlight stroke color, or null if not collaborating */
+  collabColor: string | null
 }

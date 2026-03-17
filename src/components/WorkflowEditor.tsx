@@ -13,6 +13,20 @@ interface WorkflowStep {
   deptId: string;
   message: string;
   delayMs: number;
+  condition?: {
+    type: 'contains' | 'not_contains' | 'equals';
+    value: string;
+    nextStepOnTrue: number;
+    nextStepOnFalse: number;
+  };
+  status?: 'pending' | 'running' | 'done' | 'error';
+}
+
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  steps: WorkflowStep[];
 }
 
 interface Workflow {
@@ -32,6 +46,7 @@ interface StepResult {
   reply?: string;
   error?: string;
   durationMs: number;
+  status?: 'pending' | 'running' | 'done' | 'error';
 }
 
 interface WorkflowEditorProps {
@@ -42,10 +57,13 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
   const { t } = useLocale();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
   const [results, setResults] = useState<StepResult[] | null>(null);
+  const [stepStatus, setStepStatus] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<'form' | 'pipeline'>('form');
 
   // Form state for creating/editing
   const [formName, setFormName] = useState('');
@@ -53,14 +71,15 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     { deptId: '', message: '', delayMs: 0 }
   ]);
 
-  // Fetch workflows and departments on mount
+  // Fetch workflows, departments, and templates on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [workflowsRes, deptsRes] = await Promise.all([
+        const [workflowsRes, deptsRes, templatesRes] = await Promise.all([
           authedFetch('/api/workflows'),
-          authedFetch('/api/departments')
+          authedFetch('/api/departments'),
+          authedFetch('/api/workflows/templates')
         ]);
 
         if (workflowsRes.ok) {
@@ -72,8 +91,13 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
           const data = await deptsRes.json();
           setDepartments(data.departments || []);
         }
+
+        if (templatesRes.ok) {
+          const data = await templatesRes.json();
+          setTemplates(data.templates || []);
+        }
       } catch (err) {
-        console.error('Failed to fetch workflows/departments:', err);
+        console.error('Failed to fetch workflows/departments/templates:', err);
       } finally {
         setLoading(false);
       }
@@ -88,6 +112,18 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     setFormName('');
     setFormSteps([{ deptId: '', message: '', delayMs: 0 }]);
     setResults(null);
+    setStepStatus([]);
+    setViewMode('form');
+  };
+
+  // Handle loading a template
+  const handleLoadTemplate = (template: WorkflowTemplate) => {
+    setEditingWorkflow(null);
+    setFormName(template.name);
+    setFormSteps(template.steps.map(s => ({ ...s })));
+    setResults(null);
+    setStepStatus([]);
+    setViewMode('form');
   };
 
   // Handle editing existing workflow
@@ -96,6 +132,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     setFormName(workflow.name);
     setFormSteps([...workflow.steps]);
     setResults(null);
+    setStepStatus([]);
+    setViewMode('form');
   };
 
   // Handle saving workflow (create or update)
@@ -139,6 +177,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       setEditingWorkflow(null);
       setFormName('');
       setFormSteps([{ deptId: '', message: '', delayMs: 0 }]);
+      setViewMode('form');
     } catch (err) {
       console.error('Failed to save workflow:', err);
       alert(t('workflow.save.failed'));
@@ -150,6 +189,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     try {
       setRunningWorkflowId(workflowId);
       setResults(null);
+      setStepStatus([]);
 
       const res = await authedFetch(`/api/workflows/${workflowId}/run`, {
         method: 'POST'
@@ -161,6 +201,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
 
       const data = await res.json();
       setResults(data.results || []);
+      setStepStatus(data.stepStatus || []);
     } catch (err) {
       console.error('Failed to run workflow:', err);
       alert(t('workflow.run.failed'));
@@ -218,6 +259,39 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     return dept ? dept.name : deptId;
   };
 
+  const getStatusBadgeClass = (status?: string) => {
+    switch (status) {
+      case 'running': return 'status-running';
+      case 'done': return 'status-done';
+      case 'error': return 'status-error';
+      case 'pending':
+      default: return 'status-pending';
+    }
+  };
+
+  const handleConditionChange = (
+    stepIndex: number,
+    field: 'type' | 'value' | 'nextStepOnTrue' | 'nextStepOnFalse' | 'enabled',
+    value: any
+  ) => {
+    const newSteps = [...formSteps];
+    if (field === 'enabled') {
+      if (value) {
+        newSteps[stepIndex].condition = {
+          type: 'contains',
+          value: '',
+          nextStepOnTrue: Math.min(stepIndex + 1, formSteps.length - 1),
+          nextStepOnFalse: Math.min(stepIndex + 2, formSteps.length - 1),
+        };
+      } else {
+        delete newSteps[stepIndex].condition;
+      }
+    } else if (newSteps[stepIndex].condition) {
+      (newSteps[stepIndex].condition as any)[field] = value;
+    }
+    setFormSteps(newSteps);
+  };
+
   return (
     <div className="workflow-overlay" onClick={onClose}>
       <div className="workflow-modal" onClick={(e) => e.stopPropagation()}>
@@ -232,6 +306,22 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
             <button className="workflow-create-btn" onClick={handleCreate}>
               {t('workflow.create')}
             </button>
+
+            {templates.length > 0 && !editingWorkflow && formName === '' && (
+              <div className="workflow-templates">
+                <div className="workflow-templates-header">{t('workflow.templates')}</div>
+                {templates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="workflow-template-item"
+                    onClick={() => handleLoadTemplate(template)}
+                  >
+                    <div className="template-name">{template.name}</div>
+                    <div className="template-desc">{template.description}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {loading ? (
               <div className="workflow-loading">{t('workflow.loading')}</div>
@@ -329,82 +419,208 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
             ) : (
               /* Form view */
               <div className="workflow-form">
-                <div className="workflow-form-field">
-                  <label>{t('workflow.name')}</label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder={t('workflow.name.placeholder')}
-                    className="workflow-input"
-                  />
+                <div className="workflow-form-header">
+                  <div className="workflow-form-field">
+                    <label>{t('workflow.name')}</label>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder={t('workflow.name.placeholder')}
+                      className="workflow-input"
+                    />
+                  </div>
+                  <div className="workflow-view-toggle">
+                    <button
+                      className={`view-toggle-btn ${viewMode === 'form' ? 'active' : ''}`}
+                      onClick={() => setViewMode('form')}
+                    >
+                      {t('workflow.view.form')}
+                    </button>
+                    <button
+                      className={`view-toggle-btn ${viewMode === 'pipeline' ? 'active' : ''}`}
+                      onClick={() => setViewMode('pipeline')}
+                    >
+                      {t('workflow.view.pipeline')}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="workflow-steps">
-                  {formSteps.map((step, idx) => (
-                    <div key={idx} className="workflow-step">
-                      <div className="workflow-step-header">
-                        <span className="workflow-step-label">
-                          {t('workflow.step', { num: idx + 1 })}
-                        </span>
-                        {formSteps.length > 1 && (
-                          <button
-                            className="workflow-btn-remove"
-                            onClick={() => handleRemoveStep(idx)}
-                          >
-                            {t('workflow.step.remove')}
-                          </button>
+                {viewMode === 'pipeline' ? (
+                  /* Pipeline View */
+                  <div className="workflow-pipeline">
+                    {formSteps.map((step, idx) => (
+                      <div key={idx} className="pipeline-step-wrapper">
+                        <div className={`pipeline-step ${getStatusBadgeClass(stepStatus[idx])}`}>
+                          <div className="pipeline-step-header">
+                            <span className="pipeline-step-number">{idx + 1}</span>
+                            <span className={`pipeline-status-badge ${getStatusBadgeClass(stepStatus[idx])}`}>
+                              {stepStatus[idx] || 'pending'}
+                            </span>
+                          </div>
+                          <div className="pipeline-step-dept">
+                            {getDepartmentName(step.deptId) || 'Not set'}
+                          </div>
+                          <div className="pipeline-step-message">
+                            {step.message || 'No message'}
+                          </div>
+                          {step.delayMs > 0 && (
+                            <div className="pipeline-step-delay">{step.delayMs / 1000}s {t('workflow.pipeline.delay')}</div>
+                          )}
+                          {step.condition && (
+                            <div className="pipeline-step-condition">
+                              {t('workflow.pipeline.if')} {step.condition.type} "{step.condition.value}"
+                            </div>
+                          )}
+                        </div>
+                        {idx < formSteps.length - 1 && (
+                          <div className="pipeline-arrow">
+                            {step.condition ? (
+                              <div className="pipeline-arrow-split">
+                                <div className="arrow-branch">
+                                  <span className="arrow-label">{t('workflow.pipeline.yes')}</span>
+                                  <div className="arrow-line"></div>
+                                </div>
+                                <div className="arrow-branch">
+                                  <span className="arrow-label">{t('workflow.pipeline.no')}</span>
+                                  <div className="arrow-line"></div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="arrow-single">↓</div>
+                            )}
+                          </div>
                         )}
                       </div>
-
-                      <div className="workflow-step-fields">
-                        <div className="workflow-step-row">
-                          <div className="workflow-step-field">
-                            <label>{t('workflow.step.dept')}</label>
-                            <select
-                              value={step.deptId}
-                              onChange={(e) => handleStepChange(idx, 'deptId', e.target.value)}
-                              className="workflow-select"
-                            >
-                              <option value="">-- {t('workflow.step.dept')} --</option>
-                              {departments.map((dept) => (
-                                <option key={dept.id} value={dept.id}>
-                                  {dept.name}
-                                </option>
-                              ))}
-                            </select>
+                    ))}
+                  </div>
+                ) : (
+                  /* Form View */
+                  <>
+                    <div className="workflow-steps">
+                      {formSteps.map((step, idx) => (
+                        <div key={idx} className="workflow-step">
+                          <div className="workflow-step-header">
+                            <span className="workflow-step-label">
+                              {t('workflow.step', { num: idx + 1 })}
+                            </span>
+                            {formSteps.length > 1 && (
+                              <button
+                                className="workflow-btn-remove"
+                                onClick={() => handleRemoveStep(idx)}
+                              >
+                                {t('workflow.step.remove')}
+                              </button>
+                            )}
                           </div>
 
-                          <div className="workflow-step-field workflow-step-delay">
-                            <label>{t('workflow.step.delay')}</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={step.delayMs / 1000}
-                              onChange={(e) => handleStepChange(idx, 'delayMs', e.target.value)}
-                              className="workflow-input"
-                            />
+                          <div className="workflow-step-fields">
+                            <div className="workflow-step-row">
+                              <div className="workflow-step-field">
+                                <label>{t('workflow.step.dept')}</label>
+                                <select
+                                  value={step.deptId}
+                                  onChange={(e) => handleStepChange(idx, 'deptId', e.target.value)}
+                                  className="workflow-select"
+                                >
+                                  <option value="">-- {t('workflow.step.dept')} --</option>
+                                  {departments.map((dept) => (
+                                    <option key={dept.id} value={dept.id}>
+                                      {dept.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="workflow-step-field workflow-step-delay">
+                                <label>{t('workflow.step.delay')}</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={step.delayMs / 1000}
+                                  onChange={(e) => handleStepChange(idx, 'delayMs', e.target.value)}
+                                  className="workflow-input"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="workflow-step-field">
+                              <label>{t('workflow.step.message')}</label>
+                              <textarea
+                                value={step.message}
+                                onChange={(e) => handleStepChange(idx, 'message', e.target.value)}
+                                placeholder={t('workflow.step.message.placeholder')}
+                                className="workflow-textarea"
+                                rows={3}
+                              />
+                            </div>
+
+                            {/* Conditional Branching */}
+                            <div className="workflow-condition-section">
+                              <label className="workflow-condition-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={!!step.condition}
+                                  onChange={(e) => handleConditionChange(idx, 'enabled', e.target.checked)}
+                                />
+                                <span>{t('workflow.condition.add')}</span>
+                              </label>
+
+                              {step.condition && (
+                                <div className="workflow-condition-fields">
+                                  <div className="condition-row">
+                                    <select
+                                      value={step.condition.type}
+                                      onChange={(e) => handleConditionChange(idx, 'type', e.target.value)}
+                                      className="workflow-select"
+                                    >
+                                      <option value="contains">{t('workflow.condition.contains')}</option>
+                                      <option value="not_contains">{t('workflow.condition.not_contains')}</option>
+                                      <option value="equals">{t('workflow.condition.equals')}</option>
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={step.condition.value}
+                                      onChange={(e) => handleConditionChange(idx, 'value', e.target.value)}
+                                      placeholder={t('workflow.condition.value.placeholder')}
+                                      className="workflow-input"
+                                    />
+                                  </div>
+                                  <div className="condition-row">
+                                    <label>{t('workflow.condition.if_true')}:</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={formSteps.length}
+                                      value={step.condition.nextStepOnTrue + 1}
+                                      onChange={(e) => handleConditionChange(idx, 'nextStepOnTrue', parseInt(e.target.value) - 1)}
+                                      className="workflow-input"
+                                    />
+                                  </div>
+                                  <div className="condition-row">
+                                    <label>{t('workflow.condition.if_false')}:</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={formSteps.length}
+                                      value={step.condition.nextStepOnFalse + 1}
+                                      onChange={(e) => handleConditionChange(idx, 'nextStepOnFalse', parseInt(e.target.value) - 1)}
+                                      className="workflow-input"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        <div className="workflow-step-field">
-                          <label>{t('workflow.step.message')}</label>
-                          <textarea
-                            value={step.message}
-                            onChange={(e) => handleStepChange(idx, 'message', e.target.value)}
-                            placeholder={t('workflow.step.message.placeholder')}
-                            className="workflow-textarea"
-                            rows={3}
-                          />
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
 
-                <button className="workflow-btn-add-step" onClick={handleAddStep}>
-                  {t('workflow.step.add')}
-                </button>
+                    <button className="workflow-btn-add-step" onClick={handleAddStep}>
+                      {t('workflow.step.add')}
+                    </button>
+                  </>
+                )}
 
                 <div className="workflow-form-actions">
                   <button className="workflow-btn-save" onClick={handleSave}>
@@ -416,6 +632,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                       setEditingWorkflow(null);
                       setFormName('');
                       setFormSteps([{ deptId: '', message: '', delayMs: 0 }]);
+                      setViewMode('form');
                     }}
                   >
                     {t('workflow.cancel')}

@@ -154,6 +154,29 @@ export function renderScene(
       continue
     }
 
+    // Collaboration color outline — tinted stroke around the character
+    if (ch.collabColor) {
+      const outlineData = getOutlineSprite(spriteData)
+      const outlineCached = getCachedSprite(outlineData, zoom)
+      const olDrawX = drawX - zoom
+      const olDrawY = drawY - zoom
+      const collabCol = ch.collabColor
+      drawables.push({
+        zY: charZY - OUTLINE_Z_SORT_OFFSET,
+        draw: (c) => {
+          c.save()
+          // Draw outline then tint it with the collab color
+          c.globalAlpha = 0.85
+          c.drawImage(outlineCached, olDrawX, olDrawY)
+          // Apply color tint by drawing on top with multiply-like effect
+          c.globalCompositeOperation = 'source-atop'
+          c.fillStyle = collabCol
+          c.fillRect(olDrawX, olDrawY, outlineCached.width, outlineCached.height)
+          c.restore()
+        },
+      })
+    }
+
     // White outline: full opacity for selected, 50% for hover
     const isSelected = selectedAgentId !== null && ch.id === selectedAgentId
     const isHovered = hoveredAgentId !== null && ch.id === hoveredAgentId
@@ -534,6 +557,94 @@ export function renderBubbles(
   }
 }
 
+export function renderSpeechBubbles(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  for (const ch of characters) {
+    if (!ch.speechBubbleText) continue
+
+    const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0
+    const screenX = offsetX + ch.x * zoom
+    const screenY = offsetY + (ch.y + sittingOff) * zoom
+
+    // Measure text for bubble sizing
+    ctx.save()
+    ctx.font = `${Math.max(10, zoom * 5)}px monospace`
+    const metrics = ctx.measureText(ch.speechBubbleText)
+    const textWidth = metrics.width
+    const padding = 8 * zoom
+    const bubbleWidth = textWidth + padding * 2
+    const bubbleHeight = 20 * zoom
+
+    // Position bubble above the character (above name bubble)
+    const bubbleX = screenX - bubbleWidth / 2
+    const bubbleY = screenY - 40 * zoom - bubbleHeight
+
+    // Calculate fade-out alpha (fade in last 1 second)
+    let alpha = 1.0
+    if (ch.speechBubbleTimer < 1.0) {
+      alpha = ch.speechBubbleTimer
+    }
+
+    ctx.globalAlpha = alpha
+
+    // Draw rounded rect background
+    const radius = 6 * zoom
+    ctx.fillStyle = 'rgba(20, 20, 30, 0.92)'
+    ctx.strokeStyle = '#00d4aa'
+    ctx.lineWidth = Math.max(1, zoom * 0.5)
+
+    ctx.beginPath()
+    ctx.moveTo(bubbleX + radius, bubbleY)
+    ctx.lineTo(bubbleX + bubbleWidth - radius, bubbleY)
+    ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY, bubbleX + bubbleWidth, bubbleY + radius)
+    ctx.lineTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight - radius)
+    ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight, bubbleX + bubbleWidth - radius, bubbleY + bubbleHeight)
+    ctx.lineTo(bubbleX + radius, bubbleY + bubbleHeight)
+    ctx.quadraticCurveTo(bubbleX, bubbleY + bubbleHeight, bubbleX, bubbleY + bubbleHeight - radius)
+    ctx.lineTo(bubbleX, bubbleY + radius)
+    ctx.quadraticCurveTo(bubbleX, bubbleY, bubbleX + radius, bubbleY)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    // Draw small pointer triangle below the bubble pointing down
+    const pointerSize = 4 * zoom
+    const pointerX = screenX
+    const pointerY = bubbleY + bubbleHeight
+    ctx.fillStyle = 'rgba(20, 20, 30, 0.92)'
+    ctx.beginPath()
+    ctx.moveTo(pointerX, pointerY + pointerSize)
+    ctx.lineTo(pointerX - pointerSize, pointerY)
+    ctx.lineTo(pointerX + pointerSize, pointerY)
+    ctx.closePath()
+    ctx.fill()
+
+    // Draw border for pointer
+    ctx.strokeStyle = '#00d4aa'
+    ctx.beginPath()
+    ctx.moveTo(pointerX, pointerY + pointerSize)
+    ctx.lineTo(pointerX - pointerSize, pointerY)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(pointerX, pointerY + pointerSize)
+    ctx.lineTo(pointerX + pointerSize, pointerY)
+    ctx.stroke()
+
+    // Render text centered
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(ch.speechBubbleText, screenX, bubbleY + bubbleHeight / 2)
+
+    ctx.restore()
+  }
+}
+
 export interface ButtonBounds {
   /** Center X in device pixels */
   cx: number
@@ -630,6 +741,9 @@ export function renderFrame(
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)
+
+  // Custom speech bubbles (F8)
+  renderSpeechBubbles(ctx, characters, offsetX, offsetY, zoom)
 
   // Emotion overlays (thinking dots, error flash)
   renderEmotions(ctx, characters, offsetX, offsetY, zoom)

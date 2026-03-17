@@ -2,15 +2,16 @@ export const en: Record<string, string> = {
   // App.tsx
   'app.title': 'ChaoClaw Office',
   'app.tab.chat': 'Chat',
-  'app.tab.bulletin': 'Bulletin',
-  'app.tab.memory': 'Memory',
+  'app.tab.bulletin': 'News',
+  'app.tab.memory': 'Memo',
   'app.tab.activity': 'Activity',
-  'app.tab.requests': 'Requests',
-  'app.tab.cron': 'Scheduler',
+  'app.tab.requests': 'Req',
+  'app.tab.cron': 'Cron',
   'app.tab.skills': 'Skills',
+  'app.tab.meeting': 'Meet',
   'app.panel.expand': 'Expand Panel',
   'app.panel.collapse': 'Collapse Panel',
-  'app.tab.dashboard': 'Stats',
+  'app.tab.dashboard': 'Dash',
   'app.fullscreen.enter': 'Enter Fullscreen',
   'app.fullscreen.exit': 'Exit Fullscreen',
   'app.status.online': 'Online',
@@ -335,6 +336,33 @@ export const en: Record<string, string> = {
   'workflow.delete.failed': 'Failed to delete',
   'workflow.load.failed': 'Failed to load',
   'workflow.lastrun': 'Last run: {status}',
+  'workflow.templates': 'Templates',
+  'workflow.view.form': 'Form',
+  'workflow.view.pipeline': 'Pipeline',
+  'workflow.pipeline.delay': 'delay',
+  'workflow.pipeline.if': 'If output',
+  'workflow.pipeline.yes': 'yes',
+  'workflow.pipeline.no': 'no',
+  'workflow.condition.add': 'Add conditional branching',
+  'workflow.condition.contains': 'contains',
+  'workflow.condition.not_contains': 'does not contain',
+  'workflow.condition.equals': 'equals',
+  'workflow.condition.value.placeholder': 'text to check',
+  'workflow.condition.if_true': 'If true, go to step',
+  'workflow.condition.if_false': 'If false, go to step',
+
+  // Dashboard enhancements (Phase 4C)
+  'dashboard.action.broadcast': 'Broadcast to All',
+  'dashboard.action.meeting': 'Start Meeting',
+  'dashboard.action.workflow': 'Create Workflow',
+  'dashboard.system.title': 'System Status',
+  'dashboard.system.gateway': 'Gateway',
+  'dashboard.system.integrations': 'Integrations',
+  'dashboard.system.active': 'Active',
+  'dashboard.health.title': 'Department Health',
+  'dashboard.health.today': 'Today',
+  'dashboard.health.response': 'Response',
+  'dashboard.health.errors': 'errors',
 
   // Session Replay (F13)
   'replay.title': 'Replay',
@@ -352,8 +380,8 @@ export const en: Record<string, string> = {
   'replay.stop.playback': 'Stop',
 
   // Capabilities Dashboard (IntegrationsTab)
-  'app.tab.integrations': 'Capabilities',
-  'app.tab.system': 'System',
+  'app.tab.integrations': 'Integ',
+  'app.tab.system': 'Sys',
 
   // SystemTab
   'system.loading': 'Loading...',
@@ -856,4 +884,48 @@ export const en: Record<string, string> = {
   'system.config.bottoken.placeholder': 'Enter Bot Token...',
   'system.config.nokey': 'Not configured',
   'system.config.configured': 'Configured',
+
+  // F1: Meeting Minutes Export
+  'meeting.export.title': 'Meeting Minutes Exported',
+  'meeting.export.message': 'Meeting ended, minutes auto-exported',
+  'meeting.export.drive': 'View in Google Drive',
+  'meeting.export.close': 'Close',
+  'meeting.ended': 'Meeting Ended',
+
+  // F2: @Mentions
+  'chat.mention.forwarding': 'Forwarding to @{dept}...',
+  'chat.mention.response': '[@{dept}] Reply',
+
+  // F3: Global Search
+  'search.loading': 'Searching...',
+  'search.noResults': 'No results found',
+  'search.category.memory': 'Memory',
+  'search.category.daily': 'Daily',
+  'search.category.chat': 'Chat',
+  'search.category.bulletin': 'Bulletin',
+
+  // F4: Push Notifications
+  'push.title': 'Push Notifications',
+  'push.enable': 'Enable browser push',
+  'push.enabled': 'Enabled',
+  'push.disabled': 'Disabled',
+
+  // F5: Dashboard Trends
+  'dashboard.trends': 'Trend Analysis',
+  'dashboard.trends.messages': 'Daily Messages',
+  'dashboard.trends.responseTime': 'Response Time Trend',
+  'dashboard.trends.tokens': 'Token Usage Trend',
+
+  // F6: Meeting Templates
+  'meeting.templates': 'Quick Start',
+  'meeting.templates.or': 'Or customize',
+  'meeting.template.standup': 'Daily Standup',
+  'meeting.template.weekly': 'Weekly Summary',
+  'meeting.template.techReview': 'Tech Review',
+  'meeting.template.productSync': 'Product Sync',
+
+  // F7: Health Monitoring
+  'health.alert': 'Health Alert',
+  'health.consecutiveErrors': 'Consecutive errors: {count}',
+  'health.slowResponse': 'Slow Response',
 }

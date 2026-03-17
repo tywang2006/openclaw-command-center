@@ -151,7 +151,7 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
         {logs.length > 0 && (
           <div className="setup-logs" ref={logRef}>
             {logs.map((l, i) => (
-              <div key={i} className={`setup-log ${l.error ? 'log-error' : ''}`}>
+              <div key={`log-${l.step}-${i}`} className={`setup-log ${l.error ? 'log-error' : ''}`}>
                 <span className="log-step">[{l.step}]</span> {l.message}
               </div>
             ))}

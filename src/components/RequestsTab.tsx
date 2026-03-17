@@ -34,7 +34,7 @@ export default function RequestsTab({ requests }: RequestsTabProps) {
   return (
     <div className="requests-tab">
       {requests.map((request, index) => (
-        <div key={index} className="request-card">
+        <div key={`req-${request.filename}-${request.date}-${index}`} className="request-card">
           <div className="request-header">
             <span className="request-date">{formatDate(request.date)}</span>
             <span className="badge active">{t('requests.badge.pending')}</span>

@@ -1,18 +1,17 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { OPENCLAW_HOME } from '../utils.js';
+import { OPENCLAW_HOME, CONFIG_PATH, getOpenClawConfig } from '../utils.js';
 import { getGateway } from '../gateway.js';
 
 const router = express.Router();
-const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 
 /**
  * Helper: Read openclaw.json
  */
 function readConfig() {
   try {
-    return JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf8'));
+    return getOpenClawConfig();
   } catch (error) {
     console.error('[SystemConfig] Error reading openclaw.json:', error.message);
     return null;
@@ -24,7 +23,7 @@ function readConfig() {
  */
 function writeConfig(data) {
   try {
-    fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), 'utf8');
     return true;
   } catch (error) {
     console.error('[SystemConfig] Error writing openclaw.json:', error.message);

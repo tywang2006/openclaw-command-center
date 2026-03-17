@@ -1,0 +1,25 @@
+{
+  "name": "超哥办公室 — Command Center",
+  "short_name": "指挥中心",
+  "description": "OpenClaw AI Command Center",
+  "start_url": "/cmd/",
+  "scope": "/cmd/",
+  "display": "standalone",
+  "background_color": "#0e0e1a",
+  "theme_color": "#00d4aa",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/cmd/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/cmd/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

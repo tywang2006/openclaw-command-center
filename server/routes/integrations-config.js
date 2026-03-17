@@ -12,15 +12,51 @@ import {
   migratePlaintextFields,
 } from '../crypto.js';
 import { recordAudit } from './audit.js';
-import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync, getConfigValue } from '../utils.js';
 
 // OAuth CSRF state tokens (expire after 10 minutes)
 const oauthStates = new Map();
 
+// Cleanup expired OAuth states every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000; // 10 minutes
+  for (const [key, state] of oauthStates) {
+    const ts = typeof state === 'object' ? state.createdAt : state;
+    if (ts && ts < cutoff) {
+      oauthStates.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+/**
+ * SSRF protection: check if a URL points to a private/internal network
+ */
+function isPrivateUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    // Only allow https
+    if (parsed.protocol !== 'https:') return true;
+    const host = parsed.hostname;
+    // Block private/reserved IPs
+    if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return true;
+    // Block private ranges
+    const parts = host.split('.').map(Number);
+    if (parts.length === 4 && !parts.some(isNaN)) {
+      if (parts[0] === 127) return true;  // Full loopback range 127.0.0.0/8
+      if (parts[0] === 10) return true;
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+      if (parts[0] === 192 && parts[1] === 168) return true;
+      if (parts[0] === 169 && parts[1] === 254) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
-const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const VALID_SERVICES = ['gmail', 'drive', 'voice', 'webhook', 'gogcli', 'google-sheets'];
 
 // Default configuration structure
@@ -201,7 +237,7 @@ router.get('/integrations/config', (req, res) => {
  * PUT /integrations/config/:service
  * Update a specific integration service configuration
  */
-router.put('/integrations/config/:service', (req, res) => {
+router.put('/integrations/config/:service', async (req, res) => {
   try {
     const { service } = req.params;
 
@@ -287,7 +323,7 @@ router.put('/integrations/config/:service', (req, res) => {
     config[service] = { ...config[service], ...updates };
 
     // Write back to file
-    const success = saveConfig(config);
+    const success = await saveConfig(config);
     if (!success) {
       return res.status(500).json({ error: 'Failed to save configuration' });
     }
@@ -370,6 +406,11 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         return res.status(400).json({ error: 'Webhook URL not configured' });
       }
 
+      // SSRF protection: block private/internal URLs
+      if (isPrivateUrl(url)) {
+        return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
+      }
+
       try {
         let body;
         const p = platform || 'custom';
@@ -383,11 +424,16 @@ router.post('/integrations/config/:service/test', async (req, res) => {
           body = JSON.stringify({ event: 'test', message: '[Command Center] Test notification', timestamp: new Date().toISOString() });
         }
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
+          signal: controller.signal,
+          redirect: 'error',
         });
+        clearTimeout(timeout);
 
         if (!response.ok && response.status !== 204) {
           throw new Error(`Webhook returned ${response.status}`);
@@ -401,8 +447,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
       // Get API key (from config override or openclaw.json)
       let apiKey = config.voice.apiKeyOverride;
       if (!apiKey) {
-        const openclawConfig = readJsonFile(OPENCLAW_CONFIG);
-        apiKey = openclawConfig?.skills?.entries?.['openai-whisper-api']?.apiKey;
+        apiKey = getConfigValue('skills.entries.openai-whisper-api.apiKey');
       }
 
       if (!apiKey) {
@@ -530,10 +575,11 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
     const redirectUri = isInstalled ? 'http://localhost' : getOAuthRedirectUri(req);
     const flowType = isInstalled ? 'manual' : 'redirect';
     const state = crypto.randomBytes(32).toString('hex');
-    oauthStates.set(state, Date.now());
+    oauthStates.set(state, { createdAt: Date.now() });
     // Clean expired states (older than 10 minutes)
     for (const [k, v] of oauthStates) {
-      if (Date.now() - v > 600000) oauthStates.delete(k);
+      const ts = typeof v === 'object' ? v.createdAt : v;
+      if (Date.now() - ts > 600000) oauthStates.delete(k);
     }
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(cred.client_id)}` +
@@ -622,7 +668,7 @@ router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
     if (email) {
       config.gogcli.account = email;
       config.gogcli.enabled = true;
-      saveConfig(config);
+      await saveConfig(config);
     }
 
     recordAudit({ action: 'gogcli.authorized', target: 'gogcli', details: { email }, ip: req.ip });
@@ -689,7 +735,7 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
     if (email) {
       config.gogcli.account = email;
       config.gogcli.enabled = true;
-      saveConfig(config);
+      await saveConfig(config);
     }
 
     recordAudit({ action: 'gogcli.authorized', target: 'gogcli', details: { email }, ip: req.ip });
@@ -704,7 +750,7 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
  * DELETE /integrations/config/:service
  * Reset service configuration to defaults
  */
-router.delete('/integrations/config/:service', (req, res) => {
+router.delete('/integrations/config/:service', async (req, res) => {
   try {
     const { service } = req.params;
 
@@ -715,7 +761,7 @@ router.delete('/integrations/config/:service', (req, res) => {
     const config = getConfig();
     config[service] = DEFAULT_CONFIG[service];
 
-    const success = saveConfig(config);
+    const success = await saveConfig(config);
     if (!success) {
       return res.status(500).json({ error: 'Failed to reset configuration' });
     }
@@ -772,7 +818,7 @@ router.get('/integrations/autobackup', (req, res) => {
  * PUT /integrations/autobackup
  * Update autobackup config
  */
-router.put('/integrations/autobackup', (req, res) => {
+router.put('/integrations/autobackup', async (req, res) => {
   try {
     const config = getConfig();
     if (!config.autoBackup) config.autoBackup = { ...DEFAULT_CONFIG.autoBackup };
@@ -793,7 +839,7 @@ router.put('/integrations/autobackup', (req, res) => {
       config.autoBackup.time = time;
     }
 
-    if (!saveConfig(config)) {
+    if (!(await saveConfig(config))) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -945,7 +991,7 @@ async function runAutoBackup() {
     // Update lastRun
     if (!config.autoBackup) config.autoBackup = { ...DEFAULT_CONFIG.autoBackup };
     config.autoBackup.lastRun = new Date().toISOString();
-    saveConfig(config);
+    await saveConfig(config);
 
     console.log(`[AutoBackup] Completed (${client.method}): ${files.length} departments backed up`);
     return { success: true, files };

@@ -2,13 +2,12 @@ import { Router } from 'express';
 import { execFile, execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
+import { OPENCLAW_HOME, BASE_PATH, CONFIG_PATH, getConfigValue } from '../utils.js';
 import { getGateway } from '../gateway.js';
 import { isPasswordConfigured } from '../auth.js';
 
 const router = Router();
 
-const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const DEPT_CONFIG = path.join(BASE_PATH, 'departments', 'config.json');
 const DEPT_STATUS = path.join(BASE_PATH, 'departments', 'status.json');
 const BULLETIN = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
@@ -115,7 +114,7 @@ function checkSetupStatus() {
     cliVersion = result;
   } catch {}
 
-  const configExists = fs.existsSync(OPENCLAW_CONFIG);
+  const configExists = fs.existsSync(CONFIG_PATH);
   const deptConfigExists = fs.existsSync(DEPT_CONFIG);
   const deptStatusExists = fs.existsSync(DEPT_STATUS);
   const bulletinExists = fs.existsSync(BULLETIN);
@@ -123,8 +122,7 @@ function checkSetupStatus() {
   let gatewayToken = false;
   if (configExists) {
     try {
-      const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf8'));
-      gatewayToken = !!(cfg.gateway?.auth?.token);
+      gatewayToken = !!getConfigValue('gateway.auth.token');
     } catch {}
   }
 

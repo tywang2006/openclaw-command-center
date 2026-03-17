@@ -264,7 +264,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
       {renderReplayList()}
       <div className="activity-tab" ref={scrollRef}>
         {activities.map((activity, index) => (
-          <div key={index} className={`activity-item ${activity.role}`}>
+          <div key={`${activity.deptId}-${activity.timestamp}-${index}`} className={`activity-item ${activity.role}`}>
             <div className="activity-meta">
               <DeptIcon deptId={activity.deptId} size={14} />
               <span className="activity-time">{formatTime(activity.timestamp)}</span>

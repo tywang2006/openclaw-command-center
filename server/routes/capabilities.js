@@ -1,11 +1,10 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { BASE_PATH, OPENCLAW_HOME, readJsonFile, readTextFile, parseFrontmatter } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, readTextFile, parseFrontmatter, getOpenClawConfig } from '../utils.js';
 
 const router = express.Router();
 
-const OPENCLAW_CONFIG = path.join(OPENCLAW_HOME, 'openclaw.json');
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
 const SANDBOXES_PATH = path.join(OPENCLAW_HOME, 'sandboxes');
 const EXTENSIONS_PATH = path.join(OPENCLAW_HOME, 'extensions');
@@ -39,8 +38,8 @@ function formatSize(n) {
  */
 router.get('/system/capabilities', (req, res) => {
   try {
-    const config = readJsonFile(OPENCLAW_CONFIG);
-    if (!config) {
+    const config = getOpenClawConfig();
+    if (!config || Object.keys(config).length === 0) {
       return res.status(500).json({ error: 'Cannot read openclaw.json' });
     }
 

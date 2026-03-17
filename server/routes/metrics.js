@@ -85,6 +85,13 @@ function saveMetrics() {
 let _dirty = false;
 function markDirty() { _dirty = true; }
 
+// Health state tracking
+const healthState = {}; // { deptId: { consecutiveErrors: 0, lastAlertTime: 0, recentResponseTimes: [] } }
+
+// WebSocket server reference for broadcasting
+let _wss = null;
+export function setWss(wss) { _wss = wss; }
+
 // Periodic save timer
 const _saveTimer = setInterval(() => {
   if (_dirty) {
@@ -111,7 +118,13 @@ function todayKey() {
 
 function ensureDaily(day) {
   if (!metrics.daily[day]) {
-    metrics.daily[day] = { messages: 0, errors: 0, tokens: { input: 0, output: 0 } };
+    metrics.daily[day] = {
+      messages: 0,
+      errors: 0,
+      tokens: { input: 0, output: 0 },
+      totalResponseMs: 0,
+      successCount: 0
+    };
   }
   return metrics.daily[day];
 }
@@ -147,6 +160,66 @@ function ensureDepartmentMetrics(deptId) {
 }
 
 /**
+ * Check department health and send alerts if needed
+ */
+function checkDepartmentHealth(deptId, isError, responseTime) {
+  if (!healthState[deptId]) {
+    healthState[deptId] = { consecutiveErrors: 0, lastAlertTime: 0, recentResponseTimes: [] };
+  }
+
+  const state = healthState[deptId];
+  const now = Date.now();
+
+  if (isError) {
+    state.consecutiveErrors++;
+
+    // Alert on 3+ consecutive errors (5-minute cooldown)
+    if (state.consecutiveErrors >= 3 && now - state.lastAlertTime > 5 * 60 * 1000) {
+      state.lastAlertTime = now;
+
+      // Import notify dynamically to avoid circular deps
+      import('./notifications.js').then(({ notifyError }) => {
+        notifyError('health', `Department ${deptId} health alert`, `${state.consecutiveErrors} consecutive errors detected`);
+      }).catch(() => {});
+
+      // Broadcast health alert via WebSocket
+      if (_wss) {
+        const payload = JSON.stringify({
+          event: 'health:alert',
+          data: { deptId, consecutiveErrors: state.consecutiveErrors },
+          timestamp: new Date().toISOString(),
+        });
+        _wss.clients.forEach(c => {
+          if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {}
+        });
+      }
+    }
+  } else {
+    // Reset consecutive errors on success
+    state.consecutiveErrors = 0;
+
+    // Track recent response times for performance alerts
+    state.recentResponseTimes.push(responseTime);
+    if (state.recentResponseTimes.length > 5) {
+      state.recentResponseTimes.shift();
+    }
+
+    // Alert if recent avg > 2x historical avg (5-minute cooldown)
+    if (state.recentResponseTimes.length === 5 && now - state.lastAlertTime > 5 * 60 * 1000) {
+      const recentAvg = state.recentResponseTimes.reduce((a, b) => a + b, 0) / 5;
+      const deptMetrics = metrics.departments[deptId];
+      if (deptMetrics && deptMetrics.avgResponseMs > 0 && recentAvg > deptMetrics.avgResponseMs * 2) {
+        state.lastAlertTime = now;
+
+        import('./notifications.js').then(({ notifyWarning }) => {
+          notifyWarning('health', `Department ${deptId} slow response`, `Recent avg: ${Math.round(recentAvg)}ms (historical: ${deptMetrics.avgResponseMs}ms)`);
+        }).catch(() => {});
+      }
+    }
+  }
+}
+
+/**
  * Record a chat interaction for a department.
  */
 export function recordChat(deptId, durationMs, isError = false) {
@@ -172,6 +245,10 @@ export function recordChat(deptId, durationMs, isError = false) {
     if (deptMetrics.recentResponseTimes.length > 50) {
       deptMetrics.recentResponseTimes.shift();
     }
+
+    // Record daily response time
+    day.successCount++;
+    day.totalResponseMs += durationMs;
   }
 
   metrics.global.totalMessages++;
@@ -186,6 +263,9 @@ export function recordChat(deptId, durationMs, isError = false) {
   metrics.global.avgResponseMs = successfulMessages > 0
     ? Math.round(totalResponseMs / successfulMessages)
     : 0;
+
+  // Check health after recording
+  checkDepartmentHealth(deptId, isError, durationMs);
 
   markDirty();
 }
@@ -247,6 +327,26 @@ router.get('/metrics', (req, res) => {
     // Prune old daily entries on read
     pruneDaily();
 
+    // Compute avgResponseMs per daily entry
+    const dailyWithAvg = Object.fromEntries(
+      Object.entries(metrics.daily).map(([date, day]) => [
+        date,
+        {
+          ...day,
+          avgResponseMs: day.successCount > 0 ? Math.round(day.totalResponseMs / day.successCount) : 0
+        }
+      ])
+    );
+
+    // Build healthStatus from healthState
+    const healthStatus = Object.fromEntries(
+      Object.keys(healthState).map(id => [id, {
+        consecutiveErrors: healthState[id].consecutiveErrors,
+        status: healthState[id].consecutiveErrors >= 3 ? 'error' :
+                healthState[id].consecutiveErrors >= 1 ? 'warning' : 'healthy'
+      }])
+    );
+
     res.json({
       success: true,
       timestamp: new Date().toISOString(),
@@ -258,7 +358,8 @@ router.get('/metrics', (req, res) => {
         totalUptime,
       },
       departments: metrics.departments,
-      daily: metrics.daily,
+      daily: dailyWithAvg,
+      healthStatus,
     });
   } catch (error) {
     console.error('[Metrics] Error getting metrics:', error);

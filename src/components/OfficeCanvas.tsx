@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Department, ToolState } from '../hooks/useAgentState'
-import { useDeptVisits, consumeVisit } from '../hooks/useAgentState'
+import { consumeVisit, consumeMeetingEvent } from '../hooks/useAgentState'
 import type { SubAgent } from './ChatPanel'
 import { OfficeState } from '../office/engine/officeState'
 import { renderFrame } from '../office/engine/renderer'
@@ -8,10 +8,6 @@ import { initFurnitureCatalog } from '../office/furnitureAssets'
 import { authedFetch } from '../utils/api'
 import {
   TILE_SIZE,
-  COLLAB_ARROW_COLOR,
-  COLLAB_ARROW_DASH,
-  COLLAB_ARROW_ANIM_SPEED,
-  COLLAB_ARROW_HEAD_SIZE,
   TOOL_LABEL_COLOR,
   TOOL_LABEL_BG,
   TOOL_LABEL_BORDER,
@@ -69,9 +65,17 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
   // Sub-agent character ID → display name
   const subAgentNamesRef = useRef<Map<number, string>>(new Map())
 
-  // Collaboration arrows (F11)
-  const [collabLinks, setCollabLinks] = useState<CollabLink[]>([])
-  const collabAnimRef = useRef(0)
+  // Stable refs for render loop (prevents effect restarts)
+  const departmentsRef = useRef(departments)
+  departmentsRef.current = departments
+  const toolStatesRef = useRef(toolStates)
+  toolStatesRef.current = toolStates
+
+  // Ambient animation time (reserved)
+  const ambientTimeRef = useRef(0)
+
+  // Active collaboration sessions — agents walk to requester's office with matching stroke
+  const activeCollabRef = useRef<Map<string, { agents: number[], color: string }>>(new Map())
 
   // Track previous dept statuses for emotion triggers (F6)
   const prevStatusRef = useRef<Map<string, string>>(new Map())
@@ -112,6 +116,7 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     departments.forEach((dept, index) => {
       const isActive = dept.status === 'active'
       officeStateRef.current!.setAgentActive(index, isActive)
+      // Do NOT force char.state here — let the FSM in updateCharacter handle transitions
     })
   }, [departments, officeReady])
 
@@ -132,14 +137,65 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
   }, [departments, officeReady])
 
   // Poll collaboration links every 60s (F11) — pauses when tab hidden
+  const prevCollabKeyRef = useRef<string>('')
+  const collabColors = ['#00d4aa', '#ffbb00', '#00a8ff', '#ff6688', '#aa66ff']
   const fetchCollab = useCallback(() => {
     authedFetch('/api/collaboration')
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data?.links)) setCollabLinks(data.links)
+        if (!Array.isArray(data?.links) || !officeStateRef.current) return
+        const state = officeStateRef.current
+        const links = data.links as CollabLink[]
+        const newKey = links.map(l => `${l.from}:${l.to}`).sort().join(',')
+
+        // No change — skip
+        if (newKey === prevCollabKeyRef.current) return
+        prevCollabKeyRef.current = newKey
+
+        // End old collaborations: clear colors, send agents home
+        for (const [, collab] of activeCollabRef.current) {
+          for (const idx of collab.agents) {
+            state.setCollabColor(idx, null)
+            state.sendToSeat(idx)
+          }
+        }
+        activeCollabRef.current.clear()
+
+        if (links.length === 0) return
+
+        // Start new collaborations: for each link, walk "to" agent to "from" agent's office
+        let colorIdx = 0
+        for (const link of links) {
+          const fromIdx = departments.findIndex(d => d.id === link.from)
+          const toIdx = departments.findIndex(d => d.id === link.to)
+          if (fromIdx < 0 || toIdx < 0) continue
+
+          const color = collabColors[colorIdx % collabColors.length]
+          colorIdx++
+          const key = `${link.from}:${link.to}`
+
+          // "from" is the requester — "to" agent walks to "from"'s office
+          const fromSeatId = `dept-${link.from}-chair-main`
+          const fromSeat = state.seats.get(fromSeatId)
+          if (!fromSeat) continue
+
+          // Walk "to" agent near "from"'s seat
+          const col = fromSeat.seatCol - 1
+          const row = fromSeat.seatRow
+          state.walkToTile(toIdx, col, row) ||
+            state.walkToTile(toIdx, fromSeat.seatCol + 1, row) ||
+            state.walkToTile(toIdx, fromSeat.seatCol, row - 1) ||
+            state.walkToTile(toIdx, fromSeat.seatCol, row + 1)
+
+          // Set matching stroke color on both agents
+          state.setCollabColor(fromIdx, color)
+          state.setCollabColor(toIdx, color)
+
+          activeCollabRef.current.set(key, { agents: [fromIdx, toIdx], color })
+        }
       })
       .catch(() => {})
-  }, [])
+  }, [departments])
   useVisibilityInterval(fetchCollab, 60000, [fetchCollab])
 
   // Update selection
@@ -194,54 +250,130 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     })
   }, [subAgents, departments, officeReady])
 
-  // Handle dept:visit events — walk source agent to target department, then back
-  const deptVisits = useDeptVisits()
-  const processedVisitsRef = useRef(new Set<number>())
-
+  // Handle dept:visit events — poll from queue to avoid re-render loops
   useEffect(() => {
-    if (!officeStateRef.current || deptVisits.length === 0) return
-    const state = officeStateRef.current
-
-    for (const visit of deptVisits) {
-      if (processedVisitsRef.current.has(visit.id)) continue
-      processedVisitsRef.current.add(visit.id)
-      consumeVisit(visit.id)
+    const interval = setInterval(() => {
+      if (!officeStateRef.current) return
+      const state = officeStateRef.current
+      const visit = consumeVisit()
+      if (!visit) return
 
       const fromIdx = departments.findIndex(d => d.id === visit.from)
       const toIdx = departments.findIndex(d => d.id === visit.to)
-      if (fromIdx < 0 || toIdx < 0) continue
+      if (fromIdx < 0 || toIdx < 0) return
 
       // Find target department's seat position
       const targetSeatId = `dept-${visit.to}-chair-main`
       const targetSeat = state.seats.get(targetSeatId)
-      if (!targetSeat) continue
+      if (!targetSeat) return
 
       // Walk the source agent to a tile near the target seat
       const col = targetSeat.seatCol - 1
       const row = targetSeat.seatRow
       const walked = state.walkToTile(fromIdx, col, row)
       if (!walked) {
-        // Try adjacent tiles if first attempt fails
         state.walkToTile(fromIdx, targetSeat.seatCol + 1, row) ||
         state.walkToTile(fromIdx, targetSeat.seatCol, row - 1) ||
         state.walkToTile(fromIdx, targetSeat.seatCol, row + 1)
       }
 
-      // Send agent back to their seat after a delay
+      // Get source agent's character to calculate path length
+      const sourceChar = state.characters.get(fromIdx)
+      if (!sourceChar) return
+      const pathLength = sourceChar.path.length
+      const walkTime = pathLength * 333 // 333ms per tile
+
+      // After arrival: target faces visitor, shows thinking, visitor shows speech bubble
       setTimeout(() => {
-        if (officeStateRef.current) {
-          officeStateRef.current.sendToSeat(fromIdx)
+        if (!officeStateRef.current) return
+        const sc = officeStateRef.current.characters.get(fromIdx)
+        if (!sc) return
+        officeStateRef.current.faceToward(toIdx, sc.tileCol, sc.tileRow)
+        officeStateRef.current.setAgentEmotion(toIdx, 'thinking')
+        officeStateRef.current.showSpeechBubble(fromIdx, visit.message || '...')
+      }, walkTime)
+
+      // After conversation (arrival + 7 seconds): clear and return
+      setTimeout(() => {
+        if (!officeStateRef.current) return
+        officeStateRef.current.setAgentEmotion(toIdx, null)
+        officeStateRef.current.clearSpeechBubble(fromIdx)
+        officeStateRef.current.sendToSeat(fromIdx)
+      }, walkTime + 7000)
+    }, 200)
+
+    return () => clearInterval(interval)
+  }, [departments, officeReady])
+
+  // Handle meeting gathering animations — poll from queue like visits
+  const processedMeetingsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!officeStateRef.current) return
+      const state = officeStateRef.current
+      const event = consumeMeetingEvent()
+      if (!event) return
+
+      const depts = departmentsRef.current
+
+      console.log('[OfficeCanvas] Meeting event consumed:', event.type, event.meetingId)
+
+      if (event.type === 'start') {
+        if (processedMeetingsRef.current.has(event.meetingId)) return
+        processedMeetingsRef.current.add(event.meetingId)
+
+        // Find walkable tiles near map center for gathering
+        const centerCol = Math.floor(state.layout.cols / 2)
+        const centerRow = Math.floor(state.layout.rows / 2)
+
+        // Sort walkable tiles by distance to center, pick closest ones
+        const sortedTiles = [...state.walkableTiles]
+          .map(t => ({ ...t, dist: Math.abs(t.col - centerCol) + Math.abs(t.row - centerRow) }))
+          .sort((a, b) => a.dist - b.dist)
+
+        const participants = event.deptIds
+          .map((deptId) => depts.findIndex(d => d.id === deptId))
+          .filter((idx) => idx >= 0)
+
+        participants.forEach((agentIdx, i) => {
+          // Pick a unique walkable tile near center for each participant
+          const tile = sortedTiles[i % sortedTiles.length]
+          if (!tile) return
+
+          const walked = state.walkToTile(agentIdx, tile.col, tile.row)
+
+          const char = state.characters.get(agentIdx)
+          if (!char) return
+          const pathLength = walked ? char.path.length : 0
+          const walkTime = pathLength * 333
+
+          setTimeout(() => {
+            if (officeStateRef.current) {
+              officeStateRef.current.showSpeechBubble(agentIdx, event.topic || 'Meeting', 10)
+            }
+          }, walkTime + 500)
+        })
+      } else if (event.type === 'end') {
+        const participants = event.deptIds
+          .map((deptId) => depts.findIndex(d => d.id === deptId))
+          .filter((idx) => idx >= 0)
+
+        participants.forEach((agentIdx) => {
+          state.clearSpeechBubble(agentIdx)
+          state.sendToSeat(agentIdx)
+        })
+
+        if (processedMeetingsRef.current.size > 100) {
+          processedMeetingsRef.current.clear()
         }
-      }, 8000)
-    }
+      }
+    }, 300)
 
-    // Cleanup old processed visit IDs
-    if (processedVisitsRef.current.size > 100) {
-      processedVisitsRef.current.clear()
-    }
-  }, [deptVisits, departments, officeReady])
+    return () => clearInterval(interval)
+  }, [officeReady])
 
-  // Render loop using the full renderFrame pipeline
+  // Render loop using the full renderFrame pipeline (double-buffered to prevent flicker)
   useEffect(() => {
     const canvas = canvasRef.current
     const container = containerRef.current
@@ -250,7 +382,17 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    // Offscreen buffer for flicker-free rendering
+    let offscreen = document.createElement('canvas')
+    let offCtx = offscreen.getContext('2d')!
+
     const render = (time: number) => {
+      // Skip rendering when tab is hidden to save resources
+      if (document.hidden) {
+        rafRef.current = requestAnimationFrame(render)
+        return
+      }
+
       const dt = lastTimeRef.current ? Math.min((time - lastTimeRef.current) / 1000, 0.1) : 0
       lastTimeRef.current = time
 
@@ -263,32 +405,43 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       const dpr = window.devicePixelRatio || 1
       const w = Math.floor(rect.width)
       const h = Math.floor(rect.height)
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr
-        canvas.height = h * dpr
+      const pw = w * dpr
+      const ph = h * dpr
+      if (canvas.width !== pw || canvas.height !== ph) {
+        canvas.width = pw
+        canvas.height = ph
         canvas.style.width = `${w}px`
         canvas.style.height = `${h}px`
       }
+      // Sync offscreen buffer size
+      if (offscreen.width !== pw || offscreen.height !== ph) {
+        offscreen.width = pw
+        offscreen.height = ph
+      }
 
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      // Draw everything to offscreen buffer, then blit once to avoid flicker
+      const drawCtx = offCtx
+      drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       if (!officeStateRef.current) {
-        ctx.fillStyle = '#0a0a14'
-        ctx.fillRect(0, 0, w, h)
-        // Loading text
-        ctx.fillStyle = '#2a2a4a'
-        ctx.font = '14px monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText('Loading office...', w / 2, h / 2)
+        drawCtx.fillStyle = '#0a0a14'
+        drawCtx.fillRect(0, 0, w, h)
+        drawCtx.fillStyle = '#2a2a4a'
+        drawCtx.font = '14px monospace'
+        drawCtx.textAlign = 'center'
+        drawCtx.fillText('Loading office...', w / 2, h / 2)
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, pw, ph)
+        ctx.drawImage(offscreen, 0, 0)
         rafRef.current = requestAnimationFrame(render)
         return
       }
 
       const state = officeStateRef.current
 
-      // Use the full renderFrame from the game engine (read from refs for stable loop)
+      // Use the full renderFrame from the game engine (double-buffered)
       const result = renderFrame(
-        ctx,
+        drawCtx,
         w,
         h,
         state.tileMap,
@@ -325,7 +478,7 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         const isSub = char.id < 0
 
         if (!isSub) {
-          const dept = departments[char.id]
+          const dept = departmentsRef.current[char.id]
           if (dept) labelText = dept.name
         } else {
           labelText = subAgentNamesRef.current.get(char.id) || null
@@ -335,100 +488,64 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         const screenX = offsetX + char.x * z
         const screenY = offsetY + (char.y - 20) * z
 
-        ctx.save()
-        ctx.font = `${Math.max(9, z * 5)}px monospace`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
+        drawCtx.save()
+        drawCtx.font = `${Math.max(9, z * 5)}px monospace`
+        drawCtx.textAlign = 'center'
+        drawCtx.textBaseline = 'bottom'
 
         const text = labelText
-        const metrics = ctx.measureText(text)
+        const metrics = drawCtx.measureText(text)
         const bgW = metrics.width + 6
         const bgH = Math.max(14, z * 6)
 
-        ctx.fillStyle = isSub ? 'rgba(0, 50, 42, 0.85)' : 'rgba(30, 30, 46, 0.85)'
-        ctx.fillRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
+        drawCtx.fillStyle = isSub ? 'rgba(0, 50, 42, 0.85)' : 'rgba(30, 30, 46, 0.85)'
+        drawCtx.fillRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
 
         const isSelected = state.selectedAgentId === char.id
-        ctx.strokeStyle = isSelected ? '#00d4aa' : isSub ? '#00553a' : '#2a2a4a'
-        ctx.lineWidth = 1
-        ctx.strokeRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
+        drawCtx.strokeStyle = isSelected ? '#00d4aa' : isSub ? '#00553a' : '#2a2a4a'
+        drawCtx.lineWidth = 1
+        drawCtx.strokeRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
 
-        ctx.fillStyle = isSelected ? '#00d4aa' : isSub ? '#00aa88' : '#e0e0e0'
-        ctx.fillText(text, screenX, screenY - 2)
-        ctx.restore()
+        drawCtx.fillStyle = isSelected ? '#00d4aa' : isSub ? '#00aa88' : '#e0e0e0'
+        drawCtx.fillText(text, screenX, screenY - 2)
+        drawCtx.restore()
 
         // F7: Draw tool label below dept name
-        if (!isSub && char.id >= 0 && char.id < departments.length) {
-          const dept = departments[char.id]
-          const tool = toolStates?.get(dept.id)
-          if (tool && !tool.done) {
+        if (!isSub && char.id >= 0 && char.id < departmentsRef.current.length) {
+          const dept = departmentsRef.current[char.id]
+          const tool = toolStatesRef.current?.get(dept.id)
+          if (tool && !tool.done && tool.toolName !== 'unknown') {
             const toolScreenY = screenY + 2
-            ctx.save()
-            ctx.font = `${Math.max(7, z * 4)}px monospace`
-            ctx.textAlign = 'center'
-            ctx.textBaseline = 'top'
+            drawCtx.save()
+            drawCtx.font = `${Math.max(7, z * 4)}px monospace`
+            drawCtx.textAlign = 'center'
+            drawCtx.textBaseline = 'top'
             const toolText = `[${tool.toolName}]`
-            const tm = ctx.measureText(toolText)
+            const tm = drawCtx.measureText(toolText)
             const tbgW = tm.width + 4
             const tbgH = Math.max(10, z * 5)
-            ctx.fillStyle = TOOL_LABEL_BG
-            ctx.fillRect(screenX - tbgW / 2, toolScreenY, tbgW, tbgH)
-            ctx.strokeStyle = TOOL_LABEL_BORDER
-            ctx.lineWidth = 1
-            ctx.strokeRect(screenX - tbgW / 2, toolScreenY, tbgW, tbgH)
-            ctx.fillStyle = TOOL_LABEL_COLOR
-            ctx.fillText(toolText, screenX, toolScreenY + 1)
-            ctx.restore()
+            drawCtx.fillStyle = TOOL_LABEL_BG
+            drawCtx.fillRect(screenX - tbgW / 2, toolScreenY, tbgW, tbgH)
+            drawCtx.strokeStyle = TOOL_LABEL_BORDER
+            drawCtx.lineWidth = 1
+            drawCtx.strokeRect(screenX - tbgW / 2, toolScreenY, tbgW, tbgH)
+            drawCtx.fillStyle = TOOL_LABEL_COLOR
+            drawCtx.fillText(toolText, screenX, toolScreenY + 1)
+            drawCtx.restore()
           }
         }
       })
 
-      // F11: Draw collaboration arrows between departments
-      if (collabLinks.length > 0) {
-        collabAnimRef.current = (collabAnimRef.current + 1) % 1000
-        ctx.save()
+      // Collaboration stroke colors are rendered by renderer.ts via ch.collabColor
+      // No additional drawing needed here
 
-        for (const link of collabLinks) {
-          const fromIdx = departments.findIndex(d => d.id === link.from)
-          const toIdx = departments.findIndex(d => d.id === link.to)
-          if (fromIdx < 0 || toIdx < 0) continue
-          const fromCh = state.characters.get(fromIdx)
-          const toCh = state.characters.get(toIdx)
-          if (!fromCh || !toCh) continue
+      // Ambient animations removed — caused user-reported flickering at desks
 
-          const x1 = offsetX + fromCh.x * z
-          const y1 = offsetY + fromCh.y * z
-          const x2 = offsetX + toCh.x * z
-          const y2 = offsetY + toCh.y * z
-
-          const isOrg = link.type === 'org'
-
-          // Style: org links are subtle/static, request links are bright/animated
-          ctx.strokeStyle = isOrg ? 'rgba(0, 212, 170, 0.25)' : COLLAB_ARROW_COLOR
-          ctx.lineWidth = Math.max(1, z * (isOrg ? 0.3 : 0.5))
-          ctx.setLineDash(isOrg ? [4, 6] : COLLAB_ARROW_DASH)
-          ctx.lineDashOffset = isOrg ? 0 : -(collabAnimRef.current * COLLAB_ARROW_ANIM_SPEED / 60)
-
-          // Draw line
-          ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
-          ctx.stroke()
-
-          // Draw arrowhead at destination (skip for org links to reduce clutter)
-          if (!isOrg) {
-            const angle = Math.atan2(y2 - y1, x2 - x1)
-            const hs = COLLAB_ARROW_HEAD_SIZE * z * 0.3
-            ctx.setLineDash([])
-            ctx.beginPath()
-            ctx.moveTo(x2, y2)
-            ctx.lineTo(x2 - hs * Math.cos(angle - 0.4), y2 - hs * Math.sin(angle - 0.4))
-            ctx.moveTo(x2, y2)
-            ctx.lineTo(x2 - hs * Math.cos(angle + 0.4), y2 - hs * Math.sin(angle + 0.4))
-            ctx.stroke()
-          }
-        }
-        ctx.restore()
+      // Blit offscreen buffer to visible canvas in one shot (prevents flicker)
+      if (offscreen.width > 0 && offscreen.height > 0) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, pw, ph)
+        ctx.drawImage(offscreen, 0, 0)
       }
 
       rafRef.current = requestAnimationFrame(render)
@@ -439,7 +556,8 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [departments, selectedDeptId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Track whether a left-click drag moved enough to be a pan (vs a click)
   const dragDistRef = useRef(0)
@@ -495,21 +613,97 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       const worldX = (mouseX - offsetX) / zoomRef.current
       const worldY = (mouseY - offsetY) / zoomRef.current
 
+      // First try character click
       const clickedId = officeStateRef.current.getCharacterAt(worldX, worldY)
-      if (clickedId !== null) {
+      if (clickedId !== null && clickedId >= 0) {
         const dept = departments[clickedId]
         if (dept) {
           onSelectDept(selectedDeptId === dept.id ? null : dept.id)
+          return
         }
+      }
+
+      // If no character clicked, check furniture interaction (Phase 4G)
+      handleFurnitureClick(worldX, worldY)
+    }
+  }
+
+  // Phase 4G: Furniture interaction handler
+  const handleFurnitureClick = (worldX: number, worldY: number) => {
+    if (!officeStateRef.current) return
+
+    const state = officeStateRef.current
+    const clickCol = Math.floor(worldX / TILE_SIZE)
+    const clickRow = Math.floor(worldY / TILE_SIZE)
+
+    // Check each furniture piece for clicks
+    for (const furn of state.furniture) {
+      const furnLeft = furn.x
+      const furnRight = furn.x + furn.sprite[0].length
+      const furnTop = furn.y
+      const furnBottom = furn.y + furn.sprite.length
+
+      if (worldX >= furnLeft && worldX < furnRight && worldY >= furnTop && worldY < furnBottom) {
+        // Find which department owns this furniture by checking seats/proximity
+        const furnCol = Math.floor((furnLeft + furnRight) / 2 / TILE_SIZE)
+        const furnRow = Math.floor((furnTop + furnBottom) / 2 / TILE_SIZE)
+
+        // Find nearest department by seat proximity
+        let nearestDept: Department | null = null
+        let nearestDist = Infinity
+
+        for (const [seatId, seat] of state.seats.entries()) {
+          const dist = Math.abs(seat.seatCol - furnCol) + Math.abs(seat.seatRow - furnRow)
+          if (dist < nearestDist) {
+            nearestDist = dist
+            // Extract dept ID from seat ID (format: "dept-{id}-chair-main")
+            const match = seatId.match(/^dept-([^-]+)-/)
+            if (match) {
+              const deptId = match[1]
+              const dept = departments.find(d => d.id === deptId)
+              if (dept) {
+                nearestDept = dept
+              }
+            }
+          }
+        }
+
+        if (nearestDept && nearestDist <= 3) {
+          // Trigger department-specific action based on furniture type
+          // Detect furniture type by sprite characteristics or position
+          const spriteHeight = furn.sprite.length
+          const spriteWidth = furn.sprite[0].length
+
+          // Heuristics for furniture detection:
+          // Desk/Computer: wider sprites near seats
+          // Bookshelf: tall narrow sprites
+          // Bulletin board: check if in lobby/common area
+
+          if (nearestDist <= 1) {
+            // Click on desk/computer → open department chat
+            console.log('[OfficeCanvas] Clicked furniture near', nearestDept.name, '- opening chat')
+            onSelectDept(nearestDept.id)
+            // Trigger chat tab switch would be handled by parent component
+          }
+        }
+
+        break
       }
     }
   }
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? -0.5 : 0.5
-    setZoom(prev => Math.max(1, Math.min(5, prev + delta)))
-  }
+  // Native wheel listener with { passive: false } to allow preventDefault without console errors
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? -0.5 : 0.5
+      setZoom(prev => Math.max(1, Math.min(5, prev + delta)))
+    }
+    canvas.addEventListener('wheel', handler, { passive: false })
+    return () => canvas.removeEventListener('wheel', handler)
+  }, [])
 
   return (
     <div ref={containerRef} className="office-canvas-container panel">
@@ -519,7 +713,6 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => setIsPanning(false)}
-        onWheel={handleWheel}
         onContextMenu={e => e.preventDefault()}
         style={{ cursor: isPanning ? 'grabbing' : 'default' }}
       />

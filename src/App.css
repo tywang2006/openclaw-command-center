@@ -271,60 +271,47 @@
 
 /* ---- Right panel tabs ---- */
 .right-tab-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   border-bottom: 2px solid var(--border-color);
   background: var(--bg-card);
   flex-shrink: 0;
-  padding: 0;
 }
 
 .right-tab {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 8px 8px;
+  gap: 3px;
+  padding: 6px 2px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  border-radius: 0;
   color: var(--text-muted);
   font-family: var(--font-ui);
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 9px;
   cursor: pointer;
   margin-bottom: -2px;
-  box-shadow: none;
-  transition: none;
   white-space: nowrap;
-  min-width: 0;
   overflow: hidden;
 }
 
-/* Hide label for inactive tabs - icon only */
+/* Always show short labels */
 .right-tab span {
-  display: none;
-}
-
-/* Show label only on active tab */
-.right-tab.active span {
   display: inline;
+  max-width: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .right-tab:hover {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.03);
-  border-color: transparent;
-  box-shadow: none;
-  transform: none;
 }
 
 .right-tab.active {
   color: var(--accent-color);
   border-bottom-color: var(--accent-color);
-  box-shadow: none;
-  transform: none;
 }
 
 .right-tab-content {

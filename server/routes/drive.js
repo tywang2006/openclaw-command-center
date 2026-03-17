@@ -8,6 +8,8 @@ import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from
 
 const router = express.Router();
 
+const VALID_FOLDER_ID = /^[a-zA-Z0-9_-]+$/;
+
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
 
@@ -115,6 +117,11 @@ function getDriveClient(driveConfig) {
 async function getOrCreateBackupFolder(drive, driveConfig) {
   let folderId = driveConfig.folderId;
 
+  if (folderId && !VALID_FOLDER_ID.test(folderId)) {
+    console.error('[Drive] Invalid folder ID format:', folderId);
+    throw new Error('Invalid folder ID format');
+  }
+
   if (folderId) {
     // Verify folder exists
     try {
@@ -188,6 +195,10 @@ router.post('/drive/upload', async (req, res) => {
       return res.status(400).json({ error: 'Google Drive not configured' });
     }
 
+    if (driveConfig.folderId && !VALID_FOLDER_ID.test(driveConfig.folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID format' });
+    }
+
     try {
       const drive = getDriveClient(driveConfig);
       const folderId = await getOrCreateBackupFolder(drive, driveConfig);
@@ -246,6 +257,10 @@ router.post('/drive/backup', async (req, res) => {
 
     if (!driveConfig.serviceAccountKey && !hasDriveAuth()) {
       return res.status(400).json({ error: 'Google Drive not configured' });
+    }
+
+    if (driveConfig.folderId && !VALID_FOLDER_ID.test(driveConfig.folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID format' });
     }
 
     try {
@@ -362,6 +377,10 @@ router.get('/drive/files', async (req, res) => {
       return res.json({ files: [] });
     }
 
+    if (driveConfig.folderId && !VALID_FOLDER_ID.test(driveConfig.folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID format' });
+    }
+
     try {
       const drive = getDriveClient(driveConfig);
 
@@ -390,5 +409,8 @@ router.get('/drive/files', async (req, res) => {
     res.status(500).json({ error: 'Failed to list files' });
   }
 });
+
+// Export helper functions for use in other modules
+export { getDriveConfig, hasDriveAuth, getDriveClient, getOrCreateBackupFolder };
 
 export default router;

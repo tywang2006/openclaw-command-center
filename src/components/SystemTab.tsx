@@ -986,7 +986,7 @@ export default function SystemTab() {
               <div className="system-row"><span className="system-label">{t('system.devices.empty')}</span></div>
             ) : (
               devices.map((d, i) => (
-                <div key={i} className="system-plugin-row">
+                <div key={`device-${d.id}-${i}`} className="system-plugin-row">
                   <div className="system-plugin-info">
                     <span className="system-plugin-name">{d.name || d.id}</span>
                     <span className="system-plugin-ver">{d.mode}</span>

@@ -325,6 +325,17 @@ function wrapWithContext(deptId, userMessage) {
 }
 
 /**
+ * Strip context tags from message text (for clean chat history display).
+ */
+function stripContextTags(text) {
+  if (!text) return text;
+  return text
+    .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
+    .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '')
+    .trim();
+}
+
+/**
  * Build the Telegram session key for a department.
  * Maps deptId -> `agent:main:telegram:group:{groupId}:topic:{telegramTopicId}`
  * Falls back to `agent:main:{deptId}` if no topic mapping exists.
@@ -483,9 +494,11 @@ async function getChatHistory(deptId, limit = 30) {
           .map(c => c.text)
           .join('\n');
       }
+      // Strip context tags from user messages
+      const cleanedText = stripContextTags(text);
       return {
         role: m.role === 'user' ? 'user' : 'assistant',
-        text,
+        text: cleanedText,
         timestamp: m.timestamp || null,
       };
     }).filter(m => m.text && m.role !== 'toolResult' && m.role !== 'toolCall');
@@ -527,6 +540,21 @@ function saveMemory(deptId, content) {
       }
     }
     fs.writeFileSync(memPath, content, 'utf8');
+
+    // Rotate: keep only last 50 backup files
+    const memDir = path.join(BASE_PATH, 'departments', deptId, 'memory');
+    try {
+      const bakFiles = fs.readdirSync(memDir)
+        .filter(f => f.endsWith('.md.bak'))
+        .sort()
+        .reverse();
+      if (bakFiles.length > 50) {
+        for (const old of bakFiles.slice(50)) {
+          fs.unlinkSync(path.join(memDir, old));
+        }
+      }
+    } catch {}
+
     return true;
   } catch { return false; }
 }

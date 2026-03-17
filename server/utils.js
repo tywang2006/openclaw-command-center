@@ -20,6 +20,39 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+export const CONFIG_PATH = path.join(OPENCLAW_HOME, 'openclaw.json');
+
+/**
+ * OpenClaw config cache with mtime-based invalidation
+ */
+let _configCache = null;
+let _configMtime = 0;
+
+/**
+ * Read openclaw.json with mtime-based caching.
+ * Automatically invalidates when file changes.
+ */
+export function getOpenClawConfig() {
+  try {
+    const stat = fs.statSync(CONFIG_PATH);
+    if (_configCache && stat.mtimeMs === _configMtime) return _configCache;
+    _configCache = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    _configMtime = stat.mtimeMs;
+    return _configCache;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Get a nested config value by dot-separated path.
+ * Example: getConfigValue('gateway.auth.token')
+ */
+export function getConfigValue(keyPath) {
+  const config = getOpenClawConfig();
+  return keyPath.split('.').reduce((obj, key) => obj?.[key], config);
+}
+
 /**
  * Safely read JSON file
  */

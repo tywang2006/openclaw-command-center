@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import crypto, { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { getConfigValue } from './utils.js';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const HEARTBEAT_INTERVAL_MS = 25000;
@@ -11,7 +12,7 @@ const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
 
 // Fatal error codes — do not reconnect on these
-const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN'];
+const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN', 'INVALID_REQUEST'];
 
 // Forward-compatible: support protocol range so newer Gateway versions still work
 const MIN_PROTOCOL = 3;
@@ -116,18 +117,12 @@ function buildDeviceAuthField(identity, nonce, token) {
 function resolveAuthToken() {
   if (process.env.OPENCLAW_AUTH_TOKEN) return process.env.OPENCLAW_AUTH_TOKEN;
 
-  const home = process.env.OPENCLAW_HOME || path.join(process.env.HOME || '/root', '.openclaw');
-  try {
-    const configPath = path.join(home, 'openclaw.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (config.gateway?.auth?.token) return config.gateway.auth.token;
-      if (config.authToken || config.token || config.auth?.token) {
-        return config.authToken || config.token || config.auth?.token;
-      }
-    }
-  } catch {}
-  return '';
+  // Try gateway.auth.token first
+  const token = getConfigValue('gateway.auth.token') ||
+                getConfigValue('authToken') ||
+                getConfigValue('token') ||
+                getConfigValue('auth.token');
+  return token || '';
 }
 
 class GatewayClient {
@@ -160,7 +155,7 @@ class GatewayClient {
     this._streamBuffers = new Map();
 
     // Recently resolved request IDs — prevents late agent events from being broadcast as duplicates
-    this._resolvedRequests = new Set();
+    this._resolvedRequests = new Map();
 
     // Track connection time for uptime
     this._connectedAt = null;
@@ -173,6 +168,21 @@ class GatewayClient {
         if (buf.startedAt < staleThreshold) {
           this._streamBuffers.delete(id);
         }
+      }
+    }, 60000);
+
+    // Periodic cleanup of resolved request IDs (every 60s, keep last 30s)
+    this._resolvedCleanupTimer = setInterval(() => {
+      if (this._resolvedRequests.size === 0) return;
+      const cutoff = Date.now() - 30000;
+      for (const [id, ts] of this._resolvedRequests) {
+        if (ts < cutoff) this._resolvedRequests.delete(id);
+      }
+      // LRU eviction: keep max 1000 entries
+      if (this._resolvedRequests.size > 1000) {
+        const entries = [...this._resolvedRequests.entries()].sort((a, b) => a[1] - b[1]);
+        const toRemove = entries.slice(0, entries.length - 1000);
+        for (const [id] of toRemove) this._resolvedRequests.delete(id);
       }
     }, 60000);
   }
@@ -225,11 +235,6 @@ class GatewayClient {
       this.ws.on('pong', () => { this._lastPong = Date.now(); });
     });
 
-    // Clear the connecting promise when resolved/rejected
-    this._connectingPromise.finally(() => {
-      this._connectingPromise = null;
-    });
-
     return this._connectingPromise;
   }
 
@@ -249,6 +254,10 @@ class GatewayClient {
     if (this._bufferCleanupTimer) {
       clearInterval(this._bufferCleanupTimer);
       this._bufferCleanupTimer = null;
+    }
+    if (this._resolvedCleanupTimer) {
+      clearInterval(this._resolvedCleanupTimer);
+      this._resolvedCleanupTimer = null;
     }
     this._streamBuffers.clear();
     this._resolvedRequests.clear();
@@ -392,6 +401,7 @@ class GatewayClient {
         }
 
         if (this._connectReject) {
+          this._connectingPromise = null;
           this._connectReject(new Error(msg));
           this._connectResolve = null;
           this._connectReject = null;
@@ -411,6 +421,7 @@ class GatewayClient {
       this._startHeartbeat();
 
       if (this._connectResolve) {
+        this._connectingPromise = null;
         this._connectResolve();
         this._connectResolve = null;
         this._connectReject = null;
@@ -516,20 +527,31 @@ class GatewayClient {
     if (stream === 'assistant' && chunk?.type === 'text' && chunk.text) {
       buffer.assistantChunks.push(chunk.text);
 
-      // Emit streaming chunk event (F14)
-      const streamChunkEvent = {
-        type: 'agent:stream',
-        sessionKey: buffer.sessionKey || sessionKey,
-        chunk: chunk.text,
-      };
-      for (const listener of this._eventListeners) {
-        try { listener(streamChunkEvent); } catch {}
+      // Strip context tags from streaming chunks
+      let cleanChunk = chunk.text;
+      if (cleanChunk.includes('<department_context>') || cleanChunk.includes('<subagent_context>')) {
+        cleanChunk = cleanChunk
+          .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
+          .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '');
+      }
+
+      // Only emit non-empty chunks (F14)
+      if (cleanChunk) {
+        const streamChunkEvent = {
+          type: 'agent:stream',
+          sessionKey: buffer.sessionKey || sessionKey,
+          chunk: cleanChunk,
+        };
+        for (const listener of this._eventListeners) {
+          try { listener(streamChunkEvent); } catch {}
+        }
       }
     }
 
     // Detect tool events and emit tool:update to listeners
-    if (stream === 'tool' || (chunk && chunk.toolName)) {
-      const toolName = chunk?.toolName || payload.toolName || 'unknown';
+    const _detectedToolName = chunk?.toolName || payload.toolName;
+    if (_detectedToolName && (stream === 'tool' || (chunk && chunk.toolName))) {
+      const toolName = _detectedToolName;
       const toolStatus = chunk?.status || payload.data?.status || 'running';
       const done = toolStatus === 'completed' || toolStatus === 'done' || toolStatus === 'error';
       const toolEvent = {
@@ -561,14 +583,27 @@ class GatewayClient {
     // Check both payload.status and lifecycle phase end
     if (status === 'completed' || status === 'done' || status === 'finished' ||
         (stream === 'lifecycle' && payload.data?.phase === 'end')) {
-      const fullText = buffer.assistantChunks.join('');
+      let fullText = buffer.assistantChunks.join('');
+
+      // Strip context tags from final assistant message
+      fullText = fullText
+        .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
+        .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '')
+        .trim();
+
+      // Strip context tags from user message
+      let cleanUserMessage = buffer.userMessage
+        .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
+        .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '')
+        .trim();
+
       this._streamBuffers.delete(bufferId);
 
-      if (fullText || buffer.userMessage) {
+      if (fullText || cleanUserMessage) {
         const event = {
           type: 'agent:message',
           sessionKey: buffer.sessionKey || sessionKey,
-          userMessage: buffer.userMessage,
+          userMessage: cleanUserMessage,
           assistantMessage: fullText,
           timestamp: Date.now(),
         };
@@ -592,9 +627,7 @@ class GatewayClient {
 
   /** Track a resolved requestId to prevent late agent events from being broadcast */
   _markResolved(requestId) {
-    this._resolvedRequests.add(requestId);
-    // Auto-expire after 30s to prevent unbounded growth
-    setTimeout(() => this._resolvedRequests.delete(requestId), 30000);
+    this._resolvedRequests.set(requestId, Date.now());
   }
 
   /**
@@ -619,6 +652,7 @@ class GatewayClient {
     this._stopHeartbeat();
 
     if (this._connectReject) {
+      this._connectingPromise = null;
       this._connectReject(new Error(`Connection closed: ${code}`));
       this._connectResolve = null;
       this._connectReject = null;

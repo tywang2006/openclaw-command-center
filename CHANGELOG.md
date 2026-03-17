@@ -10,6 +10,8 @@ All notable changes to **openclaw-command-center** will be documented in this fi
 
 ### Added
 
+- **PWA support**: Progressive Web App with offline shell caching, manifest.json, service worker, and iOS/Android install support
+- **Command Palette (Cmd+K)**: Fuzzy search command palette for quick navigation (departments, tabs, actions) with keyboard shortcuts
 - **System config panel**: Gateway configuration, model management, agent defaults, channel settings directly from the UI (SystemTab)
 - **Setup wizard**: First-run onboarding flow with password creation and OpenClaw detection (SetupWizard)
 - **Login panel improvements**: Better error handling, setup wizard integration

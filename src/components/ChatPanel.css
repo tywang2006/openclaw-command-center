@@ -2202,3 +2202,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- @Mention Highlighting ---- */
+.chat-mention {
+  color: #00d4aa;
+  font-weight: 600;
+  background: rgba(0, 212, 170, 0.1);
+  padding: 0 2px;
+  border-radius: 2px;
+}

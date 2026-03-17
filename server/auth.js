@@ -27,6 +27,9 @@ const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 // Token storage: Map<token, timestamp>
 const activeTokens = new Map();
 
+// Periodic token cleanup every 5 minutes
+setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
+
 /**
  * Check if a password file exists (i.e. password has been set by user)
  */
@@ -126,9 +129,6 @@ export function validateToken(token) {
  * Checks Bearer token in Authorization header
  */
 export function authMiddleware(req, res, next) {
-  // Clean up expired tokens on each request
-  cleanupExpiredTokens();
-
   // Exempt paths that don't need auth (relative to /api mount point)
   if (req.path === '/auth/login' || req.path === '/integrations/config/gogcli/oauth-redirect') {
     return next();
@@ -204,13 +204,13 @@ authRouter.post('/setup', (req, res) => {
   }
 
   const { password } = req.body;
-  if (!password || password.length < 6) {
-    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+  if (!password || password.length < 8) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
   }
 
   try {
     const hashed = hashPassword(password);
-    fs.writeFileSync(PASSWORD_FILE, hashed, 'utf8');
+    fs.writeFileSync(PASSWORD_FILE, hashed, { encoding: 'utf8', mode: 0o600 });
     console.log('[Auth] Initial password set by user via setup wizard');
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to save password' });
@@ -333,7 +333,7 @@ authRouter.put('/password', (req, res) => {
   try {
     // Hash the new password before storing
     const hashedPassword = hashPassword(newPassword);
-    fs.writeFileSync(PASSWORD_FILE, hashedPassword, 'utf8');
+    fs.writeFileSync(PASSWORD_FILE, hashedPassword, { encoding: 'utf8', mode: 0o600 });
   } catch (error) {
     console.error('[Auth] Error writing password file:', error.message);
     return res.status(500).json({

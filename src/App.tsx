@@ -3,7 +3,7 @@ import { useAgentState } from './hooks/useAgentState'
 import { useLocale } from './i18n/index'
 import { useMobile, useSwipeGesture } from './hooks/useMobile'
 import { getToken, clearToken, setOnUnauthorized, authedFetch } from './utils/api'
-import { getNotificationPrefs, saveNotificationPrefs, requestPermission } from './utils/notifications'
+import { getNotificationPrefs, saveNotificationPrefs, requestPermission, subscribePush, unsubscribePush } from './utils/notifications'
 import LoginPanel from './components/LoginPanel'
 import SetupWizard from './components/SetupWizard'
 import DeptFormModal from './components/DeptFormModal'
@@ -27,6 +27,8 @@ const SystemTab = lazy(() => import('./components/SystemTab'))
 const RequestsTab = lazy(() => import('./components/RequestsTab'))
 const GuideTab = lazy(() => import('./components/GuideTab'))
 const SkillsTab = lazy(() => import('./components/SkillsTab'))
+const MeetingRoom = lazy(() => import('./components/MeetingRoom'))
+const CommandPalette = lazy(() => import('./components/CommandPalette'))
 
 function TabFallback() {
   return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
@@ -92,7 +94,7 @@ function Clock({ locale }: { locale: string }) {
   return <div className="current-time">{time.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</div>
 }
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'meeting' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
 
 export default function App() {
   const { t, locale, setLocale } = useLocale()
@@ -160,6 +162,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   const [showDeptForm, setShowDeptForm] = useState(false)
   const [editDeptData, setEditDeptData] = useState<{ id: string; name: string; agent?: string; icon: string; color: string; hue: number; telegramTopicId?: number; order: number } | null>(null)
   const [deleteDeptId, setDeleteDeptId] = useState<string | null>(null)
+  const [showPalette, setShowPalette] = useState(false)
 
   const handleEditDept = useCallback((dept: any) => {
     setEditDeptData({
@@ -244,7 +247,19 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   const [notifyPrefs, setNotifyPrefs] = useState(getNotificationPrefs())
   const [showNotifyDropdown, setShowNotifyDropdown] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
   const notifyDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Check if push is enabled on mount
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.pushManager.getSubscription().then((sub) => {
+          setPushEnabled(!!sub)
+        }).catch(() => {})
+      }).catch(() => {})
+    }
+  }, [])
 
   const toggleNotifyPref = async (key: 'errors' | 'gateway' | 'slow') => {
     const newPrefs = { ...notifyPrefs, [key]: !notifyPrefs[key] }
@@ -262,6 +277,16 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     saveNotificationPrefs(newPrefs)
   }
 
+  const togglePushNotifications = async () => {
+    if (!pushEnabled) {
+      const success = await subscribePush()
+      if (success) setPushEnabled(true)
+    } else {
+      await unsubscribePush()
+      setPushEnabled(false)
+    }
+  }
+
   // Close notification dropdown on outside click
   useEffect(() => {
     if (!showNotifyDropdown) return
@@ -275,18 +300,27 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
   }, [showNotifyDropdown])
 
   const RIGHT_TABS = useMemo(() => [
+    // Row 1: Chat, Activity, Dashboard, Meeting, Cron, Requests
     { id: 'chat' as RightTab, label: t('app.tab.chat'), Icon: ({ size = 14, color = '#a0a0b0' }) => (
       <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
         <path d="M2 2h12v9H5l-3 3V2z" stroke={color} strokeWidth="1.5" fill="none" />
       </svg>
     )},
-    { id: 'bulletin' as RightTab, label: t('app.tab.bulletin'), Icon: BulletinIcon },
-    { id: 'memory' as RightTab, label: t('app.tab.memory'), Icon: MemoryIcon },
     { id: 'activity' as RightTab, label: t('app.tab.activity'), Icon: ActivityIcon },
-    { id: 'requests' as RightTab, label: t('app.tab.requests'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+    { id: 'dashboard' as RightTab, label: t('app.tab.dashboard'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
       <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-        <path d="M3 2h10v12H3z" stroke={color} strokeWidth="1.3" fill="none" />
-        <path d="M5 5h6M5 8h4M5 11h5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+        <rect x="1" y="8" width="3" height="7" stroke={color} strokeWidth="1.3" fill="none" />
+        <rect x="6" y="4" width="3" height="11" stroke={color} strokeWidth="1.3" fill="none" />
+        <rect x="11" y="1" width="3" height="14" stroke={color} strokeWidth="1.3" fill="none" />
+      </svg>
+    )},
+    { id: 'meeting' as RightTab, label: t('app.tab.meeting'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="4" width="14" height="10" rx="1" stroke={color} strokeWidth="1.3" />
+        <circle cx="5" cy="9" r="1.5" fill={color} />
+        <circle cx="8" cy="9" r="1.5" fill={color} />
+        <circle cx="11" cy="9" r="1.5" fill={color} />
+        <path d="M3 4v-2h10v2" stroke={color} strokeWidth="1.3" />
       </svg>
     )},
     { id: 'cron' as RightTab, label: t('app.tab.cron'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
@@ -295,13 +329,15 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
         <path d="M8 4v4l3 2" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     )},
-    { id: 'dashboard' as RightTab, label: t('app.tab.dashboard'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
+    { id: 'requests' as RightTab, label: t('app.tab.requests'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
       <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="8" width="3" height="7" stroke={color} strokeWidth="1.3" fill="none" />
-        <rect x="6" y="4" width="3" height="11" stroke={color} strokeWidth="1.3" fill="none" />
-        <rect x="11" y="1" width="3" height="14" stroke={color} strokeWidth="1.3" fill="none" />
+        <path d="M3 2h10v12H3z" stroke={color} strokeWidth="1.3" fill="none" />
+        <path d="M5 5h6M5 8h4M5 11h5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     )},
+    // Row 2: Bulletin, Memory, Integrations, Skills, System, Guide
+    { id: 'bulletin' as RightTab, label: t('app.tab.bulletin'), Icon: BulletinIcon },
+    { id: 'memory' as RightTab, label: t('app.tab.memory'), Icon: MemoryIcon },
     { id: 'integrations' as RightTab, label: t('app.tab.integrations'), Icon: ({ size = 14, color = '#a0a0b0' }: { size?: number; color?: string }) => (
       <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
         <circle cx="5" cy="8" r="3" stroke={color} strokeWidth="1.3" fill="none" />
@@ -358,6 +394,18 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
     }
   }, [agentState.departments.length])
 
+  // Global Cmd+K listener for command palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowPalette(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   const tabContent = (
     <ErrorBoundary resetKey={rightTab}>
       <Suspense fallback={<TabFallback />}>
@@ -394,6 +442,7 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
           <RequestsTab requests={agentState.requests} />
         )}
         {rightTab === 'cron' && <CronTab departments={agentState.departments} selectedDeptId={agentState.selectedDeptId} />}
+        {rightTab === 'meeting' && <MeetingRoom departments={agentState.departments} onClose={() => setRightTab('chat')} />}
         {rightTab === 'dashboard' && <DashboardTab departments={agentState.departments} />}
         {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
         {rightTab === 'skills' && <SkillsTab />}
@@ -486,6 +535,10 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
                 <label className="notify-option">
                   <input type="checkbox" checked={notifyPrefs.slow} onChange={() => toggleNotifyPref('slow')} disabled={!notifyPrefs.enabled} />
                   <span>{t('notify.slow')}</span>
+                </label>
+                <label className="notify-option">
+                  <input type="checkbox" checked={pushEnabled} onChange={togglePushNotifications} />
+                  <span>推送通知</span>
                 </label>
               </div>
             )}
@@ -585,6 +638,19 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
             </div>
           </div>
         </div>
+      )}
+
+      {showPalette && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={showPalette}
+            onClose={() => setShowPalette(false)}
+            departments={agentState.departments}
+            onSelectDept={(id) => agentState.setSelectedDeptId(id)}
+            onSwitchTab={(tab) => setRightTab(tab as RightTab)}
+            onOpenMeeting={() => setRightTab('meeting')}
+          />
+        </Suspense>
       )}
     </div>
   )
