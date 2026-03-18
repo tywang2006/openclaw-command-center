@@ -468,7 +468,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>{t('cron.filter.all')}</button>
         <button className={`filter-chip ${filter === 'global' ? 'active' : ''}`} onClick={() => setFilter('global')}>{t('cron.filter.global')}</button>
         {departments.map(d => (
-          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)} title={d.name}><DeptIcon deptId={d.id} size={14} /> <span className="filter-chip-text">{d.name}</span></button>
+          <button key={d.id} className={`filter-chip ${filter === d.id ? 'active' : ''}`} onClick={() => setFilter(d.id)} title={d.name}><DeptIcon deptId={d.id} icon={d.icon} size={14} /> <span className="filter-chip-text">{d.name}</span></button>
         ))}
       </div>
 
@@ -484,7 +484,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                   <div className="job-name-schedule">
                     <div className="job-name">
                       {job.deptId && (
-                        <span className="job-dept-badge"><DeptIcon deptId={job.deptId!} size={10} /> {departments.find(d => d.id === job.deptId)?.name || job.deptId}</span>
+                        <span className="job-dept-badge"><DeptIcon deptId={job.deptId!} icon={departments.find(d => d.id === job.deptId)?.icon} size={10} /> {departments.find(d => d.id === job.deptId)?.name || job.deptId}</span>
                       )}
                       {job.subAgentId && (
                         <span className="job-sub-badge">{job.subAgentId}</span>

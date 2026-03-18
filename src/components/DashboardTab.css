@@ -157,8 +157,8 @@
 
 .dashboard-trends-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .trend-chart-card {
@@ -168,15 +168,13 @@
 }
 
 .trend-chart-card h4 {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-secondary);
   margin: 0 0 6px 0;
   font-weight: 600;
 }
 
-@media (max-width: 768px) {
-  .dashboard-trends-grid { grid-template-columns: 1fr; }
-}
+/* trends-grid is already single column */
 
 /* ========== Global Stats Row ========== */
 .dashboard-stats-row {
@@ -209,7 +207,7 @@
 }
 
 .dashboard-stat-label {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -612,7 +610,7 @@
 
 .trust-bar-container {
   flex: 1;
-  height: 8px;
+  height: 12px;
   background: var(--bg-primary);
   border-radius: 0;
   overflow: hidden;
@@ -893,6 +891,28 @@
   color: var(--text-primary);
 }
 
+/* ========== Light Theme Overrides ========== */
+[data-theme="light"] .dashboard-permissions h3 {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .permission-item {
+  color: #5a5a64;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .permission-dept {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .permission-time {
+  color: #8a8a94;
+}
+
+[data-theme="light"] .dashboard-token-bar::after {
+  background: rgba(0, 0, 0, 0.3);
+}
+
 /* ---- Mobile Responsive ---- */
 @media (max-width: 768px) {
   .dashboard {
@@ -1022,5 +1042,77 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+}
+
+/* ---- Small Mobile Devices ---- */
+@media (max-width: 480px) {
+  /* Trust leaderboard fixes */
+  .trust-dept-info {
+    min-width: 60px;
+  }
+
+  .trust-dept-name {
+    font-size: 10px;
+    max-width: 80px;
+  }
+
+  .trust-entry {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .trust-bar-container {
+    flex: 1;
+    min-width: 60px;
+  }
+
+  /* Token bar layout - stack vertically */
+  .dashboard-token-bar-row {
+    flex-wrap: wrap;
+  }
+
+  .token-bar-label {
+    min-width: 70px;
+    font-size: 10px;
+  }
+
+  /* Status message - responsive positioning */
+  .dashboard-status-message {
+    left: 10px;
+    right: 10px;
+    min-width: unset;
+    max-width: none;
+    padding: 10px 12px;
+  }
+
+  /* Quick action buttons - 44px touch targets */
+  .quick-action-btn {
+    min-width: 100px;
+    padding: 14px 12px;
+  }
+
+  /* Stat card numbers - word break for long numbers */
+  .dashboard-stat-value {
+    word-break: break-all;
+  }
+
+  /* Permission items - better wrapping */
+  .permission-item {
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .permission-time {
+    width: 100%;
+    text-align: right;
+    font-size: 10px;
+  }
+
+  /* Modal responsiveness */
+  .dashboard-modal {
+    width: 95%;
+    max-width: none;
   }
 }

@@ -436,7 +436,7 @@ function InstallModal({ t, onClose, onInstalled }: {
 
   return (
     <div className="skills-modal-overlay" onClick={onClose}>
-      <div className="skills-modal" onClick={e => e.stopPropagation()} style={{ width: 380 }}>
+      <div className="skills-modal" onClick={e => e.stopPropagation()}>
         <div className="skills-modal-header">
           <h3>{t('skills.install')}</h3>
           <button className="skills-modal-close" onClick={onClose}>&times;</button>

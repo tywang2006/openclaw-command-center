@@ -1559,6 +1559,10 @@
     border-bottom: 1px solid var(--border-color);
   }
 
+  .chat-agent-bar {
+    scrollbar-width: none;
+  }
+
   .chat-agent-bar::-webkit-scrollbar {
     display: none;
   }
@@ -1611,10 +1615,10 @@
   }
 
   .agent-chip-close {
-    font-size: 11px;
-    padding: 2px;
-    min-width: 20px;
-    min-height: 20px;
+    font-size: 14px;
+    padding: 4px;
+    min-width: 28px;
+    min-height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1682,7 +1686,7 @@
   .chat-msg {
     flex-shrink: 0;
     width: fit-content;
-    max-width: 80%;
+    max-width: 85%;
     padding: 10px 12px;
     overflow: visible;
     overflow-wrap: anywhere;
@@ -1696,7 +1700,7 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     max-width: 100%;
-    font-size: 13px;
+    font-size: 14px;
     white-space: pre;
     word-break: normal;
     overflow-wrap: normal;
@@ -1760,6 +1764,11 @@
     hyphens: auto;
   }
 
+  .chat-msg-text a {
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
   /* ---- Image previews ---- */
   .chat-preview {
     max-height: 120px;
@@ -1813,7 +1822,9 @@
 
   .chat-msg-img {
     max-width: 100%;
-    max-height: 200px;
+    max-height: none;
+    height: auto;
+    object-fit: contain;
   }
 
   /* ---- Input row ---- */
@@ -1856,6 +1867,11 @@
   .chat-stream-text {
     font-size: 16px;
     padding: 8px 10px;
+  }
+
+  .chat-stream-cursor {
+    vertical-align: baseline;
+    line-height: inherit;
   }
 
   /* ---- Timer form ---- */
@@ -2058,7 +2074,7 @@
 
   .attachment-name {
     font-size: 13px;
-    max-width: calc(100vw - 140px);
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2066,6 +2082,8 @@
 
   .attachment-info {
     min-width: 0;
+    flex: 1;
+    overflow: hidden;
   }
 
   .attachment-size {
@@ -2150,6 +2168,22 @@
   }
 }
 
+/* ============================================
+   Mobile Responsive - Extra Small Screens
+   Breakpoint: max-width 480px
+   ============================================ */
+
+@media (max-width: 480px) {
+  .chat-msg {
+    max-width: 90%;
+  }
+
+  .chat-msg-meta {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}
+
 /* ---- Slash Command Hints ---- */
 .cmd-hints-dropdown {
   display: flex;
@@ -2210,4 +2244,100 @@
   background: rgba(0, 212, 170, 0.1);
   padding: 0 2px;
   border-radius: 2px;
+}
+
+/* ============================================
+   Light Theme Overrides
+   ============================================ */
+
+[data-theme="light"] .chat-agent-bar {
+  background: rgba(240, 240, 243, 0.9);
+}
+
+[data-theme="light"] .chat-stream-text {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .chat-timer-form {
+  background: rgba(0, 212, 170, 0.08);
+}
+
+[data-theme="light"] .chat-daily-panel {
+  background: rgba(0, 136, 204, 0.08);
+}
+
+[data-theme="light"] .new-sub-form {
+  background: rgba(240, 240, 243, 0.9);
+}
+
+[data-theme="light"] .agent-chip:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .agent-chip.add-sub:hover {
+  background: var(--bg-elevated);
+}
+
+[data-theme="light"] .new-sub-form button:hover:not(:disabled) {
+  background: rgba(0, 212, 170, 0.15);
+}
+
+[data-theme="light"] .sub-detail-bar {
+  background: rgba(0, 212, 170, 0.08);
+}
+
+[data-theme="light"] .chat-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .chat-btn.send-btn:hover:not(:disabled) {
+  background: rgba(0, 212, 170, 0.15);
+}
+
+[data-theme="light"] .timer-form-close:hover {
+  background: rgba(255, 68, 102, 0.15);
+}
+
+[data-theme="light"] .chat-doc-preview {
+  background: var(--bg-elevated);
+}
+
+[data-theme="light"] .doc-thumb:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .chat-attachment:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .chat-drop-overlay {
+  background: rgba(0, 212, 170, 0.12);
+}
+
+[data-theme="light"] .chat-export-menu button:hover {
+  background: rgba(0, 212, 170, 0.08);
+}
+
+[data-theme="light"] .chat-toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .cmd-hint-item:hover {
+  background: rgba(0, 212, 170, 0.12);
+}
+
+[data-theme="light"] .image-modal-close {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .image-modal-close:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .chat-email-send:hover {
+  background: rgba(0, 212, 170, 0.12);
+}
+
+[data-theme="light"] .timer-schedule-toggle button {
+  background: var(--bg-elevated);
 }

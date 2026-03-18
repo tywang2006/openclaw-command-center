@@ -4,13 +4,16 @@ import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
 import { LocaleProvider } from './i18n/index'
+import { ThemeProvider } from './hooks/useTheme'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LocaleProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </ThemeProvider>
     </LocaleProvider>
   </StrictMode>,
 )

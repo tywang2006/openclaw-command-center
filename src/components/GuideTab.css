@@ -1,7 +1,5 @@
 .guide-tab {
   padding: 24px 20px;
-  max-width: 720px;
-  margin: 0 auto;
   font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
   color: var(--text-primary, #e0e0e0);
   overflow-y: auto;
@@ -268,8 +266,8 @@
 /* ── Feature Cards ────────────────────── */
 .guide-feature-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
   margin: 14px 0;
 }
 
@@ -368,6 +366,109 @@
   margin: 0 2px;
 }
 
+/* ── Light Theme Overrides ───────────── */
+[data-theme="light"] .guide-hero h2 {
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .guide-hero {
+  background: linear-gradient(135deg, rgba(0, 212, 170, 0.08) 0%, rgba(0, 150, 255, 0.04) 100%);
+  border: 1px solid rgba(0, 212, 170, 0.15);
+}
+
+[data-theme="light"] .guide-toc-pill {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #5a5a64;
+}
+
+[data-theme="light"] .guide-toc-pill:hover {
+  background: rgba(0, 212, 170, 0.08);
+  border-color: rgba(0, 212, 170, 0.3);
+}
+
+[data-theme="light"] .guide-section {
+  background: rgba(0, 0, 0, 0.01);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .guide-section:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .guide-section h3 {
+  color: #1a1a1e;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .guide-section p {
+  color: #3a3a44;
+}
+
+[data-theme="light"] .guide-step + .guide-step {
+  border-top: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .guide-step-text {
+  color: #3a3a44;
+}
+
+[data-theme="light"] .guide-step-text strong {
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .guide-layout-item {
+  background: rgba(0, 0, 0, 0.01);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #3a3a44;
+}
+
+[data-theme="light"] .guide-layout-item:hover {
+  border-color: rgba(0, 212, 170, 0.2);
+}
+
+[data-theme="light"] .guide-layout-item strong {
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .guide-tip {
+  background: linear-gradient(135deg, rgba(255, 200, 50, 0.08), rgba(255, 160, 0, 0.04));
+  color: #6a5a3a;
+}
+
+[data-theme="light"] .guide-feature-card {
+  background: rgba(0, 0, 0, 0.01);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .guide-feature-card:hover {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .guide-feature-card p {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .guide-tip-card {
+  background: rgba(0, 0, 0, 0.01);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .guide-tip-card:hover {
+  border-color: rgba(0, 212, 170, 0.2);
+}
+
+[data-theme="light"] .guide-tip-card span {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .guide-kbd {
+  background: rgba(0, 0, 0, 0.06);
+  color: #3a3a44;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
 /* ── Responsive ───────────────────────── */
 @media (max-width: 600px) {
   .guide-tab {
@@ -381,9 +482,6 @@
   }
   .guide-section {
     padding: 16px 14px;
-  }
-  .guide-feature-grid {
-    grid-template-columns: 1fr;
   }
   .guide-toc {
     gap: 5px;

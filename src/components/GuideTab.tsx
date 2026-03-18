@@ -19,7 +19,11 @@ export default function GuideTab() {
     { id: 'guide-cron', key: 's8' },
     { id: 'guide-integ', key: 's9' },
     { id: 'guide-system', key: 's10' },
-    { id: 'guide-tips', key: 's11' },
+    { id: 'guide-meeting', key: 's11' },
+    { id: 'guide-workflow', key: 's12' },
+    { id: 'guide-dashboard', key: 's13' },
+    { id: 'guide-skills', key: 's14' },
+    { id: 'guide-tips', key: 's15' },
   ]
 
   return (
@@ -241,29 +245,123 @@ export default function GuideTab() {
         </div>
       </div>
 
-      {/* 11. Tips */}
-      <div className="guide-section" id="guide-tips">
+      {/* 11. Meeting Room */}
+      <div className="guide-section guide-section-highlight" id="guide-meeting">
         <h3><span className="guide-icon">11</span> {t('guide.s11.title')}</h3>
+        <p>{t('guide.s11.p1')}</p>
+        <div className="guide-step">
+          <span className="guide-step-num">1</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s11.step1') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">2</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s11.step2') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">3</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s11.step3') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">4</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s11.step4') }} />
+        </div>
+        <div className="guide-tip">
+          <strong>{t('guide.tip')}</strong> {t('guide.s11.tip')}
+        </div>
+      </div>
+
+      {/* 12. Workflows */}
+      <div className="guide-section" id="guide-workflow">
+        <h3><span className="guide-icon">12</span> {t('guide.s12.title')}</h3>
+        <p>{t('guide.s12.p1')}</p>
+        <div className="guide-step">
+          <span className="guide-step-num">1</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s12.step1') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">2</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s12.step2') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">3</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s12.step3') }} />
+        </div>
+        <div className="guide-tip">
+          <strong>{t('guide.tip')}</strong> {t('guide.s12.tip')}
+        </div>
+      </div>
+
+      {/* 13. Dashboard */}
+      <div className="guide-section" id="guide-dashboard">
+        <h3><span className="guide-icon">13</span> {t('guide.s13.title')}</h3>
+        <p>{t('guide.s13.p1')}</p>
+        <div className="guide-feature-grid">
+          <div className="guide-feature-card">
+            <h4>{t('guide.s13.f1.title')}</h4>
+            <p>{t('guide.s13.f1.desc')}</p>
+          </div>
+          <div className="guide-feature-card">
+            <h4>{t('guide.s13.f2.title')}</h4>
+            <p>{t('guide.s13.f2.desc')}</p>
+          </div>
+          <div className="guide-feature-card">
+            <h4>{t('guide.s13.f3.title')}</h4>
+            <p>{t('guide.s13.f3.desc')}</p>
+          </div>
+        </div>
+        <div className="guide-tip">
+          <strong>{t('guide.tip')}</strong> {t('guide.s13.tip')}
+        </div>
+      </div>
+
+      {/* 14. Skills */}
+      <div className="guide-section" id="guide-skills">
+        <h3><span className="guide-icon">14</span> {t('guide.s14.title')}</h3>
+        <p>{t('guide.s14.p1')}</p>
+        <div className="guide-step">
+          <span className="guide-step-num">1</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s14.step1') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">2</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s14.step2') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">3</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s14.step3') }} />
+        </div>
+        <div className="guide-tip">
+          <strong>{t('guide.tip')}</strong> {t('guide.s14.tip')}
+        </div>
+      </div>
+
+      {/* 15. Tips */}
+      <div className="guide-section" id="guide-tips">
+        <h3><span className="guide-icon">15</span> {t('guide.s15.title')}</h3>
         <div className="guide-tips-grid">
           <div className="guide-tip-card">
-            <strong>{t('guide.s11.t1.title')}</strong>
-            <span>{t('guide.s11.t1.desc')}</span>
+            <strong>{t('guide.s15.t1.title')}</strong>
+            <span>{t('guide.s15.t1.desc')}</span>
           </div>
           <div className="guide-tip-card">
-            <strong>{t('guide.s11.t2.title')}</strong>
-            <span>{t('guide.s11.t2.desc')}</span>
+            <strong>{t('guide.s15.t2.title')}</strong>
+            <span>{t('guide.s15.t2.desc')}</span>
           </div>
           <div className="guide-tip-card">
-            <strong>{t('guide.s11.t3.title')}</strong>
-            <span>{t('guide.s11.t3.desc')}</span>
+            <strong>{t('guide.s15.t3.title')}</strong>
+            <span>{t('guide.s15.t3.desc')}</span>
           </div>
           <div className="guide-tip-card">
-            <strong>{t('guide.s11.t4.title')}</strong>
-            <span>{t('guide.s11.t4.desc')}</span>
+            <strong>{t('guide.s15.t4.title')}</strong>
+            <span>{t('guide.s15.t4.desc')}</span>
           </div>
           <div className="guide-tip-card">
-            <strong>{t('guide.s11.t5.title')}</strong>
-            <span>{t('guide.s11.t5.desc')}</span>
+            <strong>{t('guide.s15.t5.title')}</strong>
+            <span>{t('guide.s15.t5.desc')}</span>
+          </div>
+          <div className="guide-tip-card">
+            <strong>{t('guide.s15.t6.title')}</strong>
+            <span>{t('guide.s15.t6.desc')}</span>
           </div>
         </div>
       </div>

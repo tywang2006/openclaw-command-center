@@ -169,3 +169,51 @@
   font-size: 14px;
   padding: 40px;
 }
+
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .setup-wizard {
+  background: #f0f0f3;
+}
+
+[data-theme="light"] .setup-card {
+  background: #ffffff;
+  border: 1px solid #c8c8d0;
+}
+
+[data-theme="light"] .setup-title {
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .setup-subtitle {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .check-item {
+  background: #f8f8fa;
+}
+
+[data-theme="light"] .check-label {
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .check-detail {
+  color: #5a5a64;
+}
+
+[data-theme="light"] .setup-btn {
+  color: #ffffff;
+}
+
+[data-theme="light"] .setup-error {
+  background: #fff0f3;
+  border: 1px solid #dd3355;
+}
+
+[data-theme="light"] .setup-logs {
+  background: #f8f8fa;
+  border: 1px solid #c8c8d0;
+}
+
+[data-theme="light"] .setup-log {
+  color: #5a5a64;
+}

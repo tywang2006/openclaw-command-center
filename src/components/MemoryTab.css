@@ -376,6 +376,40 @@
   .memory-editor {
     font-size: 14px;
     max-width: 100%;
+    min-height: 200px;
+    padding: 12px;
+  }
+
+  .memory-header {
+    flex-wrap: wrap;
+  }
+
+  .mem-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .mode-btn {
+    padding: 8px 14px;
+    font-size: 12px;
+    min-height: 40px;
+    flex: 1;
+  }
+
+  .memory-search-input {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .memory-search-match {
+    font-size: 13px;
+  }
+
+  .memory-history-panel {
+    max-height: 40vh;
   }
 
   .memory-history-item {

@@ -17,6 +17,11 @@
   padding: 24px;
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .workflow-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
 .workflow-modal {
   background: var(--bg-panel);
   border: 2px solid var(--border-color);
@@ -884,10 +889,88 @@
   .workflow-list {
     border-right: none;
     border-bottom: 2px solid var(--border-color);
-    max-height: 200px;
+    max-height: 40vh;
+    min-height: 150px;
+  }
+
+  .workflow-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .workflow-btn-run,
+  .workflow-btn-edit,
+  .workflow-btn-delete {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .workflow-result-header {
+    flex-wrap: wrap;
   }
 
   .workflow-step-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .workflow-overlay {
+    padding: 8px;
+  }
+
+  .workflow-step-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pipeline-step {
+    max-width: 100%;
+    padding: 10px;
+  }
+
+  .pipeline-arrow-split {
+    gap: 16px;
+    max-width: 100%;
+  }
+
+  .workflow-form-actions {
+    flex-direction: column;
+  }
+
+  .workflow-btn-save,
+  .workflow-btn-cancel {
+    width: 100%;
+  }
+
+  .workflow-btn-remove {
+    padding: 8px 12px;
+    min-height: 44px;
+  }
+
+  .condition-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .condition-row label {
+    min-width: unset;
+  }
+
+  .workflow-form-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 360px) {
+  .workflow-item-actions {
+    flex-direction: column;
+  }
+
+  .workflow-btn-run,
+  .workflow-btn-edit,
+  .workflow-btn-delete {
+    width: 100%;
   }
 }

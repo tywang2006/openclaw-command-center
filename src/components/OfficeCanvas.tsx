@@ -423,10 +423,12 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
       const drawCtx = offCtx
       drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
+      const isLight = document.documentElement.dataset.theme === 'light'
+
       if (!officeStateRef.current) {
-        drawCtx.fillStyle = '#0a0a14'
+        drawCtx.fillStyle = isLight ? '#f0f0f3' : '#0a0a14'
         drawCtx.fillRect(0, 0, w, h)
-        drawCtx.fillStyle = '#2a2a4a'
+        drawCtx.fillStyle = isLight ? '#8a8a94' : '#2a2a4a'
         drawCtx.font = '14px monospace'
         drawCtx.textAlign = 'center'
         drawCtx.fillText('Loading office...', w / 2, h / 2)
@@ -498,15 +500,25 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         const bgW = metrics.width + 6
         const bgH = Math.max(14, z * 6)
 
-        drawCtx.fillStyle = isSub ? 'rgba(0, 50, 42, 0.85)' : 'rgba(30, 30, 46, 0.85)'
+        drawCtx.fillStyle = isLight
+          ? (isSub ? 'rgba(230, 245, 240, 0.92)' : 'rgba(255, 255, 255, 0.92)')
+          : (isSub ? 'rgba(0, 50, 42, 0.85)' : 'rgba(30, 30, 46, 0.85)')
         drawCtx.fillRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
 
         const isSelected = state.selectedAgentId === char.id
-        drawCtx.strokeStyle = isSelected ? '#00d4aa' : isSub ? '#00553a' : '#2a2a4a'
+        drawCtx.strokeStyle = isSelected
+          ? (isLight ? '#009980' : '#00d4aa')
+          : isSub
+            ? (isLight ? '#009980' : '#00553a')
+            : (isLight ? '#c8c8d0' : '#2a2a4a')
         drawCtx.lineWidth = 1
         drawCtx.strokeRect(screenX - bgW / 2, screenY - bgH, bgW, bgH)
 
-        drawCtx.fillStyle = isSelected ? '#00d4aa' : isSub ? '#00aa88' : '#e0e0e0'
+        drawCtx.fillStyle = isSelected
+          ? (isLight ? '#009980' : '#00d4aa')
+          : isSub
+            ? (isLight ? '#009980' : '#00aa88')
+            : (isLight ? '#1a1a1e' : '#e0e0e0')
         drawCtx.fillText(text, screenX, screenY - 2)
         drawCtx.restore()
 

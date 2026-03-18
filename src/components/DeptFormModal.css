@@ -101,6 +101,17 @@
   border-color: #fff;
   box-shadow: 0 0 6px rgba(255,255,255,0.3);
 }
+
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .color-option:hover {
+  border-color: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .color-option.selected {
+  border-color: #1a1a1e;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+}
+
 .dept-error {
   color: #ff5555;
   font-size: 12px;

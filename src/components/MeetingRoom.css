@@ -615,6 +615,8 @@
     flex: 0 0 100%;
     order: 3;
     font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .meeting-header-actions {
@@ -622,8 +624,9 @@
   }
 
   .meeting-btn {
-    padding: 4px 8px;
+    padding: 8px 12px;
     font-size: 11px;
+    min-height: 36px;
   }
 
   .meeting-template-grid {
@@ -651,5 +654,41 @@
   .meeting-dept-chips {
     max-height: 120px;
     overflow-y: auto;
+  }
+
+  .meeting-msg-text {
+    overflow-wrap: break-word;
+    max-width: 100%;
+  }
+
+  .negotiation-vote {
+    padding: 8px;
+  }
+
+  .negotiation-vote-header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .meeting-action-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .meeting-negotiate-form-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .meeting-list-topic,
+  .meeting-list-depts {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .meeting-minute-text {
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 }

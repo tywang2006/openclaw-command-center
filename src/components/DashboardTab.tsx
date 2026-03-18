@@ -388,15 +388,15 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
       {/* Quick Action Buttons */}
       <div className="dashboard-quick-actions">
         <button className="quick-action-btn broadcast" onClick={handleBroadcast}>
-          <span className="action-icon">📢</span>
+          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M13 3L6 6H3v4h3l7 3V3z" stroke="#00d4aa" strokeWidth="1.5" fill="none"/><path d="M13 6c1 1 1 3 0 4" stroke="#00d4aa" strokeWidth="1.5" strokeLinecap="round"/></svg></span>
           <span className="action-label">{t('dashboard.action.broadcast')}</span>
         </button>
         <button className="quick-action-btn meeting" onClick={handleStartMeeting}>
-          <span className="action-icon">👥</span>
+          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="#ffbb00" strokeWidth="1.5"/><path d="M2 13c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="#ffbb00" strokeWidth="1.5" strokeLinecap="round"/><circle cx="11" cy="5.5" r="2" stroke="#ffbb00" strokeWidth="1.2"/><path d="M11 9c1.7 0 3 1.3 3 3" stroke="#ffbb00" strokeWidth="1.2" strokeLinecap="round"/></svg></span>
           <span className="action-label">{t('dashboard.action.meeting')}</span>
         </button>
         <button className="quick-action-btn workflow" onClick={handleCreateWorkflow}>
-          <span className="action-icon">⚙️</span>
+          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><rect x="6" y="6.5" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><rect x="11" y="11" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><path d="M5 3.5h3.5v4.5M10 8h3.5v4" stroke="#00a8ff" strokeWidth="1.2"/></svg></span>
           <span className="action-label">{t('dashboard.action.workflow')}</span>
         </button>
       </div>

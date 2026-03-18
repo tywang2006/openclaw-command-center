@@ -655,6 +655,17 @@
   border: 1px solid var(--border-color, #444);
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .cap-toggle-btn.off {
+  background: #e0e0e5;
+  color: #5a5a64;
+  border: 1px solid #c8c8d0;
+}
+
+[data-theme="light"] .cap-oauth-link {
+  color: #ffffff;
+}
+
 .cap-config-actions {
   display: flex;
   gap: 6px;
@@ -959,5 +970,81 @@
 
   .cap-modal-title h2 {
     font-size: 16px;
+  }
+
+  .cap-config-input, .cap-config-select {
+    padding: 12px 10px;
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .cap-configure-btn {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .cap-modal-close {
+    padding: 10px 14px;
+    font-size: 18px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .cap-toggle-btn {
+    padding: 10px 18px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .cap-config-hint {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .cap-config-actions button {
+    padding: 12px 16px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .cap-events-list label {
+    font-size: 14px;
+    padding: 8px 4px;
+    min-height: 44px;
+  }
+  .cap-events-list input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+
+  .cap-file-upload-btn {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .cap-skill-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .cap-skill-row-name {
+    min-width: auto;
+    font-size: 13px;
+  }
+  .cap-skill-row-input {
+    font-size: 16px;
+    padding: 10px 8px;
+    min-height: 44px;
+  }
+  .cap-skill-row-btn {
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .cap-modal-header {
+    gap: 12px;
   }
 }

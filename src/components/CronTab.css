@@ -802,6 +802,27 @@
   background: #ff4444;
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .btn-create-toggle:hover {
+  box-shadow: 0 0 12px rgba(0, 153, 128, 0.3);
+}
+
+[data-theme="light"] .cron-history-bar {
+  background: #009980;
+}
+
+[data-theme="light"] .cron-history-bar.error {
+  background: #dd3355;
+}
+
+[data-theme="light"] .btn-run-now:hover:not(:disabled) {
+  box-shadow: 0 0 8px rgba(0, 153, 128, 0.3);
+}
+
+[data-theme="light"] .btn-save:hover:not(:disabled) {
+  box-shadow: 0 0 8px rgba(0, 153, 128, 0.3);
+}
+
 /* ---- Mobile responsive ---- */
 @media (max-width: 768px) {
   .cron-header {
@@ -842,9 +863,17 @@
     align-items: center;
     flex-shrink: 0;
     margin-left: auto;
+    flex-wrap: wrap;
   }
 
-  .btn-run-now,
+  .btn-run-now {
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    min-width: 36px;
+    font-size: 16px;
+  }
+
   .btn-delete {
     width: 32px;
     height: 32px;
@@ -859,8 +888,8 @@
   }
 
   .toggle-switch {
-    min-height: 22px;
-    min-width: 40px;
+    min-height: 24px;
+    min-width: 44px;
     width: 40px;
     height: 22px;
     flex-shrink: 0;
@@ -971,10 +1000,24 @@
     word-break: break-word;
   }
 
+  .state-value.mono {
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
+  .job-dept-badge {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* Form inputs */
   .create-form {
     padding: 12px;
     overflow-x: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .form-group input[type="text"],
@@ -1018,6 +1061,8 @@
   .edit-message textarea {
     font-size: 16px;
     min-height: 100px;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .btn-save,
@@ -1025,5 +1070,17 @@
     min-height: 44px;
     padding: 8px 18px;
     font-size: 14px;
+  }
+}
+
+/* ---- Extra small screens ---- */
+@media (max-width: 480px) {
+  .cron-history-chart {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cron-history-bar {
+    min-width: 8px;
   }
 }

@@ -775,18 +775,56 @@ export const zh: Record<string, string> = {
   'guide.s10.step2': '<strong>安全设置</strong> — 修改登录密码',
   'guide.s10.step3': '<strong>核心配置</strong> — 管理 AI 模型 API Key、Telegram Bot Token 等',
 
-  // Guide Section 11 - Tips
-  'guide.s11.title': '实用技巧',
-  'guide.s11.t1.title': '语言切换',
-  'guide.s11.t1.desc': '点击顶部栏 EN/中 按钮随时切换中英文界面',
-  'guide.s11.t2.title': '全屏模式',
-  'guide.s11.t2.desc': '点击顶部全屏按钮进入沉浸式体验',
-  'guide.s11.t3.title': '面板折叠',
-  'guide.s11.t3.desc': '点击面板间的箭头折叠右侧面板，扩大办公室画布',
-  'guide.s11.t4.title': '桌面通知',
-  'guide.s11.t4.desc': '点击铃铛图标开启通知，可接收错误、网关断连、慢响应提醒',
-  'guide.s11.t5.title': '手机访问',
-  'guide.s11.t5.desc': '支持手机浏览器，界面自动适配移动版，左右滑动切换部门',
+  // Guide Section 11 - Meeting Room
+  'guide.s11.title': '会议室',
+  'guide.s11.p1': '发起跨部门会议，让多个 AI 部门围绕同一议题展开讨论。每个部门按顺序回复，能看到前面部门的发言，实现真正的跨部门协作。',
+  'guide.s11.step1': '切换到 <strong>会议</strong> 标签页，点击模板快速创建（站会、周会、技术评审、产品同步）',
+  'guide.s11.step2': '<strong>发送议题</strong> — 输入讨论话题，所有参会部门依次回复',
+  'guide.s11.step3': '<strong>协商投票</strong> — 对有分歧的议题发起协商，多轮辩论后投票表决',
+  'guide.s11.step4': '<strong>结束会议</strong> — AI 自动提取行动项，会议纪要导出到 Google Drive',
+  'guide.s11.tip': '会议支持实时流式响应，每个部门的回复会即时显示。信任评分会根据部门在会议中的表现动态调整。',
+
+  // Guide Section 12 - Workflows
+  'guide.s12.title': '工作流',
+  'guide.s12.p1': '将多步骤任务串联成自动化工作流。定义步骤序列，每步由指定部门执行，上一步的结果自动传递给下一步。',
+  'guide.s12.step1': '切换到 <strong>工作流</strong> 标签页，点击 <strong>+ 创建工作流</strong>',
+  'guide.s12.step2': '添加步骤：为每步选择执行部门、输入指令模板，可用 <strong>{{prev}}</strong> 引用上一步结果',
+  'guide.s12.step3': '保存后点击 <strong>运行</strong>，系统按顺序调用各部门执行，实时显示进度',
+  'guide.s12.tip': '工作流支持 {{prev}} 变量引用上一步输出。例如让技术部写代码，再让测试部 review —— 测试部会自动拿到代码内容。',
+
+  // Guide Section 13 - Dashboard
+  'guide.s13.title': '仪表盘',
+  'guide.s13.p1': '在"统计"标签页查看全局运营数据和各部门表现：',
+  'guide.s13.f1.title': '消息统计',
+  'guide.s13.f1.desc': '各部门消息量、响应时间趋势图表',
+  'guide.s13.f2.title': '信任评分',
+  'guide.s13.f2.desc': '部门可靠性排行榜，基于响应质量和任务完成率',
+  'guide.s13.f3.title': '全员广播',
+  'guide.s13.f3.desc': '从仪表盘直接发起全员广播，快速收集反馈',
+  'guide.s13.tip': '信任评分会根据部门的响应速度和任务完成质量自动调整，帮你识别最可靠的 AI 团队成员。',
+
+  // Guide Section 14 - Skills
+  'guide.s14.title': '技能管理',
+  'guide.s14.p1': '为 AI 部门安装和管理扩展技能，让 AI 掌握更多专业能力。',
+  'guide.s14.step1': '切换到 <strong>技能</strong> 标签页，查看已安装技能列表',
+  'guide.s14.step2': '<strong>安装技能</strong> — 从 Git 仓库 URL 安装，或从技能市场浏览',
+  'guide.s14.step3': '<strong>分配技能</strong> — 为技能添加标签，指定哪些部门可以使用',
+  'guide.s14.tip': '技能本质是 AI 可调用的工具包。安装后 AI 会自动发现并使用相关技能，无需手动触发。',
+
+  // Guide Section 15 - Tips
+  'guide.s15.title': '实用技巧',
+  'guide.s15.t1.title': '命令面板',
+  'guide.s15.t1.desc': '按 Cmd+K (Mac) 或 Ctrl+K (Windows) 打开命令面板，快速搜索部门、标签页和操作',
+  'guide.s15.t2.title': '语言切换',
+  'guide.s15.t2.desc': '点击顶部栏 EN/中 按钮随时切换中英文界面',
+  'guide.s15.t3.title': '全屏模式',
+  'guide.s15.t3.desc': '点击顶部全屏按钮进入沉浸式体验',
+  'guide.s15.t4.title': '面板折叠',
+  'guide.s15.t4.desc': '点击面板间的箭头折叠右侧面板，扩大办公室画布',
+  'guide.s15.t5.title': '桌面通知',
+  'guide.s15.t5.desc': '点击铃铛图标开启通知，可接收错误、网关断连、慢响应提醒',
+  'guide.s15.t6.title': '手机访问',
+  'guide.s15.t6.desc': '支持手机浏览器和 PWA 安装，界面自动适配移动版，左右滑动切换部门',
 
   // Slash commands
   'cmd.dept.desc': '创建/管理部门',
@@ -827,6 +865,7 @@ export const zh: Record<string, string> = {
 
   // Tooltips
   'app.locale.toggle': '切换语言',
+  'app.theme.toggle': '切换主题',
   'app.logout': '退出登录',
 
   // SkillPicker

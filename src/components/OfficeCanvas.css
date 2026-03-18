@@ -102,6 +102,11 @@
   text-align: center;
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .zoom-controls {
+  background: rgba(255, 255, 255, 0.95);
+}
+
 /* ---- Mobile Responsive ---- */
 @media (max-width: 768px) {
   .zoom-controls {

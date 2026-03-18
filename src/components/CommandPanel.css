@@ -164,6 +164,81 @@
   color: #ff4444;
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .command-panel {
+  border-top-color: #c8c8d0;
+  background: #ffffff;
+}
+
+[data-theme="light"] .command-empty {
+  color: #8a8a94;
+}
+
+[data-theme="light"] .target-name {
+  color: #009980;
+}
+
+[data-theme="light"] .target-status {
+  border-color: #c8c8d0;
+}
+
+[data-theme="light"] .target-status.active {
+  color: #00aa70;
+  border-color: #00aa70;
+}
+
+[data-theme="light"] .target-status.idle {
+  color: #cc8800;
+  border-color: #cc8800;
+}
+
+[data-theme="light"] .target-status.offline {
+  color: #999;
+  border-color: #c8c8d0;
+}
+
+[data-theme="light"] .image-preview {
+  border-color: #c8c8d0;
+}
+
+[data-theme="light"] .command-input {
+  background: #f8f8fa;
+  border-color: #c8c8d0;
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .command-input:focus {
+  border-color: #009980;
+}
+
+[data-theme="light"] .action-btn {
+  border-color: #c8c8d0;
+  background: #f8f8fa;
+  color: #1a1a1e;
+}
+
+[data-theme="light"] .action-btn:hover:not(:disabled) {
+  background: #ededf0;
+}
+
+[data-theme="light"] .send-btn {
+  background: rgba(0, 153, 128, 0.08);
+  border-color: #009980;
+  color: #009980;
+}
+
+[data-theme="light"] .send-btn:hover:not(:disabled) {
+  background: rgba(0, 153, 128, 0.15);
+}
+
+[data-theme="light"] .command-status.ok {
+  color: #00aa70;
+}
+
+[data-theme="light"] .command-status.err {
+  color: #dd3355;
+}
+
 /* ---- Mobile Responsive ---- */
 @media (max-width: 768px) {
   .command-panel {

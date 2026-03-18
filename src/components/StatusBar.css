@@ -21,12 +21,12 @@
   background: var(--bg-card);
   border: 2px solid var(--border-color);
   border-radius: 0;
-  padding: 4px 8px;
+  padding: 6px 10px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
+  gap: 3px;
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
   transition: none;
 }
@@ -52,7 +52,7 @@
 }
 
 .dept-name {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -62,9 +62,9 @@
 }
 
 .dept-task {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-muted);
-  line-height: 1.1;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

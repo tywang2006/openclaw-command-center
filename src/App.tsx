@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useAgentState } from './hooks/useAgentState'
 import { useLocale } from './i18n/index'
+import { useTheme } from './hooks/useTheme'
 import { useMobile, useSwipeGesture } from './hooks/useMobile'
 import { getToken, clearToken, setOnUnauthorized, authedFetch } from './utils/api'
 import { getNotificationPrefs, saveNotificationPrefs, requestPermission, subscribePush, unsubscribePush } from './utils/notifications'
@@ -98,6 +99,7 @@ type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron
 
 export default function App() {
   const { t, locale, setLocale } = useLocale()
+  const { theme, setTheme } = useTheme()
   const [authToken, setAuthToken] = useState<string | null>(getToken())
   const [setupReady, setSetupReady] = useState<boolean | null>(null) // null = loading
 
@@ -141,15 +143,17 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <AuthenticatedApp t={t} locale={locale} setLocale={setLocale} onLogout={handleLogout} />
+      <AuthenticatedApp t={t} locale={locale} setLocale={setLocale} theme={theme} setTheme={setTheme} onLogout={handleLogout} />
     </ErrorBoundary>
   )
 }
 
-function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
+function AuthenticatedApp({ t, locale, setLocale, theme, setTheme, onLogout }: {
   t: (key: string, params?: Record<string, string | number>) => string
   locale: string
   setLocale: (l: 'zh' | 'en') => void
+  theme: 'dark' | 'light'
+  setTheme: (t: 'dark' | 'light') => void
   onLogout: () => void
 }) {
   const agentState = useAgentState()
@@ -549,6 +553,22 @@ function AuthenticatedApp({ t, locale, setLocale, onLogout }: {
             title={t('app.locale.toggle')}
           >
             {locale === 'zh' ? 'EN' : '中'}
+          </button>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={t('app.theme.toggle')}
+          >
+            {theme === 'dark' ? (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M13.5 9.5a5.5 5.5 0 0 1-7-7 5.5 5.5 0 1 0 7 7z" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            )}
           </button>
           <button className="fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? t('app.fullscreen.exit') : t('app.fullscreen.enter')}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">

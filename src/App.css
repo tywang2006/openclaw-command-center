@@ -112,6 +112,29 @@
   background: var(--accent-muted);
 }
 
+.theme-toggle {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  font-family: var(--font-ui);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--accent-muted);
+}
+
 .logout-btn {
   width: 24px;
   height: 22px;
@@ -296,6 +319,11 @@
   overflow: hidden;
 }
 
+/* Visual separator between tab row 1 and row 2 */
+.right-tab:nth-child(n+7) {
+  border-top: 1px solid var(--border-subtle);
+}
+
 /* Always show short labels */
 .right-tab span {
   display: inline;
@@ -395,6 +423,46 @@
 
 .notify-option input:disabled + span {
   opacity: 0.4;
+}
+
+/* ============================================
+   Light Theme Overrides
+   ============================================ */
+
+[data-theme="light"] .app::before {
+  background:
+    radial-gradient(ellipse 80% 40% at 50% -5%, rgba(0, 153, 128, 0.04) 0%, transparent 100%),
+    radial-gradient(ellipse 50% 50% at 95% 95%, rgba(192, 128, 32, 0.03) 0%, transparent 100%),
+    radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.04) 100%);
+}
+
+[data-theme="light"] .app::after {
+  display: none;
+}
+
+[data-theme="light"] .header {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .header-title h1 {
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .main-content {
+  background:
+    radial-gradient(circle 1.5px at center, rgba(0, 153, 128, 0.06) 0%, transparent 100%),
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    var(--bg-primary);
+  background-size: 48px 48px, 24px 24px, 24px 24px, 100% 100%;
+}
+
+[data-theme="light"] .right-tab:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .notify-option:hover {
+  background: rgba(0, 0, 0, 0.03);
 }
 
 /* ============================================

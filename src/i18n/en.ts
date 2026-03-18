@@ -775,18 +775,56 @@ export const en: Record<string, string> = {
   'guide.s10.step2': '<strong>Security</strong> \u2014 Change your login password',
   'guide.s10.step3': '<strong>Core Config</strong> \u2014 Manage AI model API keys, Telegram Bot Token, and more',
 
-  // Guide Section 11 - Tips
-  'guide.s11.title': 'Pro Tips',
-  'guide.s11.t1.title': 'Language Switch',
-  'guide.s11.t1.desc': 'Click the EN/CN button in the top bar to toggle between languages anytime',
-  'guide.s11.t2.title': 'Fullscreen',
-  'guide.s11.t2.desc': 'Click the fullscreen button in the top bar for an immersive experience',
-  'guide.s11.t3.title': 'Panel Collapse',
-  'guide.s11.t3.desc': 'Click the arrow between panels to collapse the right panel and expand the office canvas',
-  'guide.s11.t4.title': 'Desktop Notifications',
-  'guide.s11.t4.desc': 'Click the bell icon to enable alerts for errors, gateway disconnects, and slow responses',
-  'guide.s11.t5.title': 'Mobile Access',
-  'guide.s11.t5.desc': 'Works on mobile browsers with auto-adaptive layout. Swipe left/right to switch departments',
+  // Guide Section 11 - Meeting Room
+  'guide.s11.title': 'Meeting Room',
+  'guide.s11.p1': 'Start cross-department meetings where multiple AI departments discuss the same topic. Each department responds in sequence, seeing previous responses for genuine collaboration.',
+  'guide.s11.step1': 'Switch to the <strong>Meeting</strong> tab, use templates to quick-create (standup, weekly, tech review, product sync)',
+  'guide.s11.step2': '<strong>Send Topic</strong> \u2014 Enter a discussion topic, all participating departments respond in turn',
+  'guide.s11.step3': '<strong>Negotiation</strong> \u2014 Start a negotiation round on disputed topics with multi-round debate and voting',
+  'guide.s11.step4': '<strong>End Meeting</strong> \u2014 AI auto-extracts action items, meeting minutes exported to Google Drive',
+  'guide.s11.tip': 'Meetings support real-time streaming \u2014 each department\'s response appears live. Trust scores adjust based on meeting performance.',
+
+  // Guide Section 12 - Workflows
+  'guide.s12.title': 'Workflows',
+  'guide.s12.p1': 'Chain multi-step tasks into automated workflows. Define a sequence of steps, each executed by a designated department, with results automatically passed to the next step.',
+  'guide.s12.step1': 'Switch to the <strong>Workflow</strong> tab, click <strong>+ Create Workflow</strong>',
+  'guide.s12.step2': 'Add steps: select the executing department for each step, enter an instruction template. Use <strong>{{prev}}</strong> to reference the previous step\'s result',
+  'guide.s12.step3': 'Save and click <strong>Run</strong> \u2014 the system calls departments in sequence, showing real-time progress',
+  'guide.s12.tip': 'Workflows support the {{prev}} variable to reference the previous step\'s output. For example, have Engineering write code, then QA review it \u2014 QA automatically receives the code.',
+
+  // Guide Section 13 - Dashboard
+  'guide.s13.title': 'Dashboard',
+  'guide.s13.p1': 'View global operational data and department performance in the Stats tab:',
+  'guide.s13.f1.title': 'Message Stats',
+  'guide.s13.f1.desc': 'Per-department message volume, response time trend charts',
+  'guide.s13.f2.title': 'Trust Scores',
+  'guide.s13.f2.desc': 'Department reliability leaderboard based on response quality and task completion',
+  'guide.s13.f3.title': 'Team Broadcast',
+  'guide.s13.f3.desc': 'Launch team broadcasts directly from the dashboard for quick feedback',
+  'guide.s13.tip': 'Trust scores auto-adjust based on response speed and task completion quality, helping you identify the most reliable AI team members.',
+
+  // Guide Section 14 - Skills
+  'guide.s14.title': 'Skills',
+  'guide.s14.p1': 'Install and manage extension skills for AI departments, expanding their professional capabilities.',
+  'guide.s14.step1': 'Switch to the <strong>Skills</strong> tab to view installed skills',
+  'guide.s14.step2': '<strong>Install</strong> \u2014 Install from a Git repository URL or browse the skill marketplace',
+  'guide.s14.step3': '<strong>Assign</strong> \u2014 Add tags to skills and designate which departments can use them',
+  'guide.s14.tip': 'Skills are tool packages the AI can invoke. Once installed, AI automatically discovers and uses relevant skills \u2014 no manual triggering needed.',
+
+  // Guide Section 15 - Tips
+  'guide.s15.title': 'Pro Tips',
+  'guide.s15.t1.title': 'Command Palette',
+  'guide.s15.t1.desc': 'Press Cmd+K (Mac) or Ctrl+K (Windows) to open the command palette for quick search across departments, tabs and actions',
+  'guide.s15.t2.title': 'Language Switch',
+  'guide.s15.t2.desc': 'Click the EN/CN button in the top bar to toggle between languages anytime',
+  'guide.s15.t3.title': 'Fullscreen',
+  'guide.s15.t3.desc': 'Click the fullscreen button in the top bar for an immersive experience',
+  'guide.s15.t4.title': 'Panel Collapse',
+  'guide.s15.t4.desc': 'Click the arrow between panels to collapse the right panel and expand the office canvas',
+  'guide.s15.t5.title': 'Desktop Notifications',
+  'guide.s15.t5.desc': 'Click the bell icon to enable alerts for errors, gateway disconnects, and slow responses',
+  'guide.s15.t6.title': 'Mobile & PWA',
+  'guide.s15.t6.desc': 'Works on mobile browsers with PWA support. Auto-adaptive layout, swipe left/right to switch departments',
 
   // Slash commands
   'cmd.dept.desc': 'Create/manage department',
@@ -827,6 +865,7 @@ export const en: Record<string, string> = {
 
   // Tooltips
   'app.locale.toggle': 'Toggle language',
+  'app.theme.toggle': 'Toggle theme',
   'app.logout': 'Logout',
 
   // SkillPicker

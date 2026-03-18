@@ -89,6 +89,19 @@
   word-break: break-word;
 }
 
+/* ---- Light Theme Overrides ---- */
+[data-theme="light"] .toast-error .toast-msg {
+  color: #dd3355;
+}
+
+[data-theme="light"] .toast-success .toast-msg {
+  color: #00aa70;
+}
+
+[data-theme="light"] .toast-info .toast-msg {
+  color: #2266cc;
+}
+
 /* ---- Mobile Responsive ---- */
 @media (max-width: 768px) {
   .toast-container {

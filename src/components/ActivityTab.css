@@ -135,6 +135,9 @@
   font-family: var(--font-mono);
 }
 
+/* ---- Light Theme Overrides ---- */
+/* Note: replay-btn.recording hardcoded red glow is kept as-is for light theme */
+
 /* Replay list */
 .replay-list {
   border-bottom: 2px solid var(--border-color);
