@@ -102,8 +102,9 @@ router.post('/setup/install', async (req, res) => {
     broadcast('done', 'OpenClaw setup complete! Reloading...', true);
     res.json({ success: true, message: 'Setup complete' });
   } catch (err) {
-    broadcast('error', `Setup failed: ${err.message}`, true, true);
-    res.status(500).json({ error: err.message });
+    console.error('[Setup] Run failed:', err);
+    broadcast('error', 'Setup failed. Check server logs for details.', true, true);
+    res.status(500).json({ error: 'Setup failed' });
   }
 });
 
@@ -145,8 +146,8 @@ function checkSetupStatus() {
     deptConfigExists,
     deptStatusExists,
     bulletinExists,
-    openclawHome: OPENCLAW_HOME,
-    workspace: BASE_PATH,
+    openclawHome: !!OPENCLAW_HOME,
+    workspace: !!BASE_PATH,
   };
 }
 

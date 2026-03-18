@@ -149,8 +149,7 @@ router.post('/voice/transcribe', upload.single('audio'), async (req, res) => {
     } catch (error) {
       console.error('[Voice] Transcription failed:', error);
       res.status(502).json({
-        error: 'Failed to transcribe audio',
-        detail: error.message
+        error: 'Failed to transcribe audio'
       });
     }
   } catch (error) {

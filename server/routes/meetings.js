@@ -171,8 +171,8 @@ router.post('/:id/message', async (req, res) => {
 
   // Process departments in background
   const wss = req.app.locals.wss;
-  setImmediate(() => {
-    withMutex(`meeting:${meeting.id}`, async () => {
+  setImmediate(async () => {
+    try { await withMutex(`meeting:${meeting.id}`, async () => {
       const results = [];
 
       // Sequential: each dept sees previous depts' responses (real discussion)
@@ -273,7 +273,8 @@ ${recentHistory}
         }
       });
     }
-    }).catch(err => console.error('[Meetings] Message round error:', err));
+    });
+    } catch (err) { console.error('[Meetings] Message round error:', err); }
   });
 });
 
@@ -509,9 +510,9 @@ router.post('/:id/negotiate', async (req, res) => {
   res.json({ status: 'accepted', negotiationId, maxRounds: roundsCapped });
 
   // Run negotiation rounds in background
-  withMutex(`meeting:${meeting.id}`, () =>
+  Promise.resolve(withMutex(`meeting:${meeting.id}`, () =>
     runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss)
-  ).catch(err => console.error('[Meetings] Negotiation error:', err));
+  )).catch(err => console.error('[Meetings] Negotiation error:', err));
 });
 
 /**

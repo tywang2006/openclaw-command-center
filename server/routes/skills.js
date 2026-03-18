@@ -426,7 +426,8 @@ router.post('/skills/install', (req, res) => {
         stdio: 'pipe'
       });
     } catch (cloneErr) {
-      return res.status(400).json({ error: `Failed to clone: ${cloneErr.message}` });
+      console.error('[Skills] Git clone failed:', cloneErr.message);
+      return res.status(400).json({ error: 'Failed to clone repository. Check the URL and try again.' });
     }
 
     // Validate SKILL.md exists

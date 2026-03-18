@@ -9,3 +9,17 @@ logs
 tsconfig.tsbuildinfo
 *.run
 *.tar.gz
+.auth_password.plain
+.encryption_key
+integrations.json
+integrations.bak.*
+audit.jsonl
+notifications.json
+chaoagent.md
+departments/*/daily/
+departments/*/memory/
+uploads/
+.vscode/
+.idea/
+test/
+coverage/

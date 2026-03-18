@@ -320,6 +320,22 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.6.1] - 2026-03-18
+
+**Security / 安全**
+- OAuth token files now written with 0o600 permissions (3 locations). OAuth令牌文件写入时使用0o600权限(3处)
+- Removed filesystem path exposure from setup API response. 移除setup API响应中的文件系统路径暴露
+- Sanitized error messages in setup/skills/voice/files routes (no more raw error.message to client). 脱敏setup/skills/voice/files路由错误信息
+- Added 10MB upload size limit to Drive upload endpoint. Drive上传接口增加10MB大小限制
+
+**Fixed / 修复**
+- Meeting setImmediate async error handling race condition. 会议setImmediate异步错误处理竞态条件
+- Meeting negotiation withMutex wrapped in Promise.resolve for safe catch. 会议协商withMutex用Promise.resolve包裹确保catch安全
+
+**Chores / 工程**
+- Updated .gitignore: added IDE dirs, agent-generated reports, test output, refactoring WIP. 更新.gitignore
+- Updated .dockerignore: added sensitive files (encryption key, integrations, audit log). 更新.dockerignore
+
 ### [1.6.0] - 2026-03-18
 
 **Added / 新增**

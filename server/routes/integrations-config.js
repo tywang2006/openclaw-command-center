@@ -509,7 +509,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
               if (refreshResp.ok) {
                 const newTokens = await refreshResp.json();
                 tokens.access_token = newTokens.access_token;
-                safeWriteFileSync(tokenPath, JSON.stringify(tokens, null, 2));
+                safeWriteFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
                 return res.json({ success: true, message: 'Token refreshed successfully' });
               }
             }
@@ -906,7 +906,7 @@ async function buildDriveClient(config) {
         // Auto-refresh: listen for new tokens
         oauth2.on('tokens', (newTokens) => {
           const merged = { ...tokens, ...newTokens };
-          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2));
+          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2), { mode: 0o600 });
         });
         return { drive: googleapis.drive({ version: 'v3', auth: oauth2 }), method: 'oauth' };
       }

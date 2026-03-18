@@ -21,3 +21,34 @@ chaoagent.md
 replays/
 audit.jsonl
 tsconfig.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Agent-generated reports
+*_REPORT.md
+*_SUMMARY.md
+*_CHECKLIST.md
+*_TASKS.md
+*_FIXES.md
+*_FEATURES.md
+*_STRATEGY.md
+*_ASSESSMENT*.md
+RISK_SUMMARY.txt
+GROUNDBREAKING_FEATURES.md
+INDEX_GROUNDBREAKING_FEATURES.md
+README_GROUNDBREAKING_FEATURES.md
+MOBILE_AGENT_TEAM.md
+MOBILE_FINAL_FIX.md
+PWA_COMMANDPALETTE_IMPLEMENTATION.md
+
+# Test output
+coverage/
+test/
+test-output/
+
+# Refactoring WIP
+*.refactored.tsx

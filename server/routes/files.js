@@ -216,10 +216,10 @@ function handleMulterError(err, _req, res, next) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ error: `File exceeds maximum size of ${MAX_FILE_SIZE / 1024 / 1024} MB` });
     }
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: 'Upload error: ' + err.code });
   }
   if (err) {
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: 'File upload failed' });
   }
   next();
 }

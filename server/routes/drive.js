@@ -94,7 +94,7 @@ function getDriveClient(driveConfig) {
         oauth2.setCredentials(tokens);
         oauth2.on('tokens', (newTokens) => {
           const merged = { ...tokens, ...newTokens };
-          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2));
+          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2), { mode: 0o600 });
         });
         return google.drive({ version: 'v3', auth: oauth2 });
       }
@@ -183,6 +183,10 @@ router.post('/drive/upload', async (req, res) => {
 
     if (!filename || !content) {
       return res.status(400).json({ error: 'filename and content are required' });
+    }
+
+    if (typeof content === 'string' && content.length > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Content exceeds 10MB limit' });
     }
 
     const driveConfig = getDriveConfig();
