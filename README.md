@@ -121,6 +121,24 @@ node server/index.js
 
 **PM2（推荐）：**
 
+项目自带 `ecosystem.config.cjs`：
+
+```javascript
+// ecosystem.config.cjs
+module.exports = {
+  apps: [{
+    name: 'openclaw-cmd',
+    script: 'server/index.js',
+    cwd: '~/.openclaw/workspace/command-center',
+    node_args: '--max-old-space-size=256',
+    max_memory_restart: '400M',
+    autorestart: true,
+    exp_backoff_restart_delay: 1000,
+    env: { NODE_ENV: 'production' }
+  }]
+};
+```
+
 ```bash
 pm2 start ecosystem.config.cjs
 pm2 save && pm2 startup
@@ -269,6 +287,24 @@ Departments are managed through the UI — click **+** in the status bar, or typ
 
 **PM2 (Recommended):**
 
+The project includes `ecosystem.config.cjs`:
+
+```javascript
+// ecosystem.config.cjs
+module.exports = {
+  apps: [{
+    name: 'openclaw-cmd',
+    script: 'server/index.js',
+    cwd: '~/.openclaw/workspace/command-center',
+    node_args: '--max-old-space-size=256',
+    max_memory_restart: '400M',
+    autorestart: true,
+    exp_backoff_restart_delay: 1000,
+    env: { NODE_ENV: 'production' }
+  }]
+};
+```
+
 ```bash
 pm2 start ecosystem.config.cjs
 pm2 save && pm2 startup
@@ -319,6 +355,15 @@ command-center/
 ---
 
 ## Changelog / 更新日志
+
+### [1.6.2] - 2026-03-18
+
+**Improved / 改进**
+- Added `homepage` and `bugs` fields to package.json. 增加homepage和bugs字段
+- Completed `.env.example` with all environment variables. 补全所有环境变量
+- Added `ecosystem.config.cjs` and `.env.example` to npm package. 加入npm包
+- Added inline PM2 config example in README. README增加PM2配置示例
+- Synced CHANGELOG.md with README (was lagging at 1.3.1). 同步CHANGELOG.md
 
 ### [1.6.1] - 2026-03-18
 

@@ -2,6 +2,67 @@
 
 All notable changes to **openclaw-command-center** will be documented in this file.
 
+## [1.6.2] - 2026-03-18
+
+### Improved
+- Added `homepage` and `bugs` fields to package.json for npm discoverability
+- Completed `.env.example` with all supported environment variables (CMD_HOST, CORS_ORIGIN, OPENCLAW_WORKSPACE, GATEWAY_DEBUG)
+- Added `ecosystem.config.cjs` and `.env.example` to npm package files
+- Added inline PM2 ecosystem config example in README
+- Synced CHANGELOG.md with README changelog (was lagging behind at 1.3.1)
+
+## [1.6.1] - 2026-03-18
+
+### Security
+- OAuth token files now written with 0o600 permissions (3 locations)
+- Removed filesystem path exposure from setup API response
+- Sanitized error messages in setup/skills/voice/files routes (no more raw error.message to client)
+- Added 10MB upload size limit to Drive upload endpoint
+
+### Fixed
+- Meeting setImmediate async error handling race condition
+- Meeting negotiation withMutex wrapped in Promise.resolve for safe catch
+
+### Chores
+- Updated .gitignore: added IDE dirs, agent-generated reports, test output, refactoring WIP
+- Updated .dockerignore: added sensitive files (encryption key, integrations, audit log)
+
+## [1.6.0] - 2026-03-18
+
+### Added
+- **Negotiation voting**: Multi-round AI debate with voting in meeting room
+- **Action item extraction**: AI auto-extracts action items on meeting end
+- **Trust scores**: Department reliability leaderboard
+- **Sub-agent delegation**: sessions_spawn non-blocking delegation (fixes deadlock)
+- **Mobile responsive**: Responsive layout for tablet (768px) and phone (480px)
+- **Broadcast modal**: Dashboard broadcast replaced blocking prompt() with modal UI
+- **Bulletin clear button**: Clear broadcast responses in bulletin board
+- **CommandPalette tabs**: Added meeting, requests, skills, guide tabs
+
+### Fixed
+- **Chinese IME**: Enter key no longer sends message during IME composition
+- **Gateway reconnect**: Fixed listener leak on reconnect destroying new connection
+- **Dashboard chart**: Fixed division by zero in SVG chart rendering
+- **Dashboard broadcast**: Fixed parameter name mismatch (message -> command)
+- **CronTab PUT**: Fixed message payload nesting mismatch
+- **CronTab chart**: Fixed division by zero in duration chart
+- **sourceDept validation**: Added path traversal protection
+- **Password validation**: Frontend min length synced with backend (8 chars)
+- **WS 1008 reconnect loop**: Auth-revoked close code now clears token and reloads
+- **Meeting negotiation cleanup**: Negotiation state properly reset on meeting end
+- **Meeting memory leak**: Ended meetings removed from Map after 5 minutes
+- **Skills tags**: Tags now correctly sent as array (was string)
+- **Time validation**: Autobackup time regex rejects invalid times (was accepting "99:99")
+- **YAML injection**: Skills frontmatter now escapes user input
+- **WorkflowEditor alert**: Replaced blocking alert() with status message
+- **chat() safety return**: Added defensive return after retry exhaustion
+- **Workflow lock**: Restructured to release file lock during AI execution
+
+### Security
+- Path traversal protection on sourceDept parameter
+- YAML frontmatter injection prevention in skills
+- Gateway listener cleanup prevents connection hijacking
+
 ## [1.5.0] - 2026-03-17
 
 ### Added
