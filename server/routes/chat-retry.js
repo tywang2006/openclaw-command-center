@@ -1,6 +1,7 @@
 import express from 'express';
 import { getGateway } from '../gateway.js';
 import { recordChat, recordTokens } from './metrics.js';
+import { getSessionKey, wrapWithContext } from '../agent.js';
 import fs from 'fs';
 import path from 'path';
 import { BASE_PATH } from '../utils.js';
@@ -17,47 +18,6 @@ function loadConfig() {
   } catch {
     return { departments: {} };
   }
-}
-
-/**
- * Helper: Get session key for a department
- */
-function getSessionKey(deptId) {
-  return `agent:main:${deptId}`;
-}
-
-/**
- * Helper: Load persona for context wrapping
- */
-function loadPersona(deptId) {
-  const p = path.join(BASE_PATH, 'departments', 'personas', `${deptId}.md`);
-  try {
-    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Helper: Wrap message with department context
- * (Simplified version - in production you'd want to import from agent.js)
- */
-function wrapWithContext(deptId, userMessage) {
-  const config = loadConfig();
-  const dept = config.departments?.[deptId];
-  const persona = loadPersona(deptId);
-
-  let context = '';
-  if (persona) {
-    context = persona.replace(/## 集成工具[\s\S]*$/, '').trim();
-  } else if (dept) {
-    context = `你是 ${dept.agent || deptId}，${dept.name} 部门负责人。`;
-  }
-
-  if (context) {
-    return `<context>${context}</context>\n\n${userMessage}`;
-  }
-  return userMessage;
 }
 
 /**

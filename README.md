@@ -16,6 +16,34 @@ Turn your AI agents into a virtual office team — pixel-art office, meeting roo
 
 ---
 
+### Screenshots / 界面截图
+
+**Pixel Office (Dark Theme) / 像素办公室（暗色主题）**
+
+![Pixel Office Dark](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/02-office-dark.png)
+
+**Department Chat / AI 部门对话**
+
+![Department Chat](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/03-chat.png)
+
+**Dashboard / 性能面板**
+
+![Dashboard](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/04-dashboard.png)
+
+**Scheduled Tasks / 定时任务**
+
+![Cron](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/06-cron.png)
+
+**System Config / 系统配置**
+
+![System](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/09-system.png)
+
+**Light Theme / 亮色主题**
+
+![Light Theme](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/12-office-light.png)
+
+---
+
 [中文](#中文) | [English](#english)
 
 </div>
@@ -30,15 +58,92 @@ Turn your AI agents into a virtual office team — pixel-art office, meeting roo
 
 OpenClaw 指挥中心是一个 Web 控制面板，将你的 AI 代理变成虚拟办公团队。每个"部门"都有独立的 AI 助手 — 用自然语言和它们对话、设置自动化任务、从复古像素风界面监控一切。
 
+### 系统架构
+
 ```
-浏览器 (React 19 + Canvas 2D)
-  ├── 像素办公室   ← 每个部门一个动画角色
-  ├── 右侧面板     ← 对话 / 公告 / 记忆 / 定时 / 统计 / ...
-  └── 底部状态栏   ← 部门卡片 + 快速切换
-       ↓ WebSocket
-Express + ws (端口 5100)
-  ├── REST API (/api/*)
-  └── gateway.js → OpenClaw 网关 (ws://127.0.0.1:18789)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         浏览器 / Browser (PWA)                          │
+│                                                                         │
+│  ┌──────────────┐  ┌─────────────────────────────────────────────────┐  │
+│  │  像素办公室    │  │  右侧面板 (12 标签)                              │  │
+│  │  PixelOffice  │  │  ┌────┬────┬────┬────┬────┬─────┐             │  │
+│  │              │  │  │对话│公告│记忆│统计│系统│配置 │             │  │
+│  │  Canvas 2D   │  │  ├────┼────┼────┼────┼────┼─────┤             │  │
+│  │  动画精灵     │  │  │定时│流程│技能│会议│指南│集成 │             │  │
+│  │  点击交互     │  │  └────┴────┴────┴────┴────┴─────┘             │  │
+│  │  滚轮缩放     │  │                                                │  │
+│  └──────────────┘  └─────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  状态栏: 部门卡片 (状态灯 + 快速切换) │ Cmd+K 命令面板           │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                React 19 + TypeScript + Vite │ i18n (中/英)              │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │ WebSocket (wss://) + REST (HTTPS)
+                             │ JWT 认证
+┌────────────────────────────┴────────────────────────────────────────────┐
+│                      Express 服务器 (端口 5100)                         │
+│                                                                         │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │
+│  │  index.js    │  │  agent.js     │  │  auth.js      │  │ crypto.js  │  │
+│  │  HTTP + WS   │  │  AI 对话      │  │  scrypt 认证  │  │ AES-256    │  │
+│  │  路由分发     │  │  上下文注入   │  │  JWT 令牌     │  │ 凭证加密   │  │
+│  │  事件广播     │  │  子代理管理   │  │  登录限流     │  │ Ed25519    │  │
+│  └──────┬──────┘  └──────┬───────┘  └──────────────┘  └────────────┘  │
+│         │                │                                              │
+│  ┌──────┴──────────────────────────────────────────────────────────┐   │
+│  │                    routes/ API 路由                              │   │
+│  │  ┌────────┐ ┌────────┐ ┌─────────┐ ┌───────┐ ┌──────────────┐ │   │
+│  │  │meetings│ │  cron   │ │workflows│ │skills │ │integrations  │ │   │
+│  │  │会议室   │ │定时任务 │ │ 工作流  │ │ 技能  │ │gmail/drive/  │ │   │
+│  │  │协商投票 │ │cron解析 │ │多步执行 │ │安装   │ │voice/webhook │ │   │
+│  │  └────────┘ └────────┘ └─────────┘ └───────┘ └──────────────┘ │   │
+│  └────────────────────────────────────────────────────────────────┘   │
+│         │                                                              │
+│  ┌──────┴──────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
+│  │ gateway.js   │  │  file-lock.js │  │  utils.js                    │  │
+│  │ 网关客户端   │  │  互斥锁       │  │  safeWriteFileSync           │  │
+│  │ Ed25519 设备 │  │  文件锁       │  │  原子写入                    │  │
+│  │ 流式传输     │  │  超时+队列    │  │  配置读取                    │  │
+│  └──────┬──────┘  └──────────────┘  └──────────────────────────────┘  │
+└─────────┼───────────────────────────────────────────────────────────────┘
+          │ WebSocket (ws://127.0.0.1:18789)
+          │ 协议 3-5, Ed25519 设备认证, 挑战-应答签名
+┌─────────┴───────────────────────────────────────────────────────────────┐
+│                       OpenClaw 网关 (Gateway)                           │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
+│  │  LLM 路由     │  │  会话管理     │  │  工具执行 (bash/MCP/内置)    │  │
+│  └──────────────┘  └──────────────┘  └──────────────────────────────┘  │
+│                              │                                          │
+│              ┌───────────────┼───────────────┐                          │
+│              ▼               ▼               ▼                          │
+│        Claude API     OpenAI API      本地模型                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         文件系统持久化                                    │
+│                                                                         │
+│  ~/.openclaw/                                                           │
+│  ├── workspace/departments/                                             │
+│  │   ├── config.json            # 部门配置                              │
+│  │   ├── personas/*.md          # AI 角色设定                           │
+│  │   ├── memory/*.md            # 部门记忆                              │
+│  │   ├── daily/*.json           # 对话日志                              │
+│  │   ├── meetings/*.json        # 会议记录                              │
+│  │   └── subagents/*.json       # 子代理                                │
+│  ├── workspace/command-center/                                          │
+│  │   ├── integrations.json      # 集成凭证 (AES-256-GCM 加密)          │
+│  │   └── .auth_password         # 登录密码 (scrypt 哈希)               │
+│  └── openclaw.json              # 网关令牌                              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**数据流向：**
+
+```
+用户输入 → WebSocket → Express → agent.js (上下文注入) → Gateway → LLM
+                                                                    │
+用户界面 ← WebSocket ← Express ← 流式事件 ←──── Gateway ←──── LLM 回复
 ```
 
 ### 核心功能
@@ -196,15 +301,93 @@ command-center/
 
 OpenClaw Command Center is a web-based dashboard that turns your AI agents into a virtual office team. Each "department" has its own AI assistant — chat with them in natural language, set up automated tasks, and monitor everything from a retro pixel-art interface.
 
+### Architecture
+
 ```
-Browser (React 19 + Canvas 2D)
-  ├── Pixel Office   ← animated characters per department
-  ├── Right Panel    ← Chat / Bulletin / Memory / Scheduler / Stats / ...
-  └── Status Bar     ← department cards + quick switch
-       ↓ WebSocket
-Express + ws (port 5100)
-  ├── REST API (/api/*)
-  └── gateway.js → OpenClaw Gateway (ws://127.0.0.1:18789)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Browser / PWA Client                            │
+│                                                                         │
+│  ┌──────────────┐  ┌─────────────────────────────────────────────────┐  │
+│  │ Pixel Office  │  │  Right Panel (12 Tabs)                          │  │
+│  │              │  │  ┌────┬────┬────┬─────┬─────┬──────┐           │  │
+│  │  Canvas 2D   │  │  │Chat│Bull│Mem │Stats│ Sys │Config│           │  │
+│  │  Animated    │  │  ├────┼────┼────┼─────┼─────┼──────┤           │  │
+│  │  Sprites     │  │  │Cron│Flow│Skill│Meet│Guide│Integ │           │  │
+│  │  Click/Zoom  │  │  └────┴────┴────┴─────┴─────┴──────┘           │  │
+│  └──────────────┘  └─────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  Status Bar: Dept Cards (status lights + quick switch) │ Cmd+K  │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                React 19 + TypeScript + Vite │ i18n (zh/en)              │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │ WebSocket (wss://) + REST (HTTPS)
+                             │ JWT Auth
+┌────────────────────────────┴────────────────────────────────────────────┐
+│                      Express Server (port 5100)                         │
+│                                                                         │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  │
+│  │  index.js    │  │  agent.js     │  │  auth.js      │  │ crypto.js  │  │
+│  │  HTTP + WS   │  │  AI Chat      │  │  scrypt Auth  │  │ AES-256    │  │
+│  │  Routing     │  │  Context Inj  │  │  JWT Tokens   │  │ Credential │  │
+│  │  Broadcast   │  │  Sub-agents   │  │  Rate Limit   │  │ Ed25519    │  │
+│  └──────┬──────┘  └──────┬───────┘  └──────────────┘  └────────────┘  │
+│         │                │                                              │
+│  ┌──────┴──────────────────────────────────────────────────────────┐   │
+│  │                    routes/ API Modules                           │   │
+│  │  ┌────────┐ ┌────────┐ ┌─────────┐ ┌───────┐ ┌──────────────┐ │   │
+│  │  │meetings│ │  cron   │ │workflows│ │skills │ │integrations  │ │   │
+│  │  │Meeting │ │Scheduled│ │ Multi-  │ │ Agent │ │gmail/drive/  │ │   │
+│  │  │Room +  │ │ Tasks   │ │ step    │ │ Skill │ │voice/webhook │ │   │
+│  │  │Debate  │ │         │ │ Pipline │ │ Mgmt  │ │/sheets       │ │   │
+│  │  └────────┘ └────────┘ └─────────┘ └───────┘ └──────────────┘ │   │
+│  └────────────────────────────────────────────────────────────────┘   │
+│         │                                                              │
+│  ┌──────┴──────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
+│  │ gateway.js   │  │  file-lock.js │  │  utils.js                    │  │
+│  │ Gateway      │  │  Mutex +      │  │  safeWriteFileSync           │  │
+│  │ Client       │  │  File Lock    │  │  Atomic Writes               │  │
+│  │ Ed25519 Auth │  │  Timeout +    │  │  Config Reader               │  │
+│  │ Streaming    │  │  Queue Limit  │  │                              │  │
+│  └──────┬──────┘  └──────────────┘  └──────────────────────────────┘  │
+└─────────┼───────────────────────────────────────────────────────────────┘
+          │ WebSocket (ws://127.0.0.1:18789)
+          │ Protocol 3-5, Ed25519 Device Auth, Challenge-Response
+┌─────────┴───────────────────────────────────────────────────────────────┐
+│                       OpenClaw Gateway                                  │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐  │
+│  │  LLM Router   │  │  Session Mgmt │  │  Tool Execution (bash/MCP)   │  │
+│  └──────────────┘  └──────────────┘  └──────────────────────────────┘  │
+│                              │                                          │
+│              ┌───────────────┼───────────────┐                          │
+│              ▼               ▼               ▼                          │
+│        Claude API     OpenAI API      Local Models                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      File System Persistence                            │
+│                                                                         │
+│  ~/.openclaw/                                                           │
+│  ├── workspace/departments/                                             │
+│  │   ├── config.json            # Department configuration              │
+│  │   ├── personas/*.md          # AI persona definitions                │
+│  │   ├── memory/*.md            # Department memory                     │
+│  │   ├── daily/*.json           # Chat logs                             │
+│  │   ├── meetings/*.json        # Meeting records                       │
+│  │   └── subagents/*.json       # Sub-agents                            │
+│  ├── workspace/command-center/                                          │
+│  │   ├── integrations.json      # Credentials (AES-256-GCM encrypted)  │
+│  │   └── .auth_password         # Login password (scrypt hash)          │
+│  └── openclaw.json              # Gateway auth token                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Data Flow:**
+
+```
+User Input → WebSocket → Express → agent.js (context injection) → Gateway → LLM
+                                                                         │
+     UI ← WebSocket ← Express ← Streaming Events ← Gateway ← LLM Response
 ```
 
 ### Features

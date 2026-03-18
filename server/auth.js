@@ -281,7 +281,7 @@ authRouter.post('/login', (req, res) => {
 
 /**
  * POST /api/auth/logout (optional, for completeness)
- * Revokes the current token
+ * Revokes the current token and closes associated WebSocket connections
  */
 authRouter.post('/logout', (req, res) => {
   const authHeader = req.headers.authorization;
@@ -290,6 +290,15 @@ authRouter.post('/logout', (req, res) => {
     if (activeTokens.has(token)) {
       activeTokens.delete(token);
       console.log(`[Auth] Token revoked, active tokens: ${activeTokens.size}`);
+
+      // Close WebSocket connections authenticated with this token
+      for (const cb of _tokenRevokedCallbacks) {
+        try {
+          cb(token);
+        } catch (err) {
+          console.error('[Auth] Error in token revoked callback:', err.message);
+        }
+      }
     }
   }
 
@@ -396,5 +405,8 @@ authRouter.get('/verify', (req, res) => {
 
 const _tokensClaredCallbacks = [];
 export function onTokensCleared(cb) { _tokensClaredCallbacks.push(cb); }
+
+const _tokenRevokedCallbacks = [];
+export function onTokenRevoked(cb) { _tokenRevokedCallbacks.push(cb); }
 
 export { authRouter, isPasswordConfigured };

@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import { chat } from '../agent.js';
+import { chat, sanitizeContextTags } from '../agent.js';
 import { hasDriveAuth, getDriveClient, getOrCreateBackupFolder, getDriveConfig } from './drive.js';
 import { notify } from './notifications.js';
 import { Readable } from 'stream';
@@ -14,6 +14,12 @@ const router = express.Router();
 
 // Active meetings store
 const meetings = new Map();
+
+// Constants
+const MAX_ACTIVE_MEETINGS = 10;
+const MAX_MESSAGES_PER_MEETING = 50;
+const DEPT_RESPONSE_TIMEOUT = 180000; // 3 minutes
+const NEGOTIATION_TIMEOUT = 600000; // 10 minutes
 
 // Ensure meetings directory exists
 const MEETINGS_DIR = path.join(BASE_PATH, 'departments', 'meetings');
@@ -57,6 +63,16 @@ router.post('/', async (req, res) => {
   const { topic, deptIds, initiatorDeptId } = req.body;
   if (!topic || !Array.isArray(deptIds) || deptIds.length < 2) {
     return res.status(400).json({ error: 'topic and at least 2 deptIds required' });
+  }
+
+  // P0 Fix #1: Unbounded meeting creation - enforce limit
+  const activeMeetingsCount = [...meetings.values()].filter(m => m.status === 'active').length;
+  if (activeMeetingsCount >= MAX_ACTIVE_MEETINGS) {
+    return res.status(429).json({
+      error: 'Maximum active meetings limit reached',
+      limit: MAX_ACTIVE_MEETINGS,
+      active: activeMeetingsCount
+    });
   }
 
   const meetingId = 'mtg_' + randomUUID().replace(/-/g, '').substring(0, 12);
@@ -147,6 +163,11 @@ router.post('/:id/message', async (req, res) => {
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
 
+  // P0 Fix #6: Reject messages to ended meetings
+  if (meeting.status !== 'active') {
+    return res.status(400).json({ error: 'Cannot send message to ended meeting' });
+  }
+
   const { message, fromDeptId } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
 
@@ -159,6 +180,12 @@ router.post('/:id/message', async (req, res) => {
     text: message,
     timestamp: Date.now(),
   });
+
+  // P0 Fix #2: Cap messages array to most recent 50
+  if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
+    meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+  }
+
   persistMeeting(meeting);
 
   // Send to all departments in meeting (real Gateway calls)
@@ -185,7 +212,8 @@ router.post('/:id/message', async (req, res) => {
         return `[${sender}]: ${m.text}`;
       }).join('\n');
 
-      const meetingPrompt = `[会议模式] 主题: ${meeting.topic}
+      const safeTopic = sanitizeContextTags(meeting.topic);
+      const meetingPrompt = `[会议模式] 主题: <user_topic>${safeTopic}</user_topic>
 参会部门: ${meeting.deptIds.join(', ')}
 
 最近对话:
@@ -194,7 +222,13 @@ ${recentHistory}
 你是 ${deptId} 部门。请根据你的部门专长，回应会议中的讨论。注意其他部门已经发表的观点，不要重复，提出你的独特视角。简洁回答，不超过200字。`;
 
       try {
-        const result = await chat(deptId, meetingPrompt);
+        // P0 Fix #3: Add timeout for department response
+        const result = await Promise.race([
+          chat(deptId, meetingPrompt),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Department response timeout')), DEPT_RESPONSE_TIMEOUT)
+          )
+        ]);
         const reply = result.success ? result.reply : `[Error] ${result.error}`;
 
         // Record department response — next dept will see this
@@ -204,6 +238,13 @@ ${recentHistory}
           text: reply,
           timestamp: Date.now(),
         });
+
+        // P0 Fix #2: Cap messages array after adding
+        if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
+          meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+        }
+
+        // P0 Fix #5: Move persistMeeting inside withMutex
         persistMeeting(meeting);
 
         results.push({ deptId, reply, success: result.success });
@@ -229,7 +270,30 @@ ${recentHistory}
           });
         }
       } catch (err) {
-        const errorReply = `[Error] ${err.message}`;
+        // P0 Fix #3: Handle timeout error specifically
+        const isTimeout = err.message.includes('timeout');
+        const errorReply = isTimeout
+          ? `[Timeout] ${deptId} did not respond within 3 minutes`
+          : `[Error] ${err.message}`;
+
+        console.log(`[Meetings] Department ${deptId} ${isTimeout ? 'timed out' : 'error'}: ${err.message}`);
+
+        // Record error in messages
+        meeting.messages.push({
+          role: 'dept',
+          deptId,
+          text: errorReply,
+          timestamp: Date.now(),
+        });
+
+        // P0 Fix #2: Cap messages array after adding
+        if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
+          meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+        }
+
+        // P0 Fix #5: Move persistMeeting inside withMutex
+        persistMeeting(meeting);
+
         results.push({ deptId, reply: errorReply, success: false });
 
         // Broadcast error via WebSocket
@@ -244,6 +308,7 @@ ${recentHistory}
               deptIndex,
               totalDepts: targetDepts.length,
               timestamp: Date.now(),
+              timeout: isTimeout
             },
           });
           wss.clients.forEach(c => {
@@ -321,15 +386,18 @@ router.post('/:id/end', async (req, res) => {
   persistMeeting(meeting);
   console.log(`[Meetings] Ended ${meeting.id}: ${meeting.topic}`);
 
-  // Schedule removal from memory (data is persisted to disk)
-  setTimeout(() => meetings.delete(meeting.id), 5 * 60 * 1000);
   recordAudit({ action: 'meeting:end', target: meeting.id, details: { topic: meeting.topic }, ip: req.ip });
 
-  // Extract action items via AI (async, don't block response)
+  // P0 Fix #4: Await action item extraction BEFORE scheduling deletion
   const wss = req.app.locals.wss;
-  extractActionItems(meeting, wss).catch(err => {
+  try {
+    await extractActionItems(meeting, wss);
+  } catch (err) {
     console.error('[Meetings] Action item extraction failed:', err.message);
-  });
+  }
+
+  // Schedule removal from memory (data is persisted to disk)
+  setTimeout(() => meetings.delete(meeting.id), 5 * 60 * 1000);
 
   // Broadcast meeting:end event to WebSocket clients
   try {
@@ -420,9 +488,10 @@ async function extractActionItems(meeting, wss) {
     return `[${sender}]: ${m.text}`;
   }).join('\n');
 
+  const safeTopic = sanitizeContextTags(meeting.topic);
   const prompt = `Analyze this meeting transcript and extract action items.
 
-Meeting topic: ${meeting.topic}
+Meeting topic: <user_topic>${safeTopic}</user_topic>
 Departments: ${meeting.deptIds.join(', ')}
 
 Transcript:
@@ -510,9 +579,34 @@ router.post('/:id/negotiate', async (req, res) => {
   res.json({ status: 'accepted', negotiationId, maxRounds: roundsCapped });
 
   // Run negotiation rounds in background
-  Promise.resolve(withMutex(`meeting:${meeting.id}`, () =>
-    runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss)
-  )).catch(err => console.error('[Meetings] Negotiation error:', err));
+  // P0 Fix #8: Add 10-minute total timeout for entire negotiation
+  Promise.resolve(withMutex(`meeting:${meeting.id}`, async () => {
+    try {
+      await Promise.race([
+        runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Negotiation timeout')), NEGOTIATION_TIMEOUT)
+        )
+      ]);
+    } catch (err) {
+      if (err.message.includes('timeout')) {
+        console.error('[Meetings] Negotiation timed out after 10 minutes');
+        meeting.messages.push({
+          role: 'system', deptId: 'negotiation',
+          text: '[Negotiation Timeout] Process exceeded 10 minutes and was terminated',
+          timestamp: Date.now(), negotiationId
+        });
+        persistMeeting(meeting);
+
+        broadcastToMeeting(req.app.locals.wss, meeting.id, 'meeting:negotiation-end', {
+          meetingId: meeting.id, negotiationId, result: 'timeout',
+          reason: 'Exceeded 10 minute limit'
+        });
+      } else {
+        throw err;
+      }
+    }
+  })).catch(err => console.error('[Meetings] Negotiation error:', err));
 });
 
 /**
@@ -520,7 +614,7 @@ router.post('/:id/negotiate', async (req, res) => {
  */
 async function runNegotiation(meeting, proposal, maxRounds, negotiationId, wss) {
   const targetDepts = meeting.deptIds;
-  let currentProposal = proposal;
+  let currentProposal = sanitizeContextTags(proposal);
   let round = 0;
   const positions = {}; // { deptId: { stance: 'agree'|'disagree'|'modify', reason, suggestion } }
 
@@ -627,13 +721,14 @@ Try to find common ground. Be concise.`;
       return;
     }
 
-    // If most agree but some modify, adopt the most popular modification
+    // P0 Fix #7: Randomly select modification to avoid first-dept bias
     if (agreeCount >= total * 0.5) {
       const modifications = Object.values(roundPositions)
         .filter(p => p.stance === 'modify' && p.suggestion)
         .map(p => p.suggestion);
       if (modifications.length > 0) {
-        currentProposal = modifications[0]; // Use first modification as new proposal
+        const randomIndex = Math.floor(Math.random() * modifications.length);
+        currentProposal = modifications[randomIndex];
       }
     }
   }

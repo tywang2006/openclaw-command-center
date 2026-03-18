@@ -10,6 +10,17 @@ const router = express.Router();
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 const UPLOAD_DIR = path.join(BASE_PATH, '..', 'command-center', 'uploads');
 
+/** Sanitise a user-supplied filename to prevent traversal / special chars */
+function sanitizeFilename(name) {
+  // Strip directory components and null bytes
+  let clean = path.basename(name).replace(/\0/g, '');
+  // Replace anything that isn't alphanumeric, dot, dash, underscore
+  clean = clean.replace(/[^a-zA-Z0-9._\-]/g, '_');
+  // Collapse multiple dots (prevents hidden-file tricks)
+  clean = clean.replace(/\.{2,}/g, '.');
+  return clean || 'unnamed';
+}
+
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -22,7 +33,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const safeName = path.basename(file.originalname);
+    const safeName = sanitizeFilename(file.originalname);
     cb(null, uniqueSuffix + '-' + safeName);
   }
 });

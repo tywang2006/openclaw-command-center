@@ -8,7 +8,6 @@ import { getNotificationPrefs, saveNotificationPrefs, requestPermission, subscri
 import LoginPanel from './components/LoginPanel'
 import SetupWizard from './components/SetupWizard'
 import DeptFormModal from './components/DeptFormModal'
-import OfficeCanvas from './components/OfficeCanvas'
 import ChatPanel, { type SubAgent } from './components/ChatPanel'
 import StatusBar from './components/StatusBar'
 import MobileNav from './components/MobileNav'
@@ -30,6 +29,7 @@ const GuideTab = lazy(() => import('./components/GuideTab'))
 const SkillsTab = lazy(() => import('./components/SkillsTab'))
 const MeetingRoom = lazy(() => import('./components/MeetingRoom'))
 const CommandPalette = lazy(() => import('./components/CommandPalette'))
+const OfficeCanvas = lazy(() => import('./components/OfficeCanvas'))
 
 function TabFallback() {
   return <div style={{ padding: 24, color: '#666', textAlign: 'center' }}>...</div>
@@ -598,13 +598,15 @@ function AuthenticatedApp({ t, locale, setLocale, theme, setTheme, onLogout }: {
 
       <div className="main-content">
         <div className="left-panel">
-          <OfficeCanvas
-            departments={agentState.departments}
-            selectedDeptId={agentState.selectedDeptId}
-            onSelectDept={agentState.setSelectedDeptId}
-            subAgents={subAgentsByDept}
-            toolStates={agentState.toolStates}
-          />
+          <Suspense fallback={<div style={{width:'100%',height:'100%',background:'var(--bg-primary)'}} />}>
+            <OfficeCanvas
+              departments={agentState.departments}
+              selectedDeptId={agentState.selectedDeptId}
+              onSelectDept={agentState.setSelectedDeptId}
+              subAgents={subAgentsByDept}
+              toolStates={agentState.toolStates}
+            />
+          </Suspense>
         </div>
         <button className="panel-toggle" onClick={() => setPanelCollapsed(!panelCollapsed)} title={panelCollapsed ? t('app.panel.expand') : t('app.panel.collapse')}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">

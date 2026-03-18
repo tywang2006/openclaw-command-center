@@ -11,6 +11,8 @@ const RECONNECT_MAX_DELAY_MS = 30000;
 const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
 const MAX_STREAM_BUFFER_BYTES = 1048576; // 1MB per stream buffer
+const MAX_PENDING_REQUESTS = 100; // Maximum concurrent pending requests
+const MAX_TOTAL_STREAM_BUFFERS = 50; // Maximum total stream buffers
 
 // Fatal error codes — do not reconnect on these
 const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN', 'INVALID_REQUEST'];
@@ -46,7 +48,9 @@ function loadOrCreateDeviceIdentity() {
         return parsed;
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[Gateway] Failed to load device identity:', err.message);
+  }
 
   // Generate new Ed25519 keypair
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -277,7 +281,7 @@ class GatewayClient {
     this.pendingRequests.clear();
 
     if (this.ws) {
-      try { this.ws.close(1000, 'Client shutdown'); } catch {}
+      try { this.ws.close(1000, 'Client shutdown'); } catch (err) { /* expected during shutdown */ }
       this.ws = null;
     }
 
@@ -351,7 +355,8 @@ class GatewayClient {
     let frame;
     try {
       frame = JSON.parse(str);
-    } catch {
+    } catch (err) {
+      console.warn('[Gateway] Failed to parse message:', err.message);
       return;
     }
 
@@ -501,7 +506,7 @@ class GatewayClient {
 
     // Forward all other events to listeners
     for (const listener of this._eventListeners) {
-      try { listener(frame); } catch {}
+      try { listener(frame); } catch (err) { console.warn('[Gateway] Event listener error:', err.message); }
     }
   }
 
@@ -518,6 +523,23 @@ class GatewayClient {
     // Stream start — initialize buffer
     if (status === 'started' || (stream && !this._streamBuffers.has(bufferId))) {
       if (!this._streamBuffers.has(bufferId)) {
+        // P1 fix: enforce MAX_TOTAL_STREAM_BUFFERS limit
+        if (this._streamBuffers.size >= MAX_TOTAL_STREAM_BUFFERS) {
+          // Evict oldest buffer (LRU eviction)
+          let oldestId = null;
+          let oldestTime = Infinity;
+          for (const [id, buf] of this._streamBuffers) {
+            if (buf.startedAt < oldestTime) {
+              oldestTime = buf.startedAt;
+              oldestId = id;
+            }
+          }
+          if (oldestId) {
+            console.warn(`[Gateway] Stream buffer limit (${MAX_TOTAL_STREAM_BUFFERS}) reached, evicting oldest buffer: ${oldestId}`);
+            this._streamBuffers.delete(oldestId);
+          }
+        }
+
         this._streamBuffers.set(bufferId, {
           sessionKey: sessionKey || '',
           userMessage: payload.userMessage || '',
@@ -561,7 +583,7 @@ class GatewayClient {
           chunk: cleanChunk,
         };
         for (const listener of this._eventListeners) {
-          try { listener(streamChunkEvent); } catch {}
+          try { listener(streamChunkEvent); } catch (err) { console.warn('[Gateway] Stream listener error:', err.message); }
         }
       }
     }
@@ -580,7 +602,7 @@ class GatewayClient {
         done,
       };
       for (const listener of this._eventListeners) {
-        try { listener(toolEvent); } catch {}
+        try { listener(toolEvent); } catch (err) { console.warn('[Gateway] Tool event listener error:', err.message); }
       }
 
       // Detect permission wait events (F15)
@@ -592,7 +614,7 @@ class GatewayClient {
           timestamp: Date.now(),
         };
         for (const listener of this._eventListeners) {
-          try { listener(permEvent); } catch {}
+          try { listener(permEvent); } catch (err) { console.warn('[Gateway] Permission event listener error:', err.message); }
         }
       }
     }
@@ -627,7 +649,7 @@ class GatewayClient {
         };
 
         for (const listener of this._eventListeners) {
-          try { listener(event); } catch {}
+          try { listener(event); } catch (err) { console.warn('[Gateway] Agent message listener error:', err.message); }
         }
       }
     }
@@ -669,7 +691,7 @@ class GatewayClient {
 
   _emitStatus(status, detail) {
     for (const listener of this._statusListeners) {
-      try { listener({ status, detail }); } catch {}
+      try { listener({ status, detail }); } catch (err) { console.warn('[Gateway] Status listener error:', err.message); }
     }
   }
 
@@ -779,7 +801,7 @@ class GatewayClient {
         return;
       }
 
-      try { this.ws.ping(); } catch {}
+      try { this.ws.ping(); } catch (err) { console.warn('[Gateway] Ping error:', err.message); }
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -801,6 +823,12 @@ class GatewayClient {
       if (!this.connected || !this.authenticated) {
         return reject(new Error('Gateway not connected'));
       }
+
+      // Check if queue is full (P0 fix: prevent unbounded pendingRequests growth)
+      if (this.pendingRequests.size >= MAX_PENDING_REQUESTS) {
+        return reject(new Error(`Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`));
+      }
+
       const requestId = `raw_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
@@ -843,6 +871,11 @@ class GatewayClient {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.authenticated) {
         return reject(new Error('Gateway not connected'));
+      }
+
+      // Check if queue is full (P0 fix: prevent unbounded pendingRequests growth)
+      if (this.pendingRequests.size >= MAX_PENDING_REQUESTS) {
+        return reject(new Error(`Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`));
       }
 
       const reqUuid = randomUUID().replace(/-/g, '');
@@ -963,9 +996,11 @@ class GatewayClient {
       connected: this.connected,
       authenticated: this.authenticated,
       pendingRequests: this.pendingRequests.size,
+      maxPendingRequests: MAX_PENDING_REQUESTS,
       reconnectAttempt: this.reconnectAttempt,
       uptime,
       streamBuffers: this._streamBuffers.size,
+      maxStreamBuffers: MAX_TOTAL_STREAM_BUFFERS,
     };
   }
 

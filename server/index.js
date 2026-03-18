@@ -27,15 +27,19 @@ import meetingsRoutes from './routes/meetings.js';
 import chatRetryRouter from './routes/chat-retry.js';
 import pushRouter from './routes/push.js';
 import { getGateway } from './gateway.js';
-import { authRouter, authMiddleware, validateToken, onTokensCleared } from './auth.js';
+import { authRouter, authMiddleware, validateToken, onTokensCleared, onTokenRevoked } from './auth.js';
 import setupRoutes, { checkSetupStatus } from './routes/setup.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { BASE_PATH } from './utils.js';
 import crypto from 'crypto';
+import { startSubAgentCleanup } from './agent.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Global interval references for cleanup
+let subAgentCleanupInterval = null;
 
 // Ensure minimum directory structure exists (for fresh installs)
 const requiredDirs = [
@@ -319,7 +323,7 @@ wss.on('connection', (ws, req) => {
           timestamp: new Date().toISOString()
         }));
       } catch (error) {
-        console.error('[WebSocket] Error sending initial state:', error);
+        console.error('[WebSocket] Error sending initial state:', error.message);
       }
 
       // Set up normal message handler
@@ -329,10 +333,11 @@ wss.on('connection', (ws, req) => {
           if (s.length > 1000) return;
           console.log(`[WebSocket] Received from ${clientIp}: ${s.substring(0, 100)}`);
         } catch (error) {
-          console.error('[WebSocket] Error processing message:', error);
+          console.error('[WebSocket] Error processing message:', error.message);
         }
       });
-    } catch {
+    } catch (err) {
+      console.warn('[WebSocket] Invalid auth message:', err.message);
       ws.close(1008, 'Invalid auth message');
     }
   });
@@ -400,7 +405,9 @@ try {
     console.log('[Config] Department config changed, reloading...');
     loadDeptMaps();
   });
-} catch {}
+} catch (err) {
+  console.warn('[Config] Failed to watch config file:', err.message);
+}
 
 /**
  * Parse a Gateway session key to extract the department ID.
@@ -433,7 +440,7 @@ gateway.onStatus(({ status, detail }) => {
     data: { status, detail },
     timestamp: new Date().toISOString(),
   });
-  wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
+  wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
 });
 
 // Close all authenticated WS connections when tokens are cleared (password change)
@@ -441,11 +448,23 @@ onTokensCleared(() => {
   let closed = 0;
   wss.clients.forEach(c => {
     if (c._authenticated) {
-      try { c.close(1008, 'Token revoked'); } catch {}
+      try { c.close(1008, 'Token revoked'); } catch (err) { /* expected during cleanup */ }
       closed++;
     }
   });
   if (closed > 0) console.log(`[WebSocket] Closed ${closed} connection(s) after token revocation`);
+});
+
+// Close specific WS connection when a single token is revoked (logout)
+onTokenRevoked((revokedToken) => {
+  let closed = 0;
+  wss.clients.forEach(c => {
+    if (c._authenticated && c._authToken === revokedToken) {
+      try { c.close(1008, 'Token revoked'); } catch (err) { /* expected during cleanup */ }
+      closed++;
+    }
+  });
+  if (closed > 0) console.log(`[WebSocket] Closed ${closed} connection(s) for revoked token`);
 });
 
 // Listen for Gateway events (Telegram messages, cron responses, etc.)
@@ -475,7 +494,7 @@ gateway.onEvent((event) => {
         },
         timestamp,
       });
-      wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
+      wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
       // Record for replay (F13)
       if (isRecording()) addReplayEvent(JSON.parse(payload));
     }
@@ -496,7 +515,7 @@ gateway.onEvent((event) => {
       },
       timestamp: new Date().toISOString(),
     });
-    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
+    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
     if (isRecording()) addReplayEvent(JSON.parse(payload));
   }
 
@@ -510,7 +529,7 @@ gateway.onEvent((event) => {
       data: { deptId, chunk: event.chunk },
       timestamp: new Date().toISOString(),
     });
-    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
+    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
     if (isRecording()) addReplayEvent(JSON.parse(payload));
   }
 
@@ -525,6 +544,9 @@ gateway.onEvent((event) => {
 // Sync auto backup config to OpenClaw cron on startup
 syncAutoBackupCronJob();
 
+// Start sub-agent cleanup scheduler
+subAgentCleanupInterval = startSubAgentCleanup();
+
 // Graceful shutdown
 function gracefulShutdown(signal) {
   console.log(`[Server] ${signal} received, shutting down gracefully...`);
@@ -532,9 +554,15 @@ function gracefulShutdown(signal) {
   getGateway().disconnect();
   watcher.close();
 
+  // Stop sub-agent cleanup scheduler
+  if (subAgentCleanupInterval) {
+    clearInterval(subAgentCleanupInterval);
+    console.log('[SubAgent] Cleanup scheduler stopped');
+  }
+
   // Close all WebSocket clients
   for (const client of wss.clients) {
-    try { client.close(1001, 'Server shutting down'); } catch {}
+    try { client.close(1001, 'Server shutting down'); } catch (err) { /* expected during shutdown */ }
   }
 
   server.close(() => {

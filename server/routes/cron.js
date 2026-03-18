@@ -390,32 +390,21 @@ router.post('/jobs/:id/run', async (req, res) => {
 
   try {
     _runningJobs.add(id);
+
+    // Step 1: Read job config with file lock
+    let job;
+    let sessionKey;
+    let message;
+
     await withFileLock(CRON_FILE_PATH, async () => {
-      // Read existing jobs
       const data = readCronJobs();
-      const job = findJobById(data.jobs, id);
+      job = findJobById(data.jobs, id);
 
       if (!job) {
         return res.status(404).json({ error: `Cron job ${id} not found` });
       }
 
-      // Get gateway client
-      const gateway = getGateway();
-
-      // Wait for gateway to be ready
-      if (!gateway.isReady) {
-        try {
-          await gateway.waitForReady(5000);
-        } catch (err) {
-          return res.status(503).json({
-            error: 'Gateway not connected',
-            detail: err.message
-          });
-        }
-      }
-
       // Build session key: use department context if assigned
-      let sessionKey;
       if (job.deptId && job.subAgentId) {
         sessionKey = `agent:main:${job.deptId}:sub:${job.subAgentId}`;
       } else if (job.deptId) {
@@ -423,86 +412,127 @@ router.post('/jobs/:id/run', async (req, res) => {
       } else {
         sessionKey = `cron:manual:${id}`;
       }
-      const message = job.payload.message;
+      message = job.payload.message;
+    });
 
-      console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
+    // If job not found, error already sent
+    if (!job) {
+      return;
+    }
 
-      const startMs = Date.now();
+    // Step 2: Execute Gateway call WITHOUT holding the file lock
+    const gateway = getGateway();
+
+    // Wait for gateway to be ready
+    if (!gateway.isReady) {
       try {
-        const result = await gateway.sendAgentMessage(sessionKey, message);
-        const durationMs = Date.now() - startMs;
-
-        // Record execution history (F8)
-        if (!job.state) job.state = {};
-        if (!job.state.executionHistory) job.state.executionHistory = [];
-        job.state.executionHistory.push({
-          timestamp: Date.now(),
-          durationMs,
-          success: !!result.text,
-          responseLength: result.text ? result.text.length : 0,
-        });
-        if (job.state.executionHistory.length > 20) {
-          job.state.executionHistory = job.state.executionHistory.slice(-20);
-        }
-        job.state.lastRunAtMs = Date.now();
-        job.state.lastDurationMs = durationMs;
-        job.state.lastStatus = result.text ? 'ok' : 'error';
-        writeCronJobs(data);
-
-        if (result.text) {
-          console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
-          return res.json({
-            success: true,
-            job: {
-              id: job.id,
-              name: job.name
-            },
-            result: {
-              text: result.text,
-              length: result.text.length
-            }
-          });
-        } else {
-          return res.status(502).json({
-            error: 'Gateway returned empty response',
-            job: {
-              id: job.id,
-              name: job.name
-            }
-          });
-        }
+        await gateway.waitForReady(5000);
       } catch (err) {
-        const durationMs = Date.now() - startMs;
-        // Record failed execution history
-        if (!job.state) job.state = {};
-        if (!job.state.executionHistory) job.state.executionHistory = [];
-        job.state.executionHistory.push({
+        return res.status(503).json({
+          error: 'Gateway not connected',
+          detail: err.message
+        });
+      }
+    }
+
+    console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
+
+    const startMs = Date.now();
+    let result;
+    let gatewayError;
+
+    try {
+      result = await gateway.sendAgentMessage(sessionKey, message);
+    } catch (err) {
+      gatewayError = err;
+    }
+
+    const durationMs = Date.now() - startMs;
+
+    // Step 3: Re-acquire lock to write execution history
+    await withFileLock(CRON_FILE_PATH, async () => {
+      const data = readCronJobs();
+      const jobToUpdate = findJobById(data.jobs, id);
+
+      if (!jobToUpdate) {
+        console.warn(`[Cron] Job ${id} disappeared after execution`);
+        return;
+      }
+
+      // Record execution history
+      if (!jobToUpdate.state) jobToUpdate.state = {};
+      if (!jobToUpdate.state.executionHistory) jobToUpdate.state.executionHistory = [];
+
+      if (gatewayError) {
+        // Failed execution
+        jobToUpdate.state.executionHistory.push({
           timestamp: Date.now(),
           durationMs,
           success: false,
           responseLength: 0,
         });
-        if (job.state.executionHistory.length > 20) {
-          job.state.executionHistory = job.state.executionHistory.slice(-20);
+        if (jobToUpdate.state.executionHistory.length > 20) {
+          jobToUpdate.state.executionHistory = jobToUpdate.state.executionHistory.slice(-20);
         }
-        job.state.lastRunAtMs = Date.now();
-        job.state.lastDurationMs = durationMs;
-        job.state.lastStatus = 'error';
-        job.state.lastError = err.message;
-        job.state.consecutiveErrors = (job.state.consecutiveErrors || 0) + 1;
-        writeCronJobs(data);
-
-        console.error(`[Cron] Manual run failed for job ${id}:`, err.message);
-        return res.status(502).json({
-          error: 'Failed to execute cron job via gateway',
-          detail: err.message,
-          job: {
-            id: job.id,
-            name: job.name
-          }
+        jobToUpdate.state.lastRunAtMs = Date.now();
+        jobToUpdate.state.lastDurationMs = durationMs;
+        jobToUpdate.state.lastStatus = 'error';
+        jobToUpdate.state.lastError = gatewayError.message;
+        jobToUpdate.state.consecutiveErrors = (jobToUpdate.state.consecutiveErrors || 0) + 1;
+      } else {
+        // Successful execution
+        jobToUpdate.state.executionHistory.push({
+          timestamp: Date.now(),
+          durationMs,
+          success: !!result.text,
+          responseLength: result.text ? result.text.length : 0,
         });
+        if (jobToUpdate.state.executionHistory.length > 20) {
+          jobToUpdate.state.executionHistory = jobToUpdate.state.executionHistory.slice(-20);
+        }
+        jobToUpdate.state.lastRunAtMs = Date.now();
+        jobToUpdate.state.lastDurationMs = durationMs;
+        jobToUpdate.state.lastStatus = result.text ? 'ok' : 'error';
       }
+
+      writeCronJobs(data);
     });
+
+    // Step 4: Send response to client
+    if (gatewayError) {
+      console.error(`[Cron] Manual run failed for job ${id}:`, gatewayError.message);
+      return res.status(502).json({
+        error: 'Failed to execute cron job via gateway',
+        detail: gatewayError.message,
+        job: {
+          id: job.id,
+          name: job.name
+        }
+      });
+    }
+
+    if (result.text) {
+      console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
+      return res.json({
+        success: true,
+        job: {
+          id: job.id,
+          name: job.name
+        },
+        result: {
+          text: result.text,
+          length: result.text.length
+        }
+      });
+    } else {
+      return res.status(502).json({
+        error: 'Gateway returned empty response',
+        job: {
+          id: job.id,
+          name: job.name
+        }
+      });
+    }
   } catch (error) {
     console.error(`Error in POST /api/cron/jobs/${req.params.id}/run:`, error);
     res.status(500).json({ error: 'Failed to trigger cron job run' });

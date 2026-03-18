@@ -70,18 +70,35 @@ let _cachedKey = null;
 export function getEncryptionKey() {
   if (_cachedKey) return _cachedKey;
 
-  if (fs.existsSync(KEY_FILE)) {
+  // Attempt atomic creation with O_EXCL to prevent TOCTOU race conditions.
+  // If two processes race here, only one will succeed at creating the file;
+  // the loser gets EEXIST and falls through to read the winner's key.
+  let created = false;
+  try {
+    const fd = fs.openSync(
+      KEY_FILE,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
+      0o600
+    );
+    const key = crypto.randomBytes(32);
+    fs.writeSync(fd, key.toString('hex'));
+    fs.closeSync(fd);
+    console.log('[Crypto] Generated new encryption key at', KEY_FILE);
+    _cachedKey = key;
+    created = true;
+  } catch (err) {
+    if (err.code !== 'EEXIST') {
+      throw err;
+    }
+    // Another process created the key first -- fall through to read it.
+  }
+
+  if (!created) {
     const hex = fs.readFileSync(KEY_FILE, 'utf8').trim();
     if (hex.length !== 64) {
       throw new Error('[Crypto] .encryption_key is malformed (expected 64 hex chars)');
     }
     _cachedKey = Buffer.from(hex, 'hex');
-  } else {
-    const key = crypto.randomBytes(32);
-    fs.writeFileSync(KEY_FILE, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
-    try { fs.chmodSync(KEY_FILE, 0o600); } catch { /* best effort */ }
-    console.log('[Crypto] Generated new encryption key at', KEY_FILE);
-    _cachedKey = key;
   }
 
   return _cachedKey;

@@ -295,7 +295,7 @@ router.post('/skills', (req, res) => {
     if (description) fmLines.push(`description: ${yamlEscape(description)}`);
     if (tags) {
       const tagList = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean);
-      fmLines.push(`tags: [${tagList.join(', ')}]`);
+      fmLines.push(`tags: [${tagList.map(t => yamlEscape(t)).join(', ')}]`);
     }
     fmLines.push(`---`);
     const skillMd = fmLines.join('\n') + '\n\n' + (content || '');
@@ -351,7 +351,7 @@ router.put('/skills/:slug', (req, res) => {
     for (const [k, v] of Object.entries(fm)) {
       if (v === null || v === undefined) continue;
       if (Array.isArray(v)) {
-        fmLines.push(`${k}: [${v.join(', ')}]`);
+        fmLines.push(`${k}: [${v.map(item => yamlEscape(String(item))).join(', ')}]`);
       } else {
         fmLines.push(`${k}: ${yamlEscape(String(v))}`);
       }
@@ -416,6 +416,11 @@ router.post('/skills/install', (req, res) => {
     // Ensure .git suffix for clone
     if (!gitUrl.endsWith('.git')) {
       gitUrl += '.git';
+    }
+
+    // SSRF protection: only allow HTTPS and git@ protocols
+    if (!gitUrl.startsWith('https://') && !gitUrl.startsWith('git@')) {
+      return res.status(400).json({ error: 'Only HTTPS and git@ URLs are allowed' });
     }
 
     // Clone to temp dir

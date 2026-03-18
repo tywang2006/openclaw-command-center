@@ -346,8 +346,9 @@ ${tools}`);
   }
 
   // Bulletin (capped at 4KB to prevent context overflow)
+  // Sanitize bulletin content to prevent context tag injection from user-posted bulletins
   if (bulletin.trim()) {
-    let trimmed = bulletin.trim();
+    let trimmed = sanitizeContextTags(bulletin.trim());
     if (Buffer.byteLength(trimmed, 'utf8') > 4096) {
       trimmed = trimmed.slice(-4000);
       const nl = trimmed.indexOf('\n');
@@ -360,13 +361,25 @@ ${tools}`);
   return parts.join('\n\n');
 }
 
+/**
+ * Strip context-injection tags from untrusted input.
+ * Handles case variations, extra whitespace, and HTML-entity encoded forms
+ * to prevent users from injecting fake <department_context> or <subagent_context> blocks.
+ */
+function sanitizeContextTags(text) {
+  if (!text) return text;
+  return text
+    .replace(/<\s*\/?\s*department_context\s*>/gi, '')
+    .replace(/<\s*\/?\s*subagent_context\s*>/gi, '')
+    .replace(/&lt;\s*\/?\s*department_context\s*&gt;/gi, '')
+    .replace(/&lt;\s*\/?\s*subagent_context\s*&gt;/gi, '');
+}
+
 function wrapWithContext(deptId, userMessage) {
   const ctx = buildDepartmentContext(deptId);
   if (!ctx) return userMessage;
   // Strip any fake context tags from user message to prevent context injection
-  const sanitized = userMessage
-    .replace(/<\/?department_context>/g, '')
-    .replace(/<\/?subagent_context>/g, '');
+  const sanitized = sanitizeContextTags(userMessage);
   return `<department_context>\n${ctx}\n</department_context>\n\n${sanitized}`;
 }
 
@@ -617,7 +630,9 @@ function saveMemory(deptId, content) {
           fs.unlinkSync(path.join(memDir, old));
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[Agent] Failed to rotate memory backups:', err.message);
+    }
 
     return true;
   } catch { return false; }
@@ -638,39 +653,64 @@ async function broadcastCommand(command) {
 
   const departments = Object.entries(config.departments || {}).map(([id, dept]) => ({ ...dept, id }));
 
-  // Process departments with concurrency limit of 3
-  const CONCURRENCY = 3;
-  const results = [];
-  for (let i = 0; i < departments.length; i += CONCURRENCY) {
-    const batch = departments.slice(i, i + CONCURRENCY);
-    const batchResults = await Promise.allSettled(batch.map(async (dept) => {
-      const sessionKey = getSessionKey(dept.id);
-      try {
-        const startMs = Date.now();
-        const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
-        const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
-        const durationMs = Date.now() - startMs;
+  // Overall timeout: 3 minutes for the entire broadcast operation
+  const BROADCAST_TIMEOUT_MS = 180000;
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Broadcast timeout')), BROADCAST_TIMEOUT_MS);
+  });
 
-        recordChat(dept.id, durationMs, !result.text);
-        if (result.usage) {
-          recordTokens(dept.id, result.usage);
+  const broadcastPromise = (async () => {
+    // Process departments with concurrency limit of 3
+    const CONCURRENCY = 3;
+    const results = [];
+    for (let i = 0; i < departments.length; i += CONCURRENCY) {
+      const batch = departments.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.allSettled(batch.map(async (dept) => {
+        const sessionKey = getSessionKey(dept.id);
+        try {
+          const startMs = Date.now();
+          const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
+          const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
+          const durationMs = Date.now() - startMs;
+
+          recordChat(dept.id, durationMs, !result.text);
+          if (result.usage) {
+            recordTokens(dept.id, result.usage);
+          }
+
+          return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
+        } catch (err) {
+          recordChat(dept.id, 0, true);
+          return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
         }
+      }));
+      results.push(...batchResults);
+    }
 
-        return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
-      } catch (err) {
-        recordChat(dept.id, 0, true);
-        return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
-      }
+    return results.map((r, i) =>
+      r.status === 'fulfilled' ? r.value : { deptId: departments[i].id, name: departments[i].name, reply: `[Error] ${r.reason?.message}` }
+    );
+  })();
+
+  try {
+    return await Promise.race([broadcastPromise, timeoutPromise]);
+  } catch (err) {
+    // Timeout occurred - return partial results with timeout flag
+    console.warn(`[Broadcast] Timeout after ${BROADCAST_TIMEOUT_MS}ms, returning partial results`);
+    const partialResults = departments.map(dept => ({
+      deptId: dept.id,
+      name: dept.name,
+      reply: '[Timeout - no response]',
+      timeout: true
     }));
-    results.push(...batchResults);
+    return partialResults;
   }
-
-  return results.map((r, i) =>
-    r.status === 'fulfilled' ? r.value : { deptId: departments[i].id, name: departments[i].name, reply: `[Error] ${r.reason?.message}` }
-  );
 }
 
 // ---- Sub-agents ----
+
+// Sub-agent TTL: 24 hours
+const SUB_AGENT_TTL = 24 * 60 * 60 * 1000;
 
 async function createSubAgent(deptId, task, name, skills) {
   return withFileLock(subAgentsPath(deptId), () => {
@@ -685,7 +725,13 @@ async function createSubAgent(deptId, task, name, skills) {
     // Sanitize name: strip shell-significant chars, cap length
     const rawName = name || `Sub-agent #${data.count}`;
     const agentName = rawName.replace(/[`$\\'"(){}<>|;&]/g, '').slice(0, 50);
-    const entry = { name: agentName, task, status: 'active', created: new Date().toISOString() };
+    const entry = {
+      name: agentName,
+      task,
+      status: 'active',
+      created: new Date().toISOString(),
+      createdAt: Date.now()
+    };
     if (Array.isArray(skills) && skills.length > 0) {
       entry.skills = skills;
     }
@@ -754,9 +800,10 @@ async function chatSubAgent(deptId, subId, userMessage) {
   const gateway = getGateway();
   if (!gateway.isReady) return { success: false, error: 'Gateway not connected' };
 
-  // Build context for sub-agent
+  // Build context for sub-agent, sanitize user message to prevent context injection
   const ctx = buildSubAgentContext(deptId, agent);
-  const wrappedMessage = `<subagent_context>\n${ctx}\n</subagent_context>\n\n${userMessage}`;
+  const sanitizedMessage = sanitizeContextTags(userMessage);
+  const wrappedMessage = `<subagent_context>\n${ctx}\n</subagent_context>\n\n${sanitizedMessage}`;
 
   const sessionKey = `agent:main:${deptId}:sub:${subId}`;
   try {
@@ -794,14 +841,137 @@ async function removeSubAgent(deptId, subId) {
     if (!agent) return false;
     const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
     let archives = [];
-    try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch {}
+    try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch (err) { console.warn('[SubAgent] Failed to load archives:', err.message); }
     archives.push({ id: subId, ...agent, archived: new Date().toISOString() });
-    try { safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2)); } catch {}
+    try { safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2)); } catch (err) { console.warn('[SubAgent] Failed to save archive:', err.message); }
     delete data.agents[subId];
     saveSubAgents(deptId, data);
     console.log(`[SubAgent] Archived and removed ${subId} "${agent.name}"`);
     return true;
   });
+}
+
+/**
+ * Archive a sub-agent (used by cleanup functions)
+ */
+function archiveSubAgent(deptId, subId, agent, reason) {
+  try {
+    const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
+    let archives = [];
+    try {
+      if (fs.existsSync(archivePath)) {
+        archives = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+      }
+    } catch (err) {
+      console.warn('[SubAgent] Failed to load archives for archiving:', err.message);
+    }
+    archives.push({
+      id: subId,
+      ...agent,
+      archived: new Date().toISOString(),
+      reason
+    });
+    safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2));
+  } catch (err) {
+    console.error(`[SubAgent] Failed to archive ${subId}:`, err.message);
+  }
+}
+
+/**
+ * Cleanup expired and orphaned sub-agents across all departments.
+ * Runs periodically to enforce TTL and detect orphans.
+ */
+function cleanupSubAgents() {
+  const config = loadConfig();
+  const allDeptIds = Object.keys(config.departments || {});
+  const now = Date.now();
+  let expiredCount = 0;
+  let orphanCount = 0;
+
+  // Scan all department directories for subagents.json files
+  const deptsDir = path.join(BASE_PATH, 'departments');
+  let subagentDirs = [];
+  try {
+    const entries = fs.readdirSync(deptsDir);
+    for (const entry of entries) {
+      const subagentsFile = path.join(deptsDir, entry, 'subagents.json');
+      if (fs.existsSync(subagentsFile)) {
+        subagentDirs.push(entry);
+      }
+    }
+  } catch (err) {
+    console.error('[SubAgent] Cleanup failed to scan departments:', err.message);
+    return;
+  }
+
+  for (const deptId of subagentDirs) {
+    try {
+      // Check if parent department still exists
+      const isOrphan = !allDeptIds.includes(deptId);
+
+      withFileLock(subAgentsPath(deptId), () => {
+        const data = loadSubAgents(deptId);
+        const agentEntries = Object.entries(data.agents);
+        if (agentEntries.length === 0) return;
+
+        const toRemove = [];
+
+        for (const [subId, agent] of agentEntries) {
+          if (agent.status !== 'active') continue;
+
+          // Check for orphaned sub-agents (parent department deleted)
+          if (isOrphan) {
+            toRemove.push({ subId, agent, reason: 'orphan' });
+            orphanCount++;
+            continue;
+          }
+
+          // Check for expired sub-agents (older than TTL)
+          const createdAt = agent.createdAt || 0;
+          if (createdAt > 0 && (now - createdAt) > SUB_AGENT_TTL) {
+            toRemove.push({ subId, agent, reason: 'expired' });
+            expiredCount++;
+          }
+        }
+
+        // Archive and remove all flagged sub-agents
+        if (toRemove.length > 0) {
+          for (const { subId, agent, reason } of toRemove) {
+            archiveSubAgent(deptId, subId, agent, reason);
+            delete data.agents[subId];
+            console.log(`[SubAgent] Cleanup: ${reason} ${subId} "${agent.name}" in ${deptId}`);
+          }
+          saveSubAgents(deptId, data);
+        }
+      });
+    } catch (err) {
+      console.error(`[SubAgent] Cleanup error for ${deptId}:`, err.message);
+    }
+  }
+
+  if (expiredCount > 0 || orphanCount > 0) {
+    console.log(`[SubAgent] Cleanup completed: ${expiredCount} expired, ${orphanCount} orphaned`);
+  }
+}
+
+/**
+ * Start periodic sub-agent cleanup (runs every hour)
+ */
+function startSubAgentCleanup() {
+  // Run initial cleanup after 5 minutes
+  const initialDelay = 5 * 60 * 1000;
+  setTimeout(() => {
+    console.log('[SubAgent] Running initial cleanup');
+    cleanupSubAgents();
+  }, initialDelay);
+
+  // Then run every hour
+  const interval = setInterval(() => {
+    cleanupSubAgents();
+  }, 60 * 60 * 1000);
+
+  console.log('[SubAgent] Cleanup scheduler started (runs hourly)');
+  return interval;
 }
 
 // ---- Exports ----
@@ -811,4 +981,7 @@ export {
   saveBulletin, saveMemory, clearHistory, loadMemory, loadBulletin,
   createSubAgent, chatSubAgent, listSubAgents, removeSubAgent,
   broadcastCommand,
+  sanitizeContextTags,
+  wrapWithContext,
+  startSubAgentCleanup,
 };

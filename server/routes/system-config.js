@@ -1,7 +1,8 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { OPENCLAW_HOME, CONFIG_PATH, getOpenClawConfig } from '../utils.js';
+import { OPENCLAW_HOME, CONFIG_PATH, getOpenClawConfig, safeWriteFileSync } from '../utils.js';
+import { withFileLock } from '../file-lock.js';
 import { getGateway } from '../gateway.js';
 
 const router = express.Router();
@@ -19,11 +20,13 @@ function readConfig() {
 }
 
 /**
- * Helper: Write openclaw.json
+ * Helper: Write openclaw.json with atomic write and file locking
  */
-function writeConfig(data) {
+async function writeConfig(data) {
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), 'utf8');
+    await withFileLock(CONFIG_PATH, async () => {
+      safeWriteFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), { mode: 0o600 });
+    });
     return true;
   } catch (error) {
     console.error('[SystemConfig] Error writing openclaw.json:', error.message);
@@ -79,7 +82,7 @@ router.get('/system/config/gateway', (req, res) => {
  * Update gateway URL and/or auth token
  * Body: { url?, token?, clientId?, clientMode? }
  */
-router.put('/system/config/gateway', (req, res) => {
+router.put('/system/config/gateway', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -93,7 +96,7 @@ router.put('/system/config/gateway', (req, res) => {
     if (clientId !== undefined) config.gateway.clientId = clientId;
     if (clientMode !== undefined) config.gateway.clientMode = clientMode;
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -167,7 +170,7 @@ router.get('/system/config/models', (req, res) => {
  * Update primary/fallbacks/provider apiKey
  * Body: { primary?, fallbacks?, providers?: { [id]: { apiKey?, baseUrl? } } }
  */
-router.put('/system/config/models', (req, res) => {
+router.put('/system/config/models', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -205,7 +208,7 @@ router.put('/system/config/models', (req, res) => {
       }
     }
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -221,7 +224,7 @@ router.put('/system/config/models', (req, res) => {
  * Add a new provider with at least one model
  * Body: { id, baseUrl, apiKey, api, model: { id, name, contextWindow?, maxTokens? } }
  */
-router.post('/system/config/models/provider', (req, res) => {
+router.post('/system/config/models/provider', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -256,7 +259,7 @@ router.post('/system/config/models/provider', (req, res) => {
       }],
     };
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -272,7 +275,7 @@ router.post('/system/config/models/provider', (req, res) => {
  * Add a model to an existing provider
  * Body: { id, name?, contextWindow?, maxTokens? }
  */
-router.post('/system/config/models/provider/:providerId/model', (req, res) => {
+router.post('/system/config/models/provider/:providerId/model', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -302,7 +305,7 @@ router.post('/system/config/models/provider/:providerId/model', (req, res) => {
       maxTokens: maxTokens || 8192,
     });
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -317,7 +320,7 @@ router.post('/system/config/models/provider/:providerId/model', (req, res) => {
  * DELETE /system/config/models/provider/:providerId
  * Remove a provider and all its models. Also cleans up primary/fallbacks references.
  */
-router.delete('/system/config/models/provider/:providerId', (req, res) => {
+router.delete('/system/config/models/provider/:providerId', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -341,7 +344,7 @@ router.delete('/system/config/models/provider/:providerId', (req, res) => {
 
     delete config.models.providers[providerId];
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -488,7 +491,7 @@ router.post('/system/config/models/sync', async (req, res) => {
       }
     }
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -545,7 +548,7 @@ router.get('/system/config/telegram', (req, res) => {
  * PUT /system/config/telegram
  * Update telegram settings
  */
-router.put('/system/config/telegram', (req, res) => {
+router.put('/system/config/telegram', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -568,7 +571,7 @@ router.put('/system/config/telegram', (req, res) => {
     if (updates.streaming !== undefined) tg.streaming = updates.streaming;
     if (updates.groupPolicy !== undefined) tg.groupPolicy = updates.groupPolicy;
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -617,7 +620,7 @@ router.post('/system/config/telegram/test', async (req, res) => {
  * Toggle plugin enabled state
  * Body: { enabled: boolean }
  */
-router.put('/system/config/plugins/:id', (req, res) => {
+router.put('/system/config/plugins/:id', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -637,7 +640,7 @@ router.put('/system/config/plugins/:id', (req, res) => {
     }
     config.plugins.entries[id].enabled = enabled;
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
@@ -684,7 +687,7 @@ router.get('/system/config/skills', (req, res) => {
  * Update or remove a skill's API key
  * Body: { apiKey: "new-key" } or { apiKey: null } to remove
  */
-router.put('/system/config/skills/:slug', (req, res) => {
+router.put('/system/config/skills/:slug', async (req, res) => {
   try {
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
@@ -712,7 +715,7 @@ router.put('/system/config/skills/:slug', (req, res) => {
       return res.status(400).json({ error: 'apiKey must be a string or null' });
     }
 
-    if (!writeConfig(config)) {
+    if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 

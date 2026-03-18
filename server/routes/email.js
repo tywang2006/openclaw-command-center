@@ -10,6 +10,19 @@ const router = express.Router();
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
 
 /**
+ * Sanitize HTML content to prevent XSS via email.
+ * Strips dangerous tags (script, iframe, object, embed) and on* event handlers.
+ */
+function sanitizeHtml(html) {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^>]*>.*?<\/iframe>/gi, '')
+    .replace(/<object\b[^>]*>.*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*\/?>/gi, '')
+    .replace(/\bon\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+}
+
+/**
  * Helper: Get Gmail configuration (with decryption)
  */
 function getGmailConfig() {
@@ -172,7 +185,7 @@ router.post('/email/send', async (req, res) => {
     };
 
     if (html) {
-      mailOptions.html = html;
+      mailOptions.html = sanitizeHtml(html);
     }
 
     if (attachments && Array.isArray(attachments)) {
