@@ -539,6 +539,30 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.7.0] - 2026-03-18
+
+**Security & Reliability / 安全与可靠性 (40-Agent Audit)**
+- Mutex timeout (30s) + queue limit (10) prevents deadlocks. 互斥锁超时+队列限制防止死锁
+- Gateway pending request cap (100) + stream buffer cap (50). 网关请求队列上限+流缓冲上限
+- Meeting: creation limit (10), message cap (50), dept response timeout (3min), negotiation timeout (10min). 会议创建上限、消息上限、部门响应超时、协商超时
+- Action-item extraction race fix (await before deletion timer). 行动项提取竞态修复
+- Negotiation modification selection randomized (no first-dept bias). 协商修改选择随机化
+- Context tag injection defense strengthened (case-insensitive, HTML entities). 上下文标签注入防御加强
+- TOCTOU race fix in crypto.js with O_CREAT|O_EXCL. 密钥生成TOCTOU竞态修复
+- Sub-agent 24h TTL + orphan cleanup. 子代理24小时TTL+孤儿清理
+- Broadcast 3-minute timeout with partial results. 广播3分钟超时返回部分结果
+- Cron three-phase lock (release during AI execution). 定时任务三阶段锁
+- chat-retry.js deduplication (imports from agent.js). 聊天重试去重
+- Filename sanitization (voice), HTML sanitization (email), SSRF protection (skills). 文件名/HTML/SSRF防护
+- Logout closes associated WebSocket connections. 登出关闭关联WebSocket
+- 22 empty catch blocks replaced with logging. 22个空catch替换为日志
+
+**Added / 新增**
+- Light/dark theme toggle. 亮色/暗色主题切换
+- Architecture diagrams in README (zh + en). README架构图
+- 13 automated screenshots for npm/GitHub. 13张自动截图
+- OfficeCanvas lazy loading (-22% main bundle). 办公室Canvas懒加载
+
 ### [1.6.3] - 2026-03-18
 
 **Improved / 改进**
