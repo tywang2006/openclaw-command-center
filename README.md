@@ -356,6 +356,15 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.6.3] - 2026-03-18
+
+**Improved / 改进**
+- Added CONTRIBUTING.md (bilingual). 增加贡献指南
+- Added CODE_OF_CONDUCT.md (Contributor Covenant 2.1). 增加行为准则
+- Added GitHub issue templates (bug report + feature request). 增加GitHub issue模板
+- Added `main` and `exports` fields to package.json. 增加main和exports字段
+- Improved Snyk package health score. 提升Snyk包健康评分
+
 ### [1.6.2] - 2026-03-18
 
 **Improved / 改进**

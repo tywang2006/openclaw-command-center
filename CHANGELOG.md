@@ -2,6 +2,15 @@
 
 All notable changes to **openclaw-command-center** will be documented in this file.
 
+## [1.6.3] - 2026-03-18
+
+### Improved
+- Added CONTRIBUTING.md (bilingual contributing guide)
+- Added CODE_OF_CONDUCT.md (Contributor Covenant 2.1)
+- Added GitHub issue templates (bug report + feature request)
+- Added `main` and `exports` fields to package.json
+- Improved Snyk package health score
+
 ## [1.6.2] - 2026-03-18
 
 ### Improved
