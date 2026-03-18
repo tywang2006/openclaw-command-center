@@ -124,7 +124,17 @@ export default function ChatPanel({
     const cleaned = cleanMessageText(m.text)
     return !realtimeKeys.has(`${m.role}:${cleaned.substring(0, 80)}`)
   })
-  const deptActivities = [...uniqueHistory, ...realtimeActivities].filter(msg => cleanMessageText(msg.text))
+  const allDeptActivities = [...uniqueHistory, ...realtimeActivities].filter(msg => cleanMessageText(msg.text))
+
+  // Filter by active chat target: main shows non-sub-agent messages, sub-agent shows only its own
+  const deptActivities = activeChat === 'main'
+    ? allDeptActivities
+    : (() => {
+        const subName = subAgents.find(s => s.id === activeChat)?.name || ''
+        if (!subName) return allDeptActivities
+        const prefix = `[${subName}]`
+        return allDeptActivities.filter(a => a.text.startsWith(prefix))
+      })()
 
   // Chat command handler
   const handleChatCommand = useCallback((msg: string): boolean => {
@@ -229,6 +239,36 @@ export default function ChatPanel({
       return true
     }
 
+    // /子代理名 消息 — call sub-agent by name from main chat
+    if (selectedDeptId && subAgents.length > 0) {
+      const slashName = trimmed.match(/^\/(\S+)\s+(.+)$/s)
+      if (slashName) {
+        const sub = subAgents.find(s => s.name === slashName[1])
+        if (sub) {
+          const message = slashName[2].trim()
+          const prefix = `[${sub.name}] `
+          addActivity({ deptId: selectedDeptId, role: 'user', text: prefix + message, timestamp: Date.now(), source: 'app' })
+          authedFetch(`/api/departments/${selectedDeptId}/subagents/${sub.id}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success && data.reply) {
+                addActivity({ deptId: selectedDeptId!, role: 'assistant', text: prefix + data.reply, timestamp: Date.now(), source: 'app' })
+              } else {
+                addActivity({ deptId: selectedDeptId!, role: 'assistant', text: prefix + (data.error || 'No reply'), timestamp: Date.now(), source: 'app' })
+              }
+            })
+            .catch(() => {
+              addActivity({ deptId: selectedDeptId!, role: 'assistant', text: prefix + t('common.networkError'), timestamp: Date.now(), source: 'app' })
+            })
+          return true
+        }
+      }
+    }
+
     // /help or /帮助
     if (/^\/(help|帮助)$/i.test(trimmed)) {
       const chatCommands = [
@@ -238,6 +278,7 @@ export default function ChatPanel({
         { cmd: '/status', alias: '/状态', desc: t('cmd.status.desc') },
         { cmd: '/clear', alias: '/清屏', desc: t('cmd.clear.desc') },
         { cmd: '/help', alias: '/帮助', desc: t('cmd.help.desc') },
+        { cmd: '/子代理名', alias: '', desc: '向子代理发消息' },
       ]
       const helpText = chatCommands.map(c => `${c.cmd}  ${c.alias}  — ${c.desc}`).join('\n')
       addActivity({ deptId: selectedDeptId || 'system', role: 'assistant', text: t('cmd.help.title') + '\n' + helpText, timestamp: Date.now(), source: 'app' })
@@ -245,7 +286,7 @@ export default function ChatPanel({
     }
 
     return false
-  }, [selectedDeptId, departments.length, addActivity, onOpenDeptForm, t])
+  }, [selectedDeptId, departments.length, addActivity, onOpenDeptForm, t, subAgents])
 
   // Message send handler
   const handleSendMessage = useCallback(async (

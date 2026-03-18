@@ -93,7 +93,7 @@ function writeJsonFile(filePath, data, { backup = false } = {}) {
       // Current → .bak.1
       fs.copyFileSync(filePath, path.join(dir, `${base}.bak.1`));
     }
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    safeWriteFileSync(filePath, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
     console.error(`[IntegrationsConfig] Error writing JSON file ${filePath}:`, error.message);
@@ -509,7 +509,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
               if (refreshResp.ok) {
                 const newTokens = await refreshResp.json();
                 tokens.access_token = newTokens.access_token;
-                fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2));
+                safeWriteFileSync(tokenPath, JSON.stringify(tokens, null, 2));
                 return res.json({ success: true, message: 'Token refreshed successfully' });
               }
             }
@@ -653,7 +653,7 @@ router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
 
     // Save tokens
     const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
-    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+    safeWriteFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
 
     // Get user info
     let email = '';
@@ -722,7 +722,7 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
     }
 
     const tokenPath = path.join(OPENCLAW_HOME, 'gogcli-tokens.json');
-    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+    safeWriteFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
 
     let email = '';
     try {
@@ -836,7 +836,7 @@ router.put('/integrations/autobackup', async (req, res) => {
       config.autoBackup.schedule = schedule;
     }
     if (time !== undefined) {
-      if (typeof time !== 'string' || !/^\d{2}:\d{2}$/.test(time)) {
+      if (typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
         return res.status(400).json({ error: 'time must be in HH:MM format' });
       }
       config.autoBackup.time = time;
@@ -906,7 +906,7 @@ async function buildDriveClient(config) {
         // Auto-refresh: listen for new tokens
         oauth2.on('tokens', (newTokens) => {
           const merged = { ...tokens, ...newTokens };
-          fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2));
         });
         return { drive: googleapis.drive({ version: 'v3', auth: oauth2 }), method: 'oauth' };
       }

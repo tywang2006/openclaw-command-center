@@ -415,10 +415,10 @@ function calculateTrustScore(deptId) {
   // Activity: more messages = higher engagement (0-25 points)
   const activity = Math.min(25, totalMessages * 0.5);
 
-  // Consistency: check daily metrics if available (0-20 points)
+  // Consistency: department is active today and system has daily data (0-20 points)
   const today = new Date().toISOString().split('T')[0];
   const dailyData = metrics.daily[today];
-  const consistency = dailyData && dailyData[deptId] ? 20 : 10;
+  const consistency = dailyData && dailyData.messages > 0 && totalMessages > 0 ? 20 : 10;
 
   const total = Math.round(reliability + speed + activity + consistency);
 

@@ -80,7 +80,7 @@ export default function SkillsTab() {
     return s.name.toLowerCase().includes(q) ||
       s.slug.toLowerCase().includes(q) ||
       (s.summary || '').toLowerCase().includes(q) ||
-      s.tags.some(tag => tag.toLowerCase().includes(q))
+      (s.tags || []).some(tag => tag.toLowerCase().includes(q))
   })
 
   // Save edit
@@ -93,7 +93,7 @@ export default function SkillsTab() {
         body: JSON.stringify({
           name: editFields.name,
           summary: editFields.summary,
-          tags: editFields.tags,
+          tags: editFields.tags.split(',').map(t => t.trim()).filter(Boolean),
           content: editFields.content,
         }),
       })
@@ -335,7 +335,13 @@ function CreateModal({ t, onClose, onCreated }: {
       const res = await authedFetch('/api/skills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, name, summary, tags, content }),
+        body: JSON.stringify({
+          slug,
+          name,
+          summary,
+          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+          content
+        }),
       })
       const data = await res.json()
       if (data.success) {

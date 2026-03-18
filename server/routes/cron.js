@@ -5,10 +5,14 @@ import { randomUUID } from 'crypto';
 import { getGateway } from '../gateway.js';
 import { safeWriteFileSync } from '../utils.js';
 import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
+import { withFileLock } from '../file-lock.js';
 
 const router = express.Router();
 
 const CRON_FILE_PATH = path.join(OPENCLAW_HOME, 'cron', 'jobs.json');
+
+// Prevent concurrent execution of same job
+const _runningJobs = new Set();
 
 // Input validation
 const VALID_SCHEDULE_KINDS = ['every', 'cron'];
@@ -101,85 +105,87 @@ router.get('/jobs', (req, res) => {
  * Create a new cron job
  * Body: { name, schedule: { kind, everyMs?, expr? }, message, model?, timeoutSeconds? }
  */
-router.post('/jobs', (req, res) => {
+router.post('/jobs', async (req, res) => {
   try {
-    const { name, schedule, message, model, timeoutSeconds, deptId, subAgentId } = req.body;
+    await withFileLock(CRON_FILE_PATH, async () => {
+      const { name, schedule, message, model, timeoutSeconds, deptId, subAgentId } = req.body;
 
-    // Validate required fields
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: 'Job name is required' });
-    }
-
-    if (name.length > MAX_NAME_LENGTH) {
-      return res.status(400).json({ error: `Job name too long (max ${MAX_NAME_LENGTH} chars)` });
-    }
-
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
-    }
-
-    // Validate schedule
-    const scheduleValidation = validateSchedule(schedule);
-    if (!scheduleValidation.valid) {
-      return res.status(400).json({ error: scheduleValidation.error });
-    }
-
-    // Read existing jobs
-    const data = readCronJobs();
-
-    // Create new job
-    const now = Date.now();
-    const newJob = {
-      id: randomUUID(),
-      agentId: 'main',
-      name: name.trim(),
-      enabled: true,
-      createdAtMs: now,
-      updatedAtMs: now,
-      ...(deptId && { deptId: deptId.trim() }),
-      ...(subAgentId && { subAgentId: subAgentId.trim() }),
-      schedule: {
-        kind: schedule.kind,
-        ...(schedule.kind === 'every' && {
-          everyMs: schedule.everyMs,
-          anchorMs: now
-        }),
-        ...(schedule.kind === 'cron' && {
-          expr: schedule.expr
-        })
-      },
-      sessionTarget: 'isolated',
-      wakeMode: 'now',
-      payload: {
-        kind: 'agentTurn',
-        message: message.trim(),
-        ...(model && { model }),
-        ...(timeoutSeconds && { timeoutSeconds })
-      },
-      delivery: {
-        mode: 'none'
-      },
-      state: {
-        consecutiveErrors: 0
+      // Validate required fields
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Job name is required' });
       }
-    };
 
-    // Add to jobs array
-    data.jobs.push(newJob);
+      if (name.length > MAX_NAME_LENGTH) {
+        return res.status(400).json({ error: `Job name too long (max ${MAX_NAME_LENGTH} chars)` });
+      }
 
-    // Write back to file
-    if (!writeCronJobs(data)) {
-      return res.status(500).json({ error: 'Failed to save cron job' });
-    }
+      if (!message || !message.trim()) {
+        return res.status(400).json({ error: 'Message is required' });
+      }
 
-    console.log(`[Cron] Created job ${newJob.id}: "${newJob.name}"`);
-    res.status(201).json({
-      success: true,
-      job: newJob
+      if (message.length > MAX_MESSAGE_LENGTH) {
+        return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
+      }
+
+      // Validate schedule
+      const scheduleValidation = validateSchedule(schedule);
+      if (!scheduleValidation.valid) {
+        return res.status(400).json({ error: scheduleValidation.error });
+      }
+
+      // Read existing jobs
+      const data = readCronJobs();
+
+      // Create new job
+      const now = Date.now();
+      const newJob = {
+        id: randomUUID(),
+        agentId: 'main',
+        name: name.trim(),
+        enabled: true,
+        createdAtMs: now,
+        updatedAtMs: now,
+        ...(deptId && { deptId: deptId.trim() }),
+        ...(subAgentId && { subAgentId: subAgentId.trim() }),
+        schedule: {
+          kind: schedule.kind,
+          ...(schedule.kind === 'every' && {
+            everyMs: schedule.everyMs,
+            anchorMs: now
+          }),
+          ...(schedule.kind === 'cron' && {
+            expr: schedule.expr
+          })
+        },
+        sessionTarget: 'isolated',
+        wakeMode: 'now',
+        payload: {
+          kind: 'agentTurn',
+          message: message.trim(),
+          ...(model && { model }),
+          ...(timeoutSeconds && { timeoutSeconds })
+        },
+        delivery: {
+          mode: 'none'
+        },
+        state: {
+          consecutiveErrors: 0
+        }
+      };
+
+      // Add to jobs array
+      data.jobs.push(newJob);
+
+      // Write back to file
+      if (!writeCronJobs(data)) {
+        return res.status(500).json({ error: 'Failed to save cron job' });
+      }
+
+      console.log(`[Cron] Created job ${newJob.id}: "${newJob.name}"`);
+      return res.status(201).json({
+        success: true,
+        job: newJob
+      });
     });
   } catch (error) {
     console.error('Error in POST /api/cron/jobs:', error);
@@ -192,91 +198,93 @@ router.post('/jobs', (req, res) => {
  * Update a cron job (partial update)
  * Body: any fields to update (name, enabled, schedule, payload.message, etc.)
  */
-router.put('/jobs/:id', (req, res) => {
+router.put('/jobs/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const updates = req.body;
+    await withFileLock(CRON_FILE_PATH, async () => {
+      const { id } = req.params;
+      const updates = req.body;
 
-    // Read existing jobs
-    const data = readCronJobs();
-    const jobIndex = data.jobs.findIndex(job => job.id === id);
+      // Read existing jobs
+      const data = readCronJobs();
+      const jobIndex = data.jobs.findIndex(job => job.id === id);
 
-    if (jobIndex === -1) {
-      return res.status(404).json({ error: `Cron job ${id} not found` });
-    }
-
-    const job = data.jobs[jobIndex];
-
-    // Validate updates
-    if (updates.name !== undefined) {
-      if (!updates.name.trim()) {
-        return res.status(400).json({ error: 'Job name cannot be empty' });
+      if (jobIndex === -1) {
+        return res.status(404).json({ error: `Cron job ${id} not found` });
       }
-      if (updates.name.length > MAX_NAME_LENGTH) {
-        return res.status(400).json({ error: `Job name too long (max ${MAX_NAME_LENGTH} chars)` });
+
+      const job = data.jobs[jobIndex];
+
+      // Validate updates
+      if (updates.name !== undefined) {
+        if (!updates.name.trim()) {
+          return res.status(400).json({ error: 'Job name cannot be empty' });
+        }
+        if (updates.name.length > MAX_NAME_LENGTH) {
+          return res.status(400).json({ error: `Job name too long (max ${MAX_NAME_LENGTH} chars)` });
+        }
+        job.name = updates.name.trim();
       }
-      job.name = updates.name.trim();
-    }
 
-    if (updates.enabled !== undefined) {
-      if (typeof updates.enabled !== 'boolean') {
-        return res.status(400).json({ error: 'enabled must be a boolean' });
+      if (updates.enabled !== undefined) {
+        if (typeof updates.enabled !== 'boolean') {
+          return res.status(400).json({ error: 'enabled must be a boolean' });
+        }
+        job.enabled = updates.enabled;
       }
-      job.enabled = updates.enabled;
-    }
 
-    if (updates.subAgentId !== undefined) {
-      job.subAgentId = updates.subAgentId ? updates.subAgentId.trim() : undefined;
-    }
-
-    if (updates.schedule !== undefined) {
-      const scheduleValidation = validateSchedule(updates.schedule);
-      if (!scheduleValidation.valid) {
-        return res.status(400).json({ error: scheduleValidation.error });
+      if (updates.subAgentId !== undefined) {
+        job.subAgentId = updates.subAgentId ? updates.subAgentId.trim() : undefined;
       }
-      job.schedule = {
-        kind: updates.schedule.kind,
-        ...(updates.schedule.kind === 'every' && {
-          everyMs: updates.schedule.everyMs,
-          anchorMs: updates.schedule.anchorMs || job.schedule.anchorMs || Date.now()
-        }),
-        ...(updates.schedule.kind === 'cron' && {
-          expr: updates.schedule.expr
-        })
-      };
-    }
 
-    // Update payload fields
-    if (updates.message !== undefined) {
-      if (!updates.message.trim()) {
-        return res.status(400).json({ error: 'Message cannot be empty' });
+      if (updates.schedule !== undefined) {
+        const scheduleValidation = validateSchedule(updates.schedule);
+        if (!scheduleValidation.valid) {
+          return res.status(400).json({ error: scheduleValidation.error });
+        }
+        job.schedule = {
+          kind: updates.schedule.kind,
+          ...(updates.schedule.kind === 'every' && {
+            everyMs: updates.schedule.everyMs,
+            anchorMs: updates.schedule.anchorMs || job.schedule.anchorMs || Date.now()
+          }),
+          ...(updates.schedule.kind === 'cron' && {
+            expr: updates.schedule.expr
+          })
+        };
       }
-      if (updates.message.length > MAX_MESSAGE_LENGTH) {
-        return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
+
+      // Update payload fields
+      if (updates.message !== undefined) {
+        if (!updates.message.trim()) {
+          return res.status(400).json({ error: 'Message cannot be empty' });
+        }
+        if (updates.message.length > MAX_MESSAGE_LENGTH) {
+          return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
+        }
+        job.payload.message = updates.message.trim();
       }
-      job.payload.message = updates.message.trim();
-    }
 
-    if (updates.model !== undefined) {
-      job.payload.model = updates.model;
-    }
+      if (updates.model !== undefined) {
+        job.payload.model = updates.model;
+      }
 
-    if (updates.timeoutSeconds !== undefined) {
-      job.payload.timeoutSeconds = updates.timeoutSeconds;
-    }
+      if (updates.timeoutSeconds !== undefined) {
+        job.payload.timeoutSeconds = updates.timeoutSeconds;
+      }
 
-    // Update timestamp
-    job.updatedAtMs = Date.now();
+      // Update timestamp
+      job.updatedAtMs = Date.now();
 
-    // Write back to file
-    if (!writeCronJobs(data)) {
-      return res.status(500).json({ error: 'Failed to update cron job' });
-    }
+      // Write back to file
+      if (!writeCronJobs(data)) {
+        return res.status(500).json({ error: 'Failed to update cron job' });
+      }
 
-    console.log(`[Cron] Updated job ${id}: "${job.name}"`);
-    res.json({
-      success: true,
-      job
+      console.log(`[Cron] Updated job ${id}: "${job.name}"`);
+      return res.json({
+        success: true,
+        job
+      });
     });
   } catch (error) {
     console.error(`Error in PUT /api/cron/jobs/${req.params.id}:`, error);
@@ -288,35 +296,37 @@ router.put('/jobs/:id', (req, res) => {
  * DELETE /api/cron/jobs/:id
  * Delete a cron job
  */
-router.delete('/jobs/:id', (req, res) => {
+router.delete('/jobs/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    await withFileLock(CRON_FILE_PATH, async () => {
+      const { id } = req.params;
 
-    // Read existing jobs
-    const data = readCronJobs();
-    const jobIndex = data.jobs.findIndex(job => job.id === id);
+      // Read existing jobs
+      const data = readCronJobs();
+      const jobIndex = data.jobs.findIndex(job => job.id === id);
 
-    if (jobIndex === -1) {
-      return res.status(404).json({ error: `Cron job ${id} not found` });
-    }
-
-    const job = data.jobs[jobIndex];
-
-    // Remove from array
-    data.jobs.splice(jobIndex, 1);
-
-    // Write back to file
-    if (!writeCronJobs(data)) {
-      return res.status(500).json({ error: 'Failed to delete cron job' });
-    }
-
-    console.log(`[Cron] Deleted job ${id}: "${job.name}"`);
-    res.json({
-      success: true,
-      deletedJob: {
-        id: job.id,
-        name: job.name
+      if (jobIndex === -1) {
+        return res.status(404).json({ error: `Cron job ${id} not found` });
       }
+
+      const job = data.jobs[jobIndex];
+
+      // Remove from array
+      data.jobs.splice(jobIndex, 1);
+
+      // Write back to file
+      if (!writeCronJobs(data)) {
+        return res.status(500).json({ error: 'Failed to delete cron job' });
+      }
+
+      console.log(`[Cron] Deleted job ${id}: "${job.name}"`);
+      return res.json({
+        success: true,
+        deletedJob: {
+          id: job.id,
+          name: job.name
+        }
+      });
     });
   } catch (error) {
     console.error(`Error in DELETE /api/cron/jobs/${req.params.id}:`, error);
@@ -328,35 +338,37 @@ router.delete('/jobs/:id', (req, res) => {
  * POST /api/cron/jobs/:id/toggle
  * Toggle enabled/disabled status
  */
-router.post('/jobs/:id/toggle', (req, res) => {
+router.post('/jobs/:id/toggle', async (req, res) => {
   try {
-    const { id } = req.params;
+    await withFileLock(CRON_FILE_PATH, async () => {
+      const { id } = req.params;
 
-    // Read existing jobs
-    const data = readCronJobs();
-    const job = findJobById(data.jobs, id);
+      // Read existing jobs
+      const data = readCronJobs();
+      const job = findJobById(data.jobs, id);
 
-    if (!job) {
-      return res.status(404).json({ error: `Cron job ${id} not found` });
-    }
-
-    // Toggle enabled status
-    job.enabled = !job.enabled;
-    job.updatedAtMs = Date.now();
-
-    // Write back to file
-    if (!writeCronJobs(data)) {
-      return res.status(500).json({ error: 'Failed to toggle cron job' });
-    }
-
-    console.log(`[Cron] Toggled job ${id}: "${job.name}" -> ${job.enabled ? 'enabled' : 'disabled'}`);
-    res.json({
-      success: true,
-      job: {
-        id: job.id,
-        name: job.name,
-        enabled: job.enabled
+      if (!job) {
+        return res.status(404).json({ error: `Cron job ${id} not found` });
       }
+
+      // Toggle enabled status
+      job.enabled = !job.enabled;
+      job.updatedAtMs = Date.now();
+
+      // Write back to file
+      if (!writeCronJobs(data)) {
+        return res.status(500).json({ error: 'Failed to toggle cron job' });
+      }
+
+      console.log(`[Cron] Toggled job ${id}: "${job.name}" -> ${job.enabled ? 'enabled' : 'disabled'}`);
+      return res.json({
+        success: true,
+        job: {
+          id: job.id,
+          name: job.name,
+          enabled: job.enabled
+        }
+      });
     });
   } catch (error) {
     console.error(`Error in POST /api/cron/jobs/${req.params.id}/toggle:`, error);
@@ -370,123 +382,132 @@ router.post('/jobs/:id/toggle', (req, res) => {
  * Sends the job's message to Gateway agent
  */
 router.post('/jobs/:id/run', async (req, res) => {
+  const { id } = req.params;
+
+  if (_runningJobs.has(id)) {
+    return res.status(409).json({ error: 'Job is already running', jobId: id });
+  }
+
   try {
-    const { id } = req.params;
+    _runningJobs.add(id);
+    await withFileLock(CRON_FILE_PATH, async () => {
+      // Read existing jobs
+      const data = readCronJobs();
+      const job = findJobById(data.jobs, id);
 
-    // Read existing jobs
-    const data = readCronJobs();
-    const job = findJobById(data.jobs, id);
-
-    if (!job) {
-      return res.status(404).json({ error: `Cron job ${id} not found` });
-    }
-
-    // Get gateway client
-    const gateway = getGateway();
-
-    // Wait for gateway to be ready
-    if (!gateway.isReady) {
-      try {
-        await gateway.waitForReady(5000);
-      } catch (err) {
-        return res.status(503).json({
-          error: 'Gateway not connected',
-          detail: err.message
-        });
+      if (!job) {
+        return res.status(404).json({ error: `Cron job ${id} not found` });
       }
-    }
 
-    // Build session key: use department context if assigned
-    let sessionKey;
-    if (job.deptId && job.subAgentId) {
-      sessionKey = `agent:main:${job.deptId}:sub:${job.subAgentId}`;
-    } else if (job.deptId) {
-      sessionKey = `agent:main:${job.deptId}`;
-    } else {
-      sessionKey = `cron:manual:${id}`;
-    }
-    const message = job.payload.message;
+      // Get gateway client
+      const gateway = getGateway();
 
-    console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
-
-    const startMs = Date.now();
-    try {
-      const result = await gateway.sendAgentMessage(sessionKey, message);
-      const durationMs = Date.now() - startMs;
-
-      // Record execution history (F8)
-      if (!job.state) job.state = {};
-      if (!job.state.executionHistory) job.state.executionHistory = [];
-      job.state.executionHistory.push({
-        timestamp: Date.now(),
-        durationMs,
-        success: !!result.text,
-        responseLength: result.text ? result.text.length : 0,
-      });
-      if (job.state.executionHistory.length > 20) {
-        job.state.executionHistory = job.state.executionHistory.slice(-20);
-      }
-      job.state.lastRunAtMs = Date.now();
-      job.state.lastDurationMs = durationMs;
-      job.state.lastStatus = result.text ? 'ok' : 'error';
-      writeCronJobs(data);
-
-      if (result.text) {
-        console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
-        res.json({
-          success: true,
-          job: {
-            id: job.id,
-            name: job.name
-          },
-          result: {
-            text: result.text,
-            length: result.text.length
-          }
-        });
-      } else {
-        res.status(502).json({
-          error: 'Gateway returned empty response',
-          job: {
-            id: job.id,
-            name: job.name
-          }
-        });
-      }
-    } catch (err) {
-      const durationMs = Date.now() - startMs;
-      // Record failed execution history
-      if (!job.state) job.state = {};
-      if (!job.state.executionHistory) job.state.executionHistory = [];
-      job.state.executionHistory.push({
-        timestamp: Date.now(),
-        durationMs,
-        success: false,
-        responseLength: 0,
-      });
-      if (job.state.executionHistory.length > 20) {
-        job.state.executionHistory = job.state.executionHistory.slice(-20);
-      }
-      job.state.lastRunAtMs = Date.now();
-      job.state.lastDurationMs = durationMs;
-      job.state.lastStatus = 'error';
-      job.state.lastError = err.message;
-      job.state.consecutiveErrors = (job.state.consecutiveErrors || 0) + 1;
-      writeCronJobs(data);
-
-      console.error(`[Cron] Manual run failed for job ${id}:`, err.message);
-      res.status(502).json({
-        error: 'Failed to execute cron job via gateway',
-        detail: err.message,
-        job: {
-          id: job.id,
-          name: job.name
+      // Wait for gateway to be ready
+      if (!gateway.isReady) {
+        try {
+          await gateway.waitForReady(5000);
+        } catch (err) {
+          return res.status(503).json({
+            error: 'Gateway not connected',
+            detail: err.message
+          });
         }
-      });
-    }
+      }
+
+      // Build session key: use department context if assigned
+      let sessionKey;
+      if (job.deptId && job.subAgentId) {
+        sessionKey = `agent:main:${job.deptId}:sub:${job.subAgentId}`;
+      } else if (job.deptId) {
+        sessionKey = `agent:main:${job.deptId}`;
+      } else {
+        sessionKey = `cron:manual:${id}`;
+      }
+      const message = job.payload.message;
+
+      console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
+
+      const startMs = Date.now();
+      try {
+        const result = await gateway.sendAgentMessage(sessionKey, message);
+        const durationMs = Date.now() - startMs;
+
+        // Record execution history (F8)
+        if (!job.state) job.state = {};
+        if (!job.state.executionHistory) job.state.executionHistory = [];
+        job.state.executionHistory.push({
+          timestamp: Date.now(),
+          durationMs,
+          success: !!result.text,
+          responseLength: result.text ? result.text.length : 0,
+        });
+        if (job.state.executionHistory.length > 20) {
+          job.state.executionHistory = job.state.executionHistory.slice(-20);
+        }
+        job.state.lastRunAtMs = Date.now();
+        job.state.lastDurationMs = durationMs;
+        job.state.lastStatus = result.text ? 'ok' : 'error';
+        writeCronJobs(data);
+
+        if (result.text) {
+          console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
+          return res.json({
+            success: true,
+            job: {
+              id: job.id,
+              name: job.name
+            },
+            result: {
+              text: result.text,
+              length: result.text.length
+            }
+          });
+        } else {
+          return res.status(502).json({
+            error: 'Gateway returned empty response',
+            job: {
+              id: job.id,
+              name: job.name
+            }
+          });
+        }
+      } catch (err) {
+        const durationMs = Date.now() - startMs;
+        // Record failed execution history
+        if (!job.state) job.state = {};
+        if (!job.state.executionHistory) job.state.executionHistory = [];
+        job.state.executionHistory.push({
+          timestamp: Date.now(),
+          durationMs,
+          success: false,
+          responseLength: 0,
+        });
+        if (job.state.executionHistory.length > 20) {
+          job.state.executionHistory = job.state.executionHistory.slice(-20);
+        }
+        job.state.lastRunAtMs = Date.now();
+        job.state.lastDurationMs = durationMs;
+        job.state.lastStatus = 'error';
+        job.state.lastError = err.message;
+        job.state.consecutiveErrors = (job.state.consecutiveErrors || 0) + 1;
+        writeCronJobs(data);
+
+        console.error(`[Cron] Manual run failed for job ${id}:`, err.message);
+        return res.status(502).json({
+          error: 'Failed to execute cron job via gateway',
+          detail: err.message,
+          job: {
+            id: job.id,
+            name: job.name
+          }
+        });
+      }
+    });
   } catch (error) {
     console.error(`Error in POST /api/cron/jobs/${req.params.id}/run:`, error);
     res.status(500).json({ error: 'Failed to trigger cron job run' });
+  } finally {
+    _runningJobs.delete(id);
   }
 });
 
@@ -497,55 +518,57 @@ router.post('/jobs/:id/run', async (req, res) => {
  */
 router.post('/briefing/template', async (req, res) => {
   try {
-    // Read existing jobs
-    const data = readCronJobs();
+    await withFileLock(CRON_FILE_PATH, async () => {
+      // Read existing jobs
+      const data = readCronJobs();
 
-    // Create a daily briefing job for each department
-    const config = JSON.parse(fs.readFileSync(path.join(BASE_PATH, 'departments', 'config.json'), 'utf8'));
-    const departments = config.departments || {};
+      // Create a daily briefing job for each department
+      const config = JSON.parse(fs.readFileSync(path.join(BASE_PATH, 'departments', 'config.json'), 'utf8'));
+      const departments = config.departments || {};
 
-    // Morning briefing job at 9:00 AM daily
-    const now = Date.now();
-    const briefingJob = {
-      id: randomUUID(),
-      agentId: 'main',
-      name: '每日晨会简报',
-      enabled: true,
-      createdAtMs: now,
-      updatedAtMs: now,
-      deptId: 'coo', // Assign to COO to coordinate
-      schedule: {
-        kind: 'cron',
-        expr: '0 9 * * *' // 9:00 AM every day
-      },
-      sessionTarget: 'isolated',
-      wakeMode: 'now',
-      payload: {
-        kind: 'agentTurn',
-        message: '早上好！请协调各部门进行每日简报汇总：\n\n1. 向每个部门发送简报请求（使用 POST /departments/{id}/chat API）\n2. 请求内容：「请提供今日简报：你的部门状态、待处理事项、今日重点工作」\n3. 收集所有部门的回复\n4. 将汇总后的简报发布到公告板（使用 POST /bulletin API）\n\n请开始执行。',
-        timeoutSeconds: 300
-      },
-      delivery: {
-        mode: 'none'
-      },
-      state: {
-        consecutiveErrors: 0
+      // Morning briefing job at 9:00 AM daily
+      const now = Date.now();
+      const briefingJob = {
+        id: randomUUID(),
+        agentId: 'main',
+        name: '每日晨会简报',
+        enabled: true,
+        createdAtMs: now,
+        updatedAtMs: now,
+        deptId: 'coo', // Assign to COO to coordinate
+        schedule: {
+          kind: 'cron',
+          expr: '0 9 * * *' // 9:00 AM every day
+        },
+        sessionTarget: 'isolated',
+        wakeMode: 'now',
+        payload: {
+          kind: 'agentTurn',
+          message: '早上好！请协调各部门进行每日简报汇总：\n\n1. 向每个部门发送简报请求（使用 POST /departments/{id}/chat API）\n2. 请求内容：「请提供今日简报：你的部门状态、待处理事项、今日重点工作」\n3. 收集所有部门的回复\n4. 将汇总后的简报发布到公告板（使用 POST /bulletin API）\n\n请开始执行。',
+          timeoutSeconds: 300
+        },
+        delivery: {
+          mode: 'none'
+        },
+        state: {
+          consecutiveErrors: 0
+        }
+      };
+
+      // Add to jobs array
+      data.jobs.push(briefingJob);
+
+      // Write back to file
+      if (!writeCronJobs(data)) {
+        return res.status(500).json({ error: 'Failed to save briefing template' });
       }
-    };
 
-    // Add to jobs array
-    data.jobs.push(briefingJob);
-
-    // Write back to file
-    if (!writeCronJobs(data)) {
-      return res.status(500).json({ error: 'Failed to save briefing template' });
-    }
-
-    console.log(`[Cron] Created morning briefing template job ${briefingJob.id}`);
-    res.status(201).json({
-      success: true,
-      message: 'Morning briefing template created',
-      job: briefingJob
+      console.log(`[Cron] Created morning briefing template job ${briefingJob.id}`);
+      return res.status(201).json({
+        success: true,
+        message: 'Morning briefing template created',
+        job: briefingJob
+      });
     });
   } catch (error) {
     console.error('Error in POST /api/cron/briefing/template:', error);

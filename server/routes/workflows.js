@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { chat } from '../agent.js';
 import { OPENCLAW_HOME, safeWriteFileSync } from '../utils.js';
+import { withFileLock } from '../file-lock.js';
 
 const router = express.Router();
 
@@ -112,47 +113,49 @@ router.get('/:id', (req, res) => {
  * Create a workflow
  * Body: { name, steps: [{ deptId, message, delayMs }] }
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const { name, steps } = req.body;
+    await withFileLock(WORKFLOWS_FILE, async () => {
+      const { name, steps } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: 'Workflow name is required' });
-    }
-    if (!Array.isArray(steps) || steps.length === 0) {
-      return res.status(400).json({ error: 'At least one step is required' });
-    }
-
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
-      if (!s.deptId || !s.message) {
-        return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Workflow name is required' });
       }
-    }
+      if (!Array.isArray(steps) || steps.length === 0) {
+        return res.status(400).json({ error: 'At least one step is required' });
+      }
 
-    const data = readWorkflows();
-    const now = Date.now();
-    const workflow = {
-      id: randomUUID(),
-      name: name.trim(),
-      steps: steps.map(s => ({
-        deptId: s.deptId,
-        message: s.message.trim(),
-        delayMs: Math.max(0, parseInt(s.delayMs) || 0),
-      })),
-      createdAtMs: now,
-      updatedAtMs: now,
-      lastRunAtMs: null,
-      lastRunStatus: null,
-    };
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        if (!s.deptId || !s.message) {
+          return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+        }
+      }
 
-    data.workflows.push(workflow);
-    if (!writeWorkflows(data)) {
-      return res.status(500).json({ error: 'Failed to save workflow' });
-    }
+      const data = readWorkflows();
+      const now = Date.now();
+      const workflow = {
+        id: randomUUID(),
+        name: name.trim(),
+        steps: steps.map(s => ({
+          deptId: s.deptId,
+          message: s.message.trim(),
+          delayMs: Math.max(0, parseInt(s.delayMs) || 0),
+        })),
+        createdAtMs: now,
+        updatedAtMs: now,
+        lastRunAtMs: null,
+        lastRunStatus: null,
+      };
 
-    console.log(`[Workflows] Created "${workflow.name}" with ${workflow.steps.length} steps`);
-    res.status(201).json({ success: true, workflow });
+      data.workflows.push(workflow);
+      if (!writeWorkflows(data)) {
+        return res.status(500).json({ error: 'Failed to save workflow' });
+      }
+
+      console.log(`[Workflows] Created "${workflow.name}" with ${workflow.steps.length} steps`);
+      return res.status(201).json({ success: true, workflow });
+    });
   } catch (err) {
     console.error('[Workflows] POST / error:', err.message);
     res.status(500).json({ error: 'Failed to create workflow' });
@@ -163,36 +166,38 @@ router.post('/', (req, res) => {
  * PUT /api/workflows/:id
  * Update a workflow
  */
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const data = readWorkflows();
-    const wf = data.workflows.find(w => w.id === req.params.id);
-    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+    await withFileLock(WORKFLOWS_FILE, async () => {
+      const data = readWorkflows();
+      const wf = data.workflows.find(w => w.id === req.params.id);
+      if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
-    const { name, steps } = req.body;
+      const { name, steps } = req.body;
 
-    if (name !== undefined) {
-      if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
-      wf.name = name.trim();
-    }
-
-    if (steps !== undefined) {
-      if (!Array.isArray(steps) || steps.length === 0) {
-        return res.status(400).json({ error: 'At least one step is required' });
+      if (name !== undefined) {
+        if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
+        wf.name = name.trim();
       }
-      wf.steps = steps.map(s => ({
-        deptId: s.deptId,
-        message: (s.message || '').trim(),
-        delayMs: Math.max(0, parseInt(s.delayMs) || 0),
-      }));
-    }
 
-    wf.updatedAtMs = Date.now();
-    if (!writeWorkflows(data)) {
-      return res.status(500).json({ error: 'Failed to update workflow' });
-    }
+      if (steps !== undefined) {
+        if (!Array.isArray(steps) || steps.length === 0) {
+          return res.status(400).json({ error: 'At least one step is required' });
+        }
+        wf.steps = steps.map(s => ({
+          deptId: s.deptId,
+          message: (s.message || '').trim(),
+          delayMs: Math.max(0, parseInt(s.delayMs) || 0),
+        }));
+      }
 
-    res.json({ success: true, workflow: wf });
+      wf.updatedAtMs = Date.now();
+      if (!writeWorkflows(data)) {
+        return res.status(500).json({ error: 'Failed to update workflow' });
+      }
+
+      return res.json({ success: true, workflow: wf });
+    });
   } catch (err) {
     console.error('[Workflows] PUT /:id error:', err.message);
     res.status(500).json({ error: 'Failed to update workflow' });
@@ -203,19 +208,21 @@ router.put('/:id', (req, res) => {
  * DELETE /api/workflows/:id
  * Delete a workflow
  */
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const data = readWorkflows();
-    const idx = data.workflows.findIndex(w => w.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: 'Workflow not found' });
+    await withFileLock(WORKFLOWS_FILE, async () => {
+      const data = readWorkflows();
+      const idx = data.workflows.findIndex(w => w.id === req.params.id);
+      if (idx === -1) return res.status(404).json({ error: 'Workflow not found' });
 
-    const removed = data.workflows.splice(idx, 1)[0];
-    if (!writeWorkflows(data)) {
-      return res.status(500).json({ error: 'Failed to delete workflow' });
-    }
+      const removed = data.workflows.splice(idx, 1)[0];
+      if (!writeWorkflows(data)) {
+        return res.status(500).json({ error: 'Failed to delete workflow' });
+      }
 
-    console.log(`[Workflows] Deleted "${removed.name}"`);
-    res.json({ success: true, deleted: { id: removed.id, name: removed.name } });
+      console.log(`[Workflows] Deleted "${removed.name}"`);
+      return res.json({ success: true, deleted: { id: removed.id, name: removed.name } });
+    });
   } catch (err) {
     console.error('[Workflows] DELETE /:id error:', err.message);
     res.status(500).json({ error: 'Failed to delete workflow' });
@@ -229,18 +236,25 @@ router.delete('/:id', (req, res) => {
  */
 router.post('/:id/run', async (req, res) => {
   try {
-    const data = readWorkflows();
-    const wf = data.workflows.find(w => w.id === req.params.id);
+    // Read and validate inside lock, then release it for execution
+    const wf = await withFileLock(WORKFLOWS_FILE, async () => {
+      const data = readWorkflows();
+      const found = data.workflows.find(w => w.id === req.params.id);
+      if (!found) return null;
+      // Return a snapshot (steps may contain conditions)
+      return JSON.parse(JSON.stringify(found));
+    });
+
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
     console.log(`[Workflows] Running "${wf.name}" (${wf.steps.length} steps)`);
     const results = [];
-    const stepStatus = wf.steps.map(() => 'pending'); // Track status for each step
+    const stepStatus = wf.steps.map(() => 'pending');
     let currentStepIndex = 0;
-    const visitedSteps = new Set(); // Prevent infinite loops
+    const visitedSteps = new Set();
 
+    // Execute steps WITHOUT holding the file lock
     while (currentStepIndex < wf.steps.length) {
-      // Check for infinite loops
       if (visitedSteps.has(currentStepIndex)) {
         console.error(`[Workflows] Infinite loop detected at step ${currentStepIndex + 1}`);
         break;
@@ -250,13 +264,17 @@ router.post('/:id/run', async (req, res) => {
       const step = wf.steps[currentStepIndex];
       stepStatus[currentStepIndex] = 'running';
 
-      // Delay between steps
       if (results.length > 0 && step.delayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, Math.min(step.delayMs, 60000)));
       }
 
       const startMs = Date.now();
-      const result = await chat(step.deptId, step.message);
+      let result;
+      try {
+        result = await chat(step.deptId, step.message);
+      } catch (chatErr) {
+        result = { success: false, error: chatErr.message };
+      }
       const durationMs = Date.now() - startMs;
 
       const stepResult = {
@@ -275,7 +293,6 @@ router.post('/:id/run', async (req, res) => {
 
       console.log(`[Workflows] Step ${currentStepIndex + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
 
-      // Check for conditional branching
       if (step.condition && result.success) {
         const { type, value, nextStepOnTrue, nextStepOnFalse } = step.condition;
         const output = (result.reply || '').toLowerCase();
@@ -293,23 +310,27 @@ router.post('/:id/run', async (req, res) => {
         const nextStep = conditionMet ? nextStepOnTrue : nextStepOnFalse;
         console.log(`[Workflows] Condition ${conditionMet ? 'MET' : 'NOT MET'}: jumping to step ${nextStep + 1}`);
 
-        // Validate next step index
         if (nextStep >= 0 && nextStep < wf.steps.length && nextStep !== currentStepIndex + 1) {
           currentStepIndex = nextStep;
           continue;
         }
       }
 
-      // Move to next step
       currentStepIndex++;
     }
 
-    // Update last run info
-    wf.lastRunAtMs = Date.now();
-    wf.lastRunStatus = results.every(r => r.success) ? 'ok' : 'partial';
-    writeWorkflows(data);
+    // Re-acquire lock to write results
+    await withFileLock(WORKFLOWS_FILE, async () => {
+      const data = readWorkflows();
+      const current = data.workflows.find(w => w.id === wf.id);
+      if (current) {
+        current.lastRunAtMs = Date.now();
+        current.lastRunStatus = results.every(r => r.success) ? 'ok' : 'partial';
+        writeWorkflows(data);
+      }
+    });
 
-    res.json({
+    return res.json({
       success: true,
       workflow: { id: wf.id, name: wf.name },
       results,

@@ -353,8 +353,12 @@ export const en: Record<string, string> = {
 
   // Dashboard enhancements (Phase 4C)
   'dashboard.action.broadcast': 'Broadcast to All',
+  'dashboard.action.broadcast.prompt': 'Enter message to broadcast to all departments:',
+  'dashboard.action.broadcast.sent': 'Broadcast sent!',
+  'dashboard.action.broadcast.failed': 'Broadcast failed',
   'dashboard.action.meeting': 'Start Meeting',
   'dashboard.action.workflow': 'Create Workflow',
+  'dashboard.action.workflow.hint': 'Please use the Workflow tab to create workflows',
   'dashboard.system.title': 'System Status',
   'dashboard.system.gateway': 'Gateway',
   'dashboard.system.integrations': 'Integrations',

@@ -268,7 +268,7 @@ export default function ChatInput({
       setShowCmdHints(false)
       return
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       setShowCmdHints(false)
       handleSend()
@@ -520,7 +520,7 @@ export default function ChatInput({
           className="chat-btn send-btn"
           onClick={handleSend}
           disabled={sending || !selectedDeptId || (!text.trim() && pendingImages.length === 0 && pendingDocs.length === 0)}
-          title="Send"
+          title={t('common.send')}
         >
           {sending ? '...' : <SendIcon size={16} color="#00d4aa" />}
         </button>

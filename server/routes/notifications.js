@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'node:crypto';
+import { safeWriteFileSync } from '../utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +32,7 @@ setInterval(() => {
 
 function persistSync() {
   try {
-    fs.writeFileSync(STORE_PATH, JSON.stringify({ notifications }, null, 2), 'utf8');
+    safeWriteFileSync(STORE_PATH, JSON.stringify({ notifications }, null, 2));
   } catch (err) {
     console.error('[Notifications] Persist failed:', err.message);
   }

@@ -9,7 +9,7 @@ const router = express.Router();
 const execFileAsync = promisify(execFile);
 
 // Valid department ID pattern (must match api.js)
-const VALID_DEPT_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
 
 /**
  * Helper: Mask sensitive tokens (first 8 chars + "...")
@@ -234,12 +234,12 @@ router.get('/departments/:id/persona', (req, res) => {
     }
     console.log(`[SystemExtras] GET /departments/${id}/persona`);
 
-    // Try primary path first
-    let personaPath = path.join(BASE_PATH, 'departments', id, 'personas', 'persona.md');
+    // Try canonical path first (what agent.js reads from)
+    let personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
 
     if (!fs.existsSync(personaPath)) {
       // Try fallback path
-      personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
+      personaPath = path.join(BASE_PATH, 'departments', id, 'personas', 'persona.md');
     }
 
     if (!fs.existsSync(personaPath)) {
@@ -272,24 +272,17 @@ router.put('/departments/:id/persona', (req, res) => {
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'content must be a string' });
     }
+    if (Buffer.byteLength(content, 'utf8') > 10240) {
+      return res.status(400).json({ error: 'Persona content exceeds 10KB limit' });
+    }
 
     console.log(`[SystemExtras] PUT /departments/${id}/persona (${content.length} chars)`);
 
-    // Try to find existing persona first
-    let personaPath = path.join(BASE_PATH, 'departments', id, 'personas', 'persona.md');
-
-    if (!fs.existsSync(personaPath)) {
-      // Try fallback path
-      const fallbackPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
-      if (fs.existsSync(fallbackPath)) {
-        personaPath = fallbackPath;
-      } else {
-        // Create directory if needed for primary path
-        const personaDir = path.dirname(personaPath);
-        if (!fs.existsSync(personaDir)) {
-          fs.mkdirSync(personaDir, { recursive: true });
-        }
-      }
+    // Always write to the canonical path that agent.js reads from
+    const personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
+    const personaDir = path.dirname(personaPath);
+    if (!fs.existsSync(personaDir)) {
+      fs.mkdirSync(personaDir, { recursive: true });
     }
 
     fs.writeFileSync(personaPath, content, 'utf8');

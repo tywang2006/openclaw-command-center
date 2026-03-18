@@ -358,3 +358,21 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 480px) {
+  .skills-modal {
+    width: 95vw;
+    min-width: 0;
+    max-height: 90vh;
+  }
+
+  .skills-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 4px;
+  }
+
+  .skills-detail {
+    max-height: 50%;
+  }
+}

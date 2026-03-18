@@ -65,6 +65,29 @@
   color: var(--accent-color);
 }
 
+/* ---- Status Message ---- */
+.workflow-status-msg {
+  padding: 10px 18px;
+  background: rgba(255, 68, 102, 0.1);
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ---- Body: Two-column layout ---- */
 .workflow-body {
   flex: 1;

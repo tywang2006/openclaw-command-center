@@ -354,6 +354,7 @@ authRouter.put('/password', (req, res) => {
   const tokenCount = activeTokens.size;
   activeTokens.clear();
   console.log(`[Auth] Password changed, cleared ${tokenCount} active token(s)`);
+  for (const cb of _tokensClaredCallbacks) { try { cb(); } catch {} }
 
   res.json({
     success: true,
@@ -392,5 +393,8 @@ authRouter.get('/verify', (req, res) => {
     expiresAt
   });
 });
+
+const _tokensClaredCallbacks = [];
+export function onTokensCleared(cb) { _tokensClaredCallbacks.push(cb); }
 
 export { authRouter, isPasswordConfigured };

@@ -5,8 +5,11 @@ import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
 import { chat, chatAsync, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
 import { generateAndSave, generateLayout } from '../layout-generator.js';
 import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync } from '../utils.js';
+import { withFileLock } from '../file-lock.js';
+import { recordAudit } from './audit.js';
 
 const router = express.Router();
+const DEPT_CONFIG_PATH = path.join(BASE_PATH, 'departments', 'config.json');
 
 function escapeHtml(str) {
   if (typeof str !== 'string') return '';
@@ -124,10 +127,14 @@ router.put('/departments/:id/memory', (req, res) => {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
     const { content } = req.body;
-    if (content === undefined) {
-      return res.status(400).json({ error: 'Content is required' });
+    if (content === undefined || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Content must be a string' });
+    }
+    if (Buffer.byteLength(content, 'utf8') > 51200) {
+      return res.status(400).json({ error: 'Memory content exceeds 50KB limit' });
     }
     const success = saveMemory(id, content);
+    recordAudit({ action: 'memory:update', target: id, deptId: id, ip: req.ip });
     res.json({ success, departmentId: id });
   } catch (error) {
     console.error(`Error in PUT /api/departments/${req.params.id}/memory:`, error);
@@ -626,7 +633,7 @@ router.post('/departments/:id/chat', async (req, res) => {
     console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}${docCount ? ` [+${docCount} docs]` : ''}`);
 
     // Cross-department: broadcast visit event + create request file
-    if (sourceDept && sourceDept !== id) {
+    if (sourceDept && sourceDept !== id && validateDeptId(sourceDept)) {
       const wss = req.app.locals.wss;
       if (wss) {
         const visitPayload = JSON.stringify({
@@ -660,7 +667,7 @@ router.post('/departments/:id/chat', async (req, res) => {
         const dateStr = ts.toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const filename = `${sourceDept}_${id}_${dateStr}.md`;
         const content = `# 跨部门请求\n\n- **发起部门**: ${fromName} (${sourceDept})\n- **目标部门**: ${toName} (${id})\n- **时间**: ${ts.toLocaleString('zh-CN')}\n\n## 内容\n\n${msgText}\n`;
-        fs.writeFileSync(path.join(requestsDir, filename), content);
+        safeWriteFileSync(path.join(requestsDir, filename), content);
       } catch (err) {
         console.error('[Chat] Failed to write request file:', err.message);
       }
@@ -747,10 +754,11 @@ router.post('/departments/:id/chat', async (req, res) => {
 router.post('/bulletin', (req, res) => {
   try {
     const { content } = req.body;
-    if (content === undefined) {
-      return res.status(400).json({ error: 'Content is required' });
+    if (content === undefined || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Content must be a string' });
     }
     const success = saveBulletin(content);
+    recordAudit({ action: 'bulletin:update', target: 'board', ip: req.ip });
     res.json({ success });
   } catch (error) {
     console.error('Error in POST /api/bulletin:', error);
@@ -773,6 +781,7 @@ router.post('/broadcast', async (req, res) => {
     console.log(`[Broadcast] <- ${command.trim().substring(0, 80)}`);
     const responses = await broadcastCommand(command.trim());
     console.log(`[Broadcast] ${responses.length} departments responded`);
+    recordAudit({ action: 'broadcast', target: 'all', details: { command: command.trim().substring(0, 200) }, ip: req.ip });
 
     res.json({ success: true, responses });
   } catch (error) {
@@ -802,7 +811,7 @@ router.get('/departments/:id/subagents', (req, res) => {
  * Create a new sub-agent for a department
  * Body: { task: "task description" }
  */
-router.post('/departments/:id/subagents', (req, res) => {
+router.post('/departments/:id/subagents', async (req, res) => {
   if (!validateDeptId(req.params.id)) {
     return res.status(400).json({ error: 'Invalid department ID' });
   }
@@ -814,7 +823,7 @@ router.post('/departments/:id/subagents', (req, res) => {
     return res.status(400).json({ error: `Task description too long (max ${MAX_MESSAGE_LENGTH} chars)` });
   }
   const skillsList = Array.isArray(skills) ? skills.filter(s => typeof s === 'string' && s.trim()) : undefined;
-  const result = createSubAgent(req.params.id, task.trim(), name?.trim() || undefined, skillsList);
+  const result = await createSubAgent(req.params.id, task.trim(), name?.trim() || undefined, skillsList);
   res.json({ success: true, ...result });
 });
 
@@ -847,11 +856,11 @@ router.post('/departments/:id/subagents/:subId/chat', async (req, res) => {
  * DELETE /api/departments/:id/subagents/:subId
  * Remove a sub-agent
  */
-router.delete('/departments/:id/subagents/:subId', (req, res) => {
+router.delete('/departments/:id/subagents/:subId', async (req, res) => {
   if (!validateDeptId(req.params.id) || !validateSubId(req.params.subId)) {
     return res.status(400).json({ error: 'Invalid department or sub-agent ID' });
   }
-  const removed = removeSubAgent(req.params.id, req.params.subId);
+  const removed = await removeSubAgent(req.params.id, req.params.subId);
   res.json({ success: removed });
 });
 
@@ -1099,60 +1108,63 @@ router.post('/departments/:id/export/drive', async (req, res) => {
  * Create a new department
  * Body: { id, name, agent, icon, color, hue, telegramTopicId, order }
  */
-router.post('/departments', (req, res) => {
+router.post('/departments', async (req, res) => {
   try {
-    const { id, name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
+    await withFileLock(DEPT_CONFIG_PATH, async () => {
+      const { id, name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
 
-    if (!id || !VALID_DEPT_ID.test(id)) {
-      return res.status(400).json({ success: false, error: 'Invalid department ID' });
-    }
-    if (!name) {
-      return res.status(400).json({ success: false, error: 'Name is required' });
-    }
+      if (!id || !VALID_DEPT_ID.test(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid department ID' });
+      }
+      if (!name) {
+        return res.status(400).json({ success: false, error: 'Name is required' });
+      }
 
-    const deptBaseDir = path.join(BASE_PATH, 'departments');
-    const configPath = path.join(deptBaseDir, 'config.json');
+      const deptBaseDir = path.join(BASE_PATH, 'departments');
+      const configPath = path.join(deptBaseDir, 'config.json');
 
-    // Ensure departments directory exists (fresh installs won't have it)
-    if (!fs.existsSync(deptBaseDir)) {
-      fs.mkdirSync(deptBaseDir, { recursive: true });
-    }
+      // Ensure departments directory exists (fresh installs won't have it)
+      if (!fs.existsSync(deptBaseDir)) {
+        fs.mkdirSync(deptBaseDir, { recursive: true });
+      }
 
-    const config = readJsonFile(configPath) || { departments: {} };
+      const config = readJsonFile(configPath) || { departments: {} };
 
-    if (config.departments[id]) {
-      return res.status(409).json({ success: false, error: 'Department already exists' });
-    }
+      if (config.departments[id]) {
+        return res.status(409).json({ success: false, error: 'Department already exists' });
+      }
 
-    config.departments[id] = {
-      name,
-      agent: agent || name,
-      icon: icon || 'bolt',
-      color: color || '#94a3b8',
-      hue: hue ?? 200,
-      order: order ?? Object.keys(config.departments).length,
-      ...(telegramTopicId !== undefined ? { telegramTopicId } : {}),
-      ...(Array.isArray(skills) ? { skills } : {}),
-      ...(Array.isArray(apiGroups) ? { apiGroups } : {}),
-    };
+      config.departments[id] = {
+        name,
+        agent: agent || name,
+        icon: icon || 'bolt',
+        color: color || '#94a3b8',
+        hue: hue ?? 200,
+        order: order ?? Object.keys(config.departments).length,
+        ...(telegramTopicId !== undefined ? { telegramTopicId } : {}),
+        ...(Array.isArray(skills) ? { skills } : {}),
+        ...(Array.isArray(apiGroups) ? { apiGroups } : {}),
+      };
 
-    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
+      safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 
-    // Create department directory structure
-    const deptDir = path.join(BASE_PATH, 'departments', id);
-    if (!fs.existsSync(deptDir)) fs.mkdirSync(deptDir, { recursive: true });
-    const memDir = path.join(deptDir, 'memory');
-    if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true });
+      // Create department directory structure
+      const deptDir = path.join(BASE_PATH, 'departments', id);
+      if (!fs.existsSync(deptDir)) fs.mkdirSync(deptDir, { recursive: true });
+      const memDir = path.join(deptDir, 'memory');
+      if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true });
 
-    // Rebuild layout with new department
-    try {
-      generateAndSave();
-      console.log(`[Layout] Auto-rebuilt after creating department: ${id}`);
-    } catch (layoutError) {
-      console.error('[Layout] Auto-rebuild failed:', layoutError);
-    }
+      // Rebuild layout with new department
+      try {
+        generateAndSave();
+        console.log(`[Layout] Auto-rebuilt after creating department: ${id}`);
+      } catch (layoutError) {
+        console.error('[Layout] Auto-rebuild failed:', layoutError);
+      }
 
-    res.json({ success: true, department: { id, ...config.departments[id] } });
+      recordAudit({ action: 'dept:create', target: id, details: { name }, ip: req.ip });
+      res.json({ success: true, department: { id, ...config.departments[id] } });
+    });
   } catch (error) {
     console.error('Error in POST /api/departments:', error);
     res.status(500).json({ success: false, error: 'Failed to create department' });
@@ -1164,46 +1176,49 @@ router.post('/departments', (req, res) => {
  * Update an existing department
  * Body: { name, agent, icon, color, hue, telegramTopicId, order }
  */
-router.put('/departments/:id', (req, res) => {
+router.put('/departments/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    await withFileLock(DEPT_CONFIG_PATH, async () => {
+      const { id } = req.params;
 
-    if (!validateDeptId(id)) {
-      return res.status(400).json({ success: false, error: 'Invalid department ID' });
-    }
-
-    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
-    const config = readJsonFile(configPath) || { departments: {} };
-
-    if (!config.departments[id]) {
-      return res.status(404).json({ success: false, error: 'Department not found' });
-    }
-
-    const { name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
-
-    if (name !== undefined) config.departments[id].name = name;
-    if (agent !== undefined) config.departments[id].agent = agent;
-    if (icon !== undefined) config.departments[id].icon = icon;
-    if (color !== undefined) config.departments[id].color = color;
-    if (hue !== undefined) config.departments[id].hue = hue;
-    if (telegramTopicId !== undefined) config.departments[id].telegramTopicId = telegramTopicId;
-    if (order !== undefined) config.departments[id].order = order;
-    if (Array.isArray(skills)) config.departments[id].skills = skills;
-    if (Array.isArray(apiGroups)) config.departments[id].apiGroups = apiGroups;
-
-    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
-
-    // Rebuild layout if hue or order changed (affects visual layout)
-    if (hue !== undefined || order !== undefined) {
-      try {
-        generateAndSave();
-        console.log(`[Layout] Auto-rebuilt after updating department: ${id}`);
-      } catch (layoutError) {
-        console.error('[Layout] Auto-rebuild failed:', layoutError);
+      if (!validateDeptId(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid department ID' });
       }
-    }
 
-    res.json({ success: true, department: { id, ...config.departments[id] } });
+      const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+      const config = readJsonFile(configPath) || { departments: {} };
+
+      if (!config.departments[id]) {
+        return res.status(404).json({ success: false, error: 'Department not found' });
+      }
+
+      const { name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
+
+      if (name !== undefined) config.departments[id].name = name;
+      if (agent !== undefined) config.departments[id].agent = agent;
+      if (icon !== undefined) config.departments[id].icon = icon;
+      if (color !== undefined) config.departments[id].color = color;
+      if (hue !== undefined) config.departments[id].hue = hue;
+      if (telegramTopicId !== undefined) config.departments[id].telegramTopicId = telegramTopicId;
+      if (order !== undefined) config.departments[id].order = order;
+      if (Array.isArray(skills)) config.departments[id].skills = skills;
+      if (Array.isArray(apiGroups)) config.departments[id].apiGroups = apiGroups;
+
+      safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
+
+      // Rebuild layout if hue or order changed (affects visual layout)
+      if (hue !== undefined || order !== undefined) {
+        try {
+          generateAndSave();
+          console.log(`[Layout] Auto-rebuilt after updating department: ${id}`);
+        } catch (layoutError) {
+          console.error('[Layout] Auto-rebuild failed:', layoutError);
+        }
+      }
+
+      recordAudit({ action: 'dept:update', target: id, details: req.body, ip: req.ip });
+      res.json({ success: true, department: { id, ...config.departments[id] } });
+    });
   } catch (error) {
     console.error(`Error in PUT /api/departments/${req.params.id}:`, error);
     res.status(500).json({ success: false, error: 'Failed to update department' });
@@ -1214,33 +1229,36 @@ router.put('/departments/:id', (req, res) => {
  * DELETE /api/departments/:id
  * Delete a department
  */
-router.delete('/departments/:id', (req, res) => {
+router.delete('/departments/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    await withFileLock(DEPT_CONFIG_PATH, async () => {
+      const { id } = req.params;
 
-    if (!validateDeptId(id)) {
-      return res.status(400).json({ success: false, error: 'Invalid department ID' });
-    }
+      if (!validateDeptId(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid department ID' });
+      }
 
-    const configPath = path.join(BASE_PATH, 'departments', 'config.json');
-    const config = readJsonFile(configPath) || { departments: {} };
+      const configPath = path.join(BASE_PATH, 'departments', 'config.json');
+      const config = readJsonFile(configPath) || { departments: {} };
 
-    if (!config.departments[id]) {
-      return res.status(404).json({ success: false, error: 'Department not found' });
-    }
+      if (!config.departments[id]) {
+        return res.status(404).json({ success: false, error: 'Department not found' });
+      }
 
-    delete config.departments[id];
-    safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
+      delete config.departments[id];
+      safeWriteFileSync(configPath, JSON.stringify(config, null, 2));
 
-    // Rebuild layout after department deletion
-    try {
-      generateAndSave();
-      console.log(`[Layout] Auto-rebuilt after deleting department: ${id}`);
-    } catch (layoutError) {
-      console.error('[Layout] Auto-rebuild failed:', layoutError);
-    }
+      // Rebuild layout after department deletion
+      try {
+        generateAndSave();
+        console.log(`[Layout] Auto-rebuilt after deleting department: ${id}`);
+      } catch (layoutError) {
+        console.error('[Layout] Auto-rebuild failed:', layoutError);
+      }
 
-    res.json({ success: true });
+      recordAudit({ action: 'dept:delete', target: id, ip: req.ip });
+      res.json({ success: true });
+    });
   } catch (error) {
     console.error(`Error in DELETE /api/departments/${req.params.id}:`, error);
     res.status(500).json({ success: false, error: 'Failed to delete department' });

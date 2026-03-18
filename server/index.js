@@ -8,7 +8,7 @@ import { createWatcher, getInitialState } from './watcher.js';
 import apiRoutes from './routes/api.js';
 import skillsRoutes from './routes/skills.js';
 import cronRoutes from './routes/cron.js';
-import metricsRoutes, { recordPermission, flushMetrics, setWss } from './routes/metrics.js';
+import metricsRoutes, { recordPermission, flushMetrics, setWss, recordGatewayReconnect } from './routes/metrics.js';
 import workflowsRoutes from './routes/workflows.js';
 import replayRoutes, { isRecording, addReplayEvent } from './routes/replay.js';
 import capabilitiesRoutes from './routes/capabilities.js';
@@ -27,11 +27,12 @@ import meetingsRoutes from './routes/meetings.js';
 import chatRetryRouter from './routes/chat-retry.js';
 import pushRouter from './routes/push.js';
 import { getGateway } from './gateway.js';
-import { authRouter, authMiddleware, validateToken } from './auth.js';
+import { authRouter, authMiddleware, validateToken, onTokensCleared } from './auth.js';
 import setupRoutes, { checkSetupStatus } from './routes/setup.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { BASE_PATH } from './utils.js';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,6 +106,13 @@ app.use((req, res, next) => {
   } else if (req.url.startsWith('/cmd/health')) {
     req.url = req.url.replace('/cmd/health', '/health');
   }
+  next();
+});
+
+// TraceId middleware — attach unique ID to every request for correlated logging
+app.use((req, res, next) => {
+  req.traceId = req.headers['x-trace-id'] || crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+  res.setHeader('X-Trace-Id', req.traceId);
   next();
 });
 
@@ -274,6 +282,7 @@ wss.on('connection', (ws, req) => {
 
       authenticated = true;
       ws._authenticated = true;
+      ws._authToken = msg.token;
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
 
@@ -415,6 +424,29 @@ function sessionKeyToDeptId(sessionKey) {
   }
   return null;
 }
+
+// Broadcast gateway status changes to frontend
+gateway.onStatus(({ status, detail }) => {
+  if (status === 'connected' && detail === 'reconnected') recordGatewayReconnect();
+  const payload = JSON.stringify({
+    event: 'gateway:status',
+    data: { status, detail },
+    timestamp: new Date().toISOString(),
+  });
+  wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {} });
+});
+
+// Close all authenticated WS connections when tokens are cleared (password change)
+onTokensCleared(() => {
+  let closed = 0;
+  wss.clients.forEach(c => {
+    if (c._authenticated) {
+      try { c.close(1008, 'Token revoked'); } catch {}
+      closed++;
+    }
+  });
+  if (closed > 0) console.log(`[WebSocket] Closed ${closed} connection(s) after token revocation`);
+});
 
 // Listen for Gateway events (Telegram messages, cron responses, etc.)
 gateway.onEvent((event) => {

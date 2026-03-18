@@ -64,6 +64,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
   const [results, setResults] = useState<StepResult[] | null>(null);
   const [stepStatus, setStepStatus] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'form' | 'pipeline'>('form');
+  const [statusMsg, setStatusMsg] = useState('');
 
   // Form state for creating/editing
   const [formName, setFormName] = useState('');
@@ -180,7 +181,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       setViewMode('form');
     } catch (err) {
       console.error('Failed to save workflow:', err);
-      alert(t('workflow.save.failed'));
+      setStatusMsg(t('workflow.save.failed'));
+      setTimeout(() => setStatusMsg(''), 3000);
     }
   };
 
@@ -204,7 +206,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       setStepStatus(data.stepStatus || []);
     } catch (err) {
       console.error('Failed to run workflow:', err);
-      alert(t('workflow.run.failed'));
+      setStatusMsg(t('workflow.run.failed'));
+      setTimeout(() => setStatusMsg(''), 3000);
     } finally {
       setRunningWorkflowId(null);
     }
@@ -227,7 +230,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
       setWorkflows(workflows.filter(w => w.id !== workflowId));
     } catch (err) {
       console.error('Failed to delete workflow:', err);
-      alert(t('workflow.delete.failed'));
+      setStatusMsg(t('workflow.delete.failed'));
+      setTimeout(() => setStatusMsg(''), 3000);
     }
   };
 
@@ -299,6 +303,12 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
           <h2>{t('workflow.title')}</h2>
           <button className="workflow-close" onClick={onClose}>×</button>
         </div>
+
+        {statusMsg && (
+          <div className="workflow-status-msg">
+            {statusMsg}
+          </div>
+        )}
 
         <div className="workflow-body">
           {/* Left side: Workflows list */}

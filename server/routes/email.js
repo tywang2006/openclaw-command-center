@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import { BASE_PATH, readJsonFile } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
+import { recordAudit } from './audit.js';
 
 const router = express.Router();
 
@@ -57,6 +58,24 @@ async function createTransporter(gmailConfig) {
 function isValidEmail(email) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+}
+
+/**
+ * Helper: Get allowed email domains from config
+ */
+function getAllowedDomains() {
+  const config = readJsonFile(CONFIG_PATH);
+  // Allow configuring allowedDomains in integrations.json under gmail
+  if (config?.gmail?.allowedDomains && Array.isArray(config.gmail.allowedDomains)) {
+    return config.gmail.allowedDomains.map(d => d.toLowerCase());
+  }
+  // Default: only allow sending to the sender's own domain
+  const gmailConfig = config?.gmail || {};
+  if (gmailConfig.email) {
+    const domain = gmailConfig.email.split('@')[1];
+    if (domain) return [domain.toLowerCase()];
+  }
+  return [];
 }
 
 /**
@@ -121,6 +140,17 @@ router.post('/email/send', async (req, res) => {
       return res.status(400).json({ error: 'Email body or html content is required' });
     }
 
+    // Domain whitelist check
+    const allowedDomains = getAllowedDomains();
+    if (allowedDomains.length > 0) {
+      const recipientDomain = to.split('@')[1]?.toLowerCase();
+      if (!recipientDomain || !allowedDomains.includes(recipientDomain)) {
+        return res.status(403).json({
+          error: `Recipient domain not allowed. Allowed domains: ${allowedDomains.join(', ')}`,
+        });
+      }
+    }
+
     const gmailConfig = getGmailConfig();
 
     if (!gmailConfig.enabled) {
@@ -156,6 +186,7 @@ router.post('/email/send', async (req, res) => {
     try {
       const info = await transporter.sendMail(mailOptions);
       console.log(`[Email] Sent email to ${to}: ${info.messageId}`);
+      recordAudit({ action: 'email:send', target: to, details: { subject }, ip: req.ip });
       res.json({ success: true, messageId: info.messageId });
     } catch (error) {
       console.error('[Email] Failed to send email:', error);

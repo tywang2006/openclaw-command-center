@@ -353,8 +353,12 @@ export const zh: Record<string, string> = {
 
   // Dashboard enhancements (Phase 4C)
   'dashboard.action.broadcast': '广播所有部门',
+  'dashboard.action.broadcast.prompt': '输入要广播给所有部门的消息:',
+  'dashboard.action.broadcast.sent': '广播已发送!',
+  'dashboard.action.broadcast.failed': '广播发送失败',
   'dashboard.action.meeting': '发起会议',
   'dashboard.action.workflow': '创建工作流',
+  'dashboard.action.workflow.hint': '请使用工作流标签页创建工作流',
   'dashboard.system.title': '系统状态',
   'dashboard.system.gateway': '网关',
   'dashboard.system.integrations': '集成服务',

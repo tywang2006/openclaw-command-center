@@ -7,6 +7,8 @@ import { Readable } from 'stream';
 import fs from 'fs';
 import path from 'path';
 import { safeWriteFileSync, BASE_PATH } from '../utils.js';
+import { withMutex } from '../file-lock.js';
+import { recordAudit } from './audit.js';
 
 const router = express.Router();
 
@@ -71,6 +73,7 @@ router.post('/', async (req, res) => {
   persistMeeting(meeting);
 
   console.log(`[Meetings] Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
+  recordAudit({ action: 'meeting:create', target: meetingId, details: { topic, deptIds }, ip: req.ip });
 
   // Broadcast meeting:start event to WebSocket clients
   try {
@@ -168,11 +171,12 @@ router.post('/:id/message', async (req, res) => {
 
   // Process departments in background
   const wss = req.app.locals.wss;
-  setImmediate(async () => {
-    const results = [];
+  setImmediate(() => {
+    withMutex(`meeting:${meeting.id}`, async () => {
+      const results = [];
 
-    // Sequential: each dept sees previous depts' responses (real discussion)
-    for (let deptIndex = 0; deptIndex < targetDepts.length; deptIndex++) {
+      // Sequential: each dept sees previous depts' responses (real discussion)
+      for (let deptIndex = 0; deptIndex < targetDepts.length; deptIndex++) {
       const deptId = targetDepts[deptIndex];
 
       // Rebuild context each iteration so new responses are visible
@@ -269,6 +273,7 @@ ${recentHistory}
         }
       });
     }
+    }).catch(err => console.error('[Meetings] Message round error:', err));
   });
 });
 
@@ -314,6 +319,10 @@ router.post('/:id/end', async (req, res) => {
   meeting.endedAt = Date.now();
   persistMeeting(meeting);
   console.log(`[Meetings] Ended ${meeting.id}: ${meeting.topic}`);
+
+  // Schedule removal from memory (data is persisted to disk)
+  setTimeout(() => meetings.delete(meeting.id), 5 * 60 * 1000);
+  recordAudit({ action: 'meeting:end', target: meeting.id, details: { topic: meeting.topic }, ip: req.ip });
 
   // Extract action items via AI (async, don't block response)
   const wss = req.app.locals.wss;
@@ -432,13 +441,14 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
       const jsonMatch = result.reply.match(/\[[\s\S]*?\]/);
       if (jsonMatch) {
         const actionItems = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(actionItems)) throw new Error('Expected JSON array');
         meeting.actionItems = actionItems;
 
-        // Record in meeting messages
+        // Record in meeting messages (null-safe field access)
         meeting.messages.push({
           role: 'system', deptId: 'action-items',
           text: `[Action Items Extracted]\n${actionItems.map((item, i) =>
-            `${i+1}. [${item.priority.toUpperCase()}] ${item.task} (Owner: ${item.owner}${item.deadline_hint ? ', ' + item.deadline_hint : ''})`
+            `${i+1}. [${(item.priority || 'medium').toUpperCase()}] ${item.task || '(no task)'} (Owner: ${item.owner || 'unassigned'}${item.deadline_hint ? ', ' + item.deadline_hint : ''})`
           ).join('\n')}`,
           timestamp: Date.now()
         });
@@ -451,7 +461,7 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
           data: { meetingId: meeting.id, actionItems },
           timestamp: new Date().toISOString()
         });
-        wss.clients.forEach(c => {
+        if (wss) wss.clients.forEach(c => {
           if (c.readyState === 1 && c._authenticated) {
             try { c.send(msg); } catch {}
           }
@@ -499,7 +509,9 @@ router.post('/:id/negotiate', async (req, res) => {
   res.json({ status: 'accepted', negotiationId, maxRounds: roundsCapped });
 
   // Run negotiation rounds in background
-  runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss);
+  withMutex(`meeting:${meeting.id}`, () =>
+    runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss)
+  ).catch(err => console.error('[Meetings] Negotiation error:', err));
 });
 
 /**
@@ -552,21 +564,25 @@ Try to find common ground. Be concise.`;
       try {
         const result = await chat(deptId, prompt);
         let parsed;
-        try {
-          // Try to extract JSON from response
-          const jsonMatch = result.reply.match(/\{[\s\S]*?\}/);
-          parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { stance: 'abstain', reason: result.reply, suggestion: '' };
-        } catch {
-          parsed = { stance: 'abstain', reason: result.reply.substring(0, 200), suggestion: '' };
+        if (!result.success || !result.reply) {
+          parsed = { stance: 'abstain', reason: result.error || 'No response', suggestion: '' };
+        } else {
+          try {
+            // Try to extract JSON from response
+            const jsonMatch = result.reply.match(/\{[\s\S]*?\}/);
+            parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { stance: 'abstain', reason: result.reply, suggestion: '' };
+          } catch {
+            parsed = { stance: 'abstain', reason: result.reply.substring(0, 200), suggestion: '' };
+          }
         }
 
         roundPositions[deptId] = parsed;
         positions[deptId] = parsed;
 
-        // Record in meeting messages
+        // Record in meeting messages (null-safe field access)
         meeting.messages.push({
           role: 'dept', deptId,
-          text: `[Round ${round}] ${parsed.stance.toUpperCase()}: ${parsed.reason}${parsed.suggestion ? '\nSuggestion: ' + parsed.suggestion : ''}`,
+          text: `[Round ${round}] ${(parsed.stance || 'abstain').toUpperCase()}: ${parsed.reason || ''}${parsed.suggestion ? '\nSuggestion: ' + parsed.suggestion : ''}`,
           timestamp: Date.now(), negotiationId
         });
         persistMeeting(meeting);

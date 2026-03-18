@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
 import { google } from 'googleapis';
-import { BASE_PATH, OPENCLAW_HOME, readJsonFile } from '../utils.js';
+import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 
 const router = express.Router();
@@ -18,7 +18,7 @@ const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
  */
 function writeJsonFile(filePath, data) {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    safeWriteFileSync(filePath, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
     console.error(`[Drive] Error writing JSON file ${filePath}:`, error.message);
@@ -94,7 +94,7 @@ function getDriveClient(driveConfig) {
         oauth2.setCredentials(tokens);
         oauth2.on('tokens', (newTokens) => {
           const merged = { ...tokens, ...newTokens };
-          fs.writeFileSync(tokenPath, JSON.stringify(merged, null, 2));
+          safeWriteFileSync(tokenPath, JSON.stringify(merged, null, 2));
         });
         return google.drive({ version: 'v3', auth: oauth2 });
       }

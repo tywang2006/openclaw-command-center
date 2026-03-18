@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useSyncExternalStore } from 'react'
-import { authedFetch, getToken } from '../utils/api'
+import { authedFetch, getToken, clearToken } from '../utils/api'
 
 export interface Department {
   id: string
@@ -54,6 +54,9 @@ export interface AgentState {
   connected: boolean
   /** Active tool states per department */
   toolStates: Map<string, ToolState>
+  /** Gateway connection status: connected/disconnected/fatal */
+  gatewayStatus: 'unknown' | 'connected' | 'disconnected' | 'fatal'
+  gatewayDetail?: string
 }
 
 // Streaming texts store — decoupled from main state to avoid per-chunk re-renders
@@ -161,7 +164,10 @@ function emitMeetingDeptChange() {
 }
 
 export function consumeMeetingDeptResponse(): MeetingDeptResponse | undefined {
-  return meetingDeptResponses.shift()
+  if (meetingDeptResponses.length === 0) return undefined
+  const item = meetingDeptResponses[0]
+  meetingDeptResponses = meetingDeptResponses.slice(1)
+  return item
 }
 
 export function useMeetingDeptResponses(): MeetingDeptResponse[] {
@@ -190,7 +196,10 @@ function emitMeetingRoundChange() {
 }
 
 export function consumeMeetingRoundComplete(): MeetingRoundComplete | undefined {
-  return meetingRoundCompletes.shift()
+  if (meetingRoundCompletes.length === 0) return undefined
+  const item = meetingRoundCompletes[0]
+  meetingRoundCompletes = meetingRoundCompletes.slice(1)
+  return item
 }
 
 export function useMeetingRoundCompletes(): MeetingRoundComplete[] {
@@ -229,6 +238,7 @@ export function useAgentState() {
     selectedDeptId: null,
     connected: false,
     toolStates: new Map(),
+    gatewayStatus: 'unknown',
   })
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -237,7 +247,6 @@ export function useAgentState() {
   const reconnectDelayRef = useRef<number>(1000)
   const reconnectCountRef = useRef<number>(0)
   const wsReceivedDepts = useRef(false)
-  const MAX_RECONNECT = 20
 
   const connect = () => {
     if (reconnectTimeoutRef.current) {
@@ -261,8 +270,17 @@ export function useAgentState() {
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       console.log('[WS] Disconnected')
+
+      // If auth was revoked (1008 policy violation), redirect to login
+      if (event.code === 1008) {
+        console.log('[WS] Auth revoked (1008), clearing token and reloading')
+        clearToken()
+        window.location.reload()
+        return
+      }
+
       if (mountedRef.current) {
         setState(prev => ({ ...prev, connected: false }))
       }
@@ -270,16 +288,12 @@ export function useAgentState() {
 
       if (mountedRef.current) {
         reconnectCountRef.current++
-        if (reconnectCountRef.current > MAX_RECONNECT) {
-          console.error('[WS] Max reconnect attempts reached')
-          return  // Stop reconnecting
-        }
         const delay = reconnectDelayRef.current
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log(`[WS] Reconnecting... (attempt ${reconnectCountRef.current}/${MAX_RECONNECT})`)
+          console.log(`[WS] Reconnecting... (attempt ${reconnectCountRef.current})`)
           connect()
         }, delay)
-        reconnectDelayRef.current = Math.min(delay * 2, 30000)
+        reconnectDelayRef.current = Math.min(delay * 2, 60000)
       }
     }
 
@@ -529,6 +543,16 @@ export function useAgentState() {
           timestamp: Date.now()
         })
         emitMeetingRoundChange()
+        break
+
+      case 'gateway:status':
+        if (mountedRef.current && data?.status) {
+          setState(prev => ({
+            ...prev,
+            gatewayStatus: data.status,
+            gatewayDetail: data.detail || undefined,
+          }))
+        }
         break
 
       case 'departments:updated':

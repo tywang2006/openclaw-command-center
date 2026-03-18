@@ -209,11 +209,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
 
     try {
       const payload = {
-        ...job,
-        payload: {
-          ...job.payload,
-          message: editMessage,
-        },
+        message: editMessage,
       };
 
       const response = await authedFetch(`/api/cron/jobs/${job.id}`, {
@@ -651,8 +647,9 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                       <div className="detail-label">{t('cron.history.title')}</div>
                       <div className="cron-history-chart">
                         {(() => {
-                          const maxDuration = Math.max(...job.state.executionHistory.map(h => h.durationMs));
-                          return job.state.executionHistory.map((exec, idx) => {
+                          const history = job.state.executionHistory;
+                          const maxDuration = Math.max(1, ...history.map(h => h.durationMs));
+                          return history.map((exec, idx) => {
                             const heightPercent = Math.max(5, (exec.durationMs / maxDuration) * 100);
                             return (
                               <div

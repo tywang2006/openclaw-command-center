@@ -264,3 +264,20 @@
   padding: 8px 0;
   text-align: center;
 }
+
+/* ---- Mobile Responsive ---- */
+@media (max-width: 480px) {
+  .dept-modal {
+    width: 95vw;
+    min-width: 0;
+    max-height: 90vh;
+  }
+
+  .icon-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  .dept-check-grid {
+    grid-template-columns: 1fr;
+  }
+}

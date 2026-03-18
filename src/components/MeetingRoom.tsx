@@ -81,6 +81,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   const [driveLink, setDriveLink] = useState<string | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const currentRoundIdRef = useRef<string | null>(null)
+  const sendingTimeoutRef = useRef<number | null>(null)
 
 
   // Load meetings list — auto-enter first active meeting
@@ -153,10 +154,20 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
       if (data.status === 'accepted') {
         // Store roundId to track this round
         currentRoundIdRef.current = data.roundId
+        // Safety timeout: auto-clear sending after 120s if round-complete never arrives
+        if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current)
+        sendingTimeoutRef.current = window.setTimeout(() => {
+          setSending(false)
+          currentRoundIdRef.current = null
+        }, 120000)
         // Department responses will arrive via WebSocket
+      } else {
+        setSending(false)
       }
-    } catch {}
-    // Don't set sending=false here, wait for round-complete event
+    } catch {
+      setSending(false)
+    }
+    // Don't set sending=false here for accepted, wait for round-complete event
   }
 
   // Send message to meeting (triggers all depts to respond)
@@ -194,6 +205,17 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
       }
     } catch {}
     setMeetingEnded(true)
+    // Clear negotiation state
+    setNegotiating(false)
+    setShowNegotiateForm(false)
+    setNegotiationProposal('')
+    setNegotiationRounds(3)
+    setNegotiationVotes([])
+    setNegotiationRound(0)
+    setNegotiationMaxRounds(3)
+    setNegotiationResult(null)
+    setNegotiationAgreeCount(0)
+    setNegotiationTotal(0)
     setEnding(false)
     setMeetings(prev => prev.filter(m => m.id !== activeMeeting.id))
   }
@@ -308,9 +330,14 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     const interval = setInterval(() => {
       let complete = consumeMeetingRoundComplete()
       while (complete) {
-        if (complete.meetingId === activeMeeting.id && currentRoundIdRef.current === complete.roundId) {
+        if (complete.meetingId === activeMeeting.id &&
+            (currentRoundIdRef.current === complete.roundId || currentRoundIdRef.current === null)) {
           setSending(false)
           currentRoundIdRef.current = null
+          if (sendingTimeoutRef.current) {
+            clearTimeout(sendingTimeoutRef.current)
+            sendingTimeoutRef.current = null
+          }
         }
         complete = consumeMeetingRoundComplete()
       }

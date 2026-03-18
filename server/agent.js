@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { getGateway } from './gateway.js';
 import { recordChat, recordTokens } from './routes/metrics.js';
-import { BASE_PATH } from './utils.js';
+import { BASE_PATH, safeWriteFileSync } from './utils.js';
+import { withFileLock } from './file-lock.js';
 
 // ---- Config / mappings ----
 
@@ -120,11 +121,11 @@ function buildApiGroup(groupId, CMD, integ) {
       }
       break;
     case 'subagents':
-      lines.push(`### 子代理`);
+      lines.push(`### 子代理管理`);
       lines.push(`- 列出子代理: ${CMD} GET /departments/{id}/subagents`);
       lines.push(`- 创建子代理: ${CMD} POST /departments/{id}/subagents '{"task":"任务描述","name":"名称"}'`);
-      lines.push(`- 向子代理派活/对话: ${CMD} POST /departments/{id}/subagents/{subId}/chat '{"message":"请处理..."}'`);
       lines.push(`- 删除子代理: ${CMD} DELETE /departments/{id}/subagents/{subId}`);
+      lines.push(`- **向子代理派活: 必须使用 sessions_spawn 工具（见"本部门子代理"章节），不要用 API**`);
       break;
     case 'export':
       lines.push(`### 导出`);
@@ -279,15 +280,20 @@ ${tools}`);
         ? d.apiGroups.join(', ')
         : '全部';
       deptIndex.push(`- **${d.name}** (${id}): 技能=[${skillsLabel}] API=[${groupsLabel}]`);
-      // List active sub-agents for this department
+      // List active sub-agents for this department (cap at 5)
       const subData = allSubAgents[id];
       if (subData) {
-        for (const [, agent] of Object.entries(subData.agents)) {
-          if (agent.status !== 'active') continue;
+        const activeEntries = Object.entries(subData.agents).filter(([, a]) => a.status === 'active');
+        const shown = activeEntries.slice(0, 5);
+        for (const [, agent] of shown) {
+          const taskBrief = agent.task.length > 50 ? agent.task.slice(0, 50) + '...' : agent.task;
           const subSkills = Array.isArray(agent.skills) && agent.skills.length > 0
             ? agent.skills.join(', ')
             : '';
-          deptIndex.push(`  - 子代理「${agent.name}」: 任务=${agent.task}${subSkills ? ', 技能=[' + subSkills + ']' : ''}`);
+          deptIndex.push(`  - 子代理「${agent.name}」: 任务=${taskBrief}${subSkills ? ', 技能=[' + subSkills + ']' : ''}`);
+        }
+        if (activeEntries.length > 5) {
+          deptIndex.push(`  - ...及其他 ${activeEntries.length - 5} 个子代理`);
         }
       }
     }
@@ -296,23 +302,59 @@ ${tools}`);
     // List own department's sub-agents
     const ownSubData = allSubAgents[deptId];
     if (ownSubData && Object.keys(ownSubData.agents).length > 0) {
+      const deptName = dept?.name || deptId;
       const ownSubs = [`## 本部门子代理`];
-      for (const [subId, agent] of Object.entries(ownSubData.agents)) {
-        if (agent.status !== 'active') continue;
+      const activeAgents = Object.entries(ownSubData.agents).filter(([, a]) => a.status === 'active');
+
+      // Sub-agent list
+      for (const [subId, agent] of activeAgents) {
         const subSkills = Array.isArray(agent.skills) && agent.skills.length > 0
           ? ', 技能=[' + agent.skills.join(', ') + ']'
           : '';
         ownSubs.push(`- 「${agent.name}」(${subId}): 任务=${agent.task}${subSkills}`);
       }
+
+      // sessions_spawn delegation guide
+      if (activeAgents.length > 0) {
+        ownSubs.push('');
+        ownSubs.push(`### 向子代理派活`);
+        ownSubs.push(`**必须使用 sessions_spawn 工具，不要用 bash cmd-api.sh 调用 chat 接口。**`);
+        ownSubs.push('');
+        ownSubs.push(`格式:`);
+        ownSubs.push('sessions_spawn(');
+        ownSubs.push(`  task="你是「{名字}」，隶属于 ${deptName}。角色: {任务}。\\n\\n请完成：{具体工作}",`);
+        ownSubs.push(`  label="{名字}: {简述}"`);
+        ownSubs.push(')');
+
+        // Concrete example using first sub-agent
+        const [, firstAgent] = activeAgents[0];
+        ownSubs.push('');
+        ownSubs.push(`示例 — 派活给「${firstAgent.name}」:`);
+        ownSubs.push('sessions_spawn(');
+        ownSubs.push(`  task="你是「${firstAgent.name}」，隶属于 ${deptName}。角色: ${firstAgent.task}。\\n\\n请完成：分析首页加载速度问题并给出优化方案",`);
+        ownSubs.push(`  label="${firstAgent.name}: 首页优化"`);
+        ownSubs.push(')');
+
+        ownSubs.push('');
+        ownSubs.push('注意：sessions_spawn 是非阻塞的，立即返回。结果自动回报给你。可同时派活多个子代理。');
+      }
+
       if (ownSubs.length > 1) {
         parts.push(ownSubs.join('\n'));
       }
     }
   }
 
-  // Bulletin (brief)
+  // Bulletin (capped at 4KB to prevent context overflow)
   if (bulletin.trim()) {
-    parts.push(`## 公告板\n${bulletin.trim()}`);
+    let trimmed = bulletin.trim();
+    if (Buffer.byteLength(trimmed, 'utf8') > 4096) {
+      trimmed = trimmed.slice(-4000);
+      const nl = trimmed.indexOf('\n');
+      if (nl > 0) trimmed = trimmed.slice(nl + 1);
+      trimmed = '...(earlier entries truncated)\n' + trimmed;
+    }
+    parts.push(`## 公告板\n${trimmed}`);
   }
 
   return parts.join('\n\n');
@@ -321,7 +363,11 @@ ${tools}`);
 function wrapWithContext(deptId, userMessage) {
   const ctx = buildDepartmentContext(deptId);
   if (!ctx) return userMessage;
-  return `<department_context>\n${ctx}\n</department_context>\n\n${userMessage}`;
+  // Strip any fake context tags from user message to prevent context injection
+  const sanitized = userMessage
+    .replace(/<\/?department_context>/g, '')
+    .replace(/<\/?subagent_context>/g, '');
+  return `<department_context>\n${ctx}\n</department_context>\n\n${sanitized}`;
 }
 
 /**
@@ -375,7 +421,7 @@ function saveSubAgents(deptId, data) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+    safeWriteFileSync(p, JSON.stringify(data, null, 2));
   } catch (err) {
     console.error(`[SubAgent] Failed to save ${p}:`, err.message);
   }
@@ -406,7 +452,7 @@ async function chat(deptId, userMessage, images) {
 
   if (!gateway.isReady) {
     try {
-      await gateway.waitForReady(5000);
+      await gateway.waitForReady(15000);
     } catch {
       return { success: false, error: 'Gateway not connected, please try again later' };
     }
@@ -428,27 +474,45 @@ async function chat(deptId, userMessage, images) {
     }
   }
 
-  try {
-    const startMs = Date.now();
-    const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, attachments);
-    const durationMs = Date.now() - startMs;
+  // Retry logic: 1 retry for transient errors (timeout, connection lost)
+  const MAX_RETRIES = 1;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const startMs = Date.now();
+      const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, attachments);
+      const durationMs = Date.now() - startMs;
 
-    // Record metrics
-    if (result.text) {
-      recordChat(deptId, durationMs, false);
-      if (result.usage) {
-        recordTokens(deptId, result.usage);
+      // Record metrics
+      if (result.text) {
+        recordChat(deptId, durationMs, false);
+        if (result.usage) {
+          recordTokens(deptId, result.usage);
+        }
+        return { success: true, reply: result.text };
       }
-      return { success: true, reply: result.text };
-    }
 
-    recordChat(deptId, durationMs, true);
-    return { success: false, error: 'Gateway returned empty response' };
-  } catch (err) {
-    console.error(`[Agent] Chat ${deptId} error:`, err.message);
-    recordChat(deptId, 0, true);
-    return { success: false, error: err.message };
+      recordChat(deptId, durationMs, true);
+      return { success: false, error: 'Gateway returned empty response' };
+    } catch (err) {
+      const isTransient = err.message.includes('timeout') ||
+        err.message.includes('connection lost') ||
+        err.message.includes('WebSocket not open');
+      if (isTransient && attempt < MAX_RETRIES) {
+        console.warn(`[Agent] Chat ${deptId} transient error (attempt ${attempt + 1}), retrying: ${err.message}`);
+        // Wait briefly before retry, re-check gateway readiness
+        await new Promise(r => setTimeout(r, 2000));
+        if (!gateway.isReady) {
+          try { await gateway.waitForReady(10000); } catch { /* fall through to final error */ }
+        }
+        continue;
+      }
+      console.error(`[Agent] Chat ${deptId} error:`, err.message);
+      recordChat(deptId, 0, true);
+      return { success: false, error: err.message };
+    }
   }
+  // Safety net: should never reach here
+  return { success: false, error: 'Exhausted all retry attempts' };
 }
 
 /**
@@ -517,7 +581,7 @@ function loadBulletin() {
 
 function saveBulletin(content) {
   const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
-  try { fs.writeFileSync(bPath, content, 'utf8'); return true; } catch { return false; }
+  try { safeWriteFileSync(bPath, content); return true; } catch { return false; }
 }
 
 // ---- Memory ----
@@ -536,10 +600,10 @@ function saveMemory(deptId, content) {
       if (existing.trim()) {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const bakPath = path.join(BASE_PATH, 'departments', deptId, 'memory', `MEMORY.${ts}.md.bak`);
-        fs.writeFileSync(bakPath, existing, 'utf8');
+        safeWriteFileSync(bakPath, existing);
       }
     }
-    fs.writeFileSync(memPath, content, 'utf8');
+    safeWriteFileSync(memPath, content);
 
     // Rotate: keep only last 50 backup files
     const memDir = path.join(BASE_PATH, 'departments', deptId, 'memory');
@@ -569,31 +633,38 @@ async function broadcastCommand(command) {
   const config = loadConfig();
   const gateway = getGateway();
   if (!gateway.isReady) {
-    try { await gateway.waitForReady(5000); } catch { return []; }
+    try { await gateway.waitForReady(15000); } catch { return []; }
   }
 
   const departments = Object.entries(config.departments || {}).map(([id, dept]) => ({ ...dept, id }));
-  const tasks = departments.map(async (dept) => {
-    const sessionKey = getSessionKey(dept.id);
-    try {
-      const startMs = Date.now();
-      const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
-      const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
-      const durationMs = Date.now() - startMs;
 
-      recordChat(dept.id, durationMs, !result.text);
-      if (result.usage) {
-        recordTokens(dept.id, result.usage);
+  // Process departments with concurrency limit of 3
+  const CONCURRENCY = 3;
+  const results = [];
+  for (let i = 0; i < departments.length; i += CONCURRENCY) {
+    const batch = departments.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.allSettled(batch.map(async (dept) => {
+      const sessionKey = getSessionKey(dept.id);
+      try {
+        const startMs = Date.now();
+        const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
+        const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
+        const durationMs = Date.now() - startMs;
+
+        recordChat(dept.id, durationMs, !result.text);
+        if (result.usage) {
+          recordTokens(dept.id, result.usage);
+        }
+
+        return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
+      } catch (err) {
+        recordChat(dept.id, 0, true);
+        return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
       }
+    }));
+    results.push(...batchResults);
+  }
 
-      return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
-    } catch (err) {
-      recordChat(dept.id, 0, true);
-      return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
-    }
-  });
-
-  const results = await Promise.allSettled(tasks);
   return results.map((r, i) =>
     r.status === 'fulfilled' ? r.value : { deptId: departments[i].id, name: departments[i].name, reply: `[Error] ${r.reason?.message}` }
   );
@@ -601,19 +672,28 @@ async function broadcastCommand(command) {
 
 // ---- Sub-agents ----
 
-function createSubAgent(deptId, task, name, skills) {
-  const data = loadSubAgents(deptId);
-  data.count++;
-  const subId = `${deptId}-sub-${data.count}`;
-  const agentName = name || `Sub-agent #${data.count}`;
-  const entry = { name: agentName, task, status: 'active', created: new Date().toISOString() };
-  if (Array.isArray(skills) && skills.length > 0) {
-    entry.skills = skills;
-  }
-  data.agents[subId] = entry;
-  saveSubAgents(deptId, data);
-  console.log(`[SubAgent] Created ${subId} "${agentName}" for "${task.substring(0, 50)}"${skills ? ' skills=' + skills.join(',') : ''}`);
-  return { subId, name: agentName };
+async function createSubAgent(deptId, task, name, skills) {
+  return withFileLock(subAgentsPath(deptId), () => {
+    const data = loadSubAgents(deptId);
+    // Cap active sub-agents per department
+    const activeCount = Object.values(data.agents).filter(a => a.status === 'active').length;
+    if (activeCount >= 10) {
+      throw new Error('Max 10 active sub-agents per department');
+    }
+    data.count++;
+    const subId = `${deptId}-sub-${data.count}`;
+    // Sanitize name: strip shell-significant chars, cap length
+    const rawName = name || `Sub-agent #${data.count}`;
+    const agentName = rawName.replace(/[`$\\'"(){}<>|;&]/g, '').slice(0, 50);
+    const entry = { name: agentName, task, status: 'active', created: new Date().toISOString() };
+    if (Array.isArray(skills) && skills.length > 0) {
+      entry.skills = skills;
+    }
+    data.agents[subId] = entry;
+    saveSubAgents(deptId, data);
+    console.log(`[SubAgent] Created ${subId} "${agentName}" for "${task.substring(0, 50)}"${skills ? ' skills=' + skills.join(',') : ''}`);
+    return { subId, name: agentName };
+  });
 }
 
 /**
@@ -707,19 +787,21 @@ function listSubAgents(deptId) {
   }));
 }
 
-function removeSubAgent(deptId, subId) {
-  const data = loadSubAgents(deptId);
-  const agent = data.agents[subId];
-  if (!agent) return false;
-  const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
-  let archives = [];
-  try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch {}
-  archives.push({ id: subId, ...agent, archived: new Date().toISOString() });
-  try { fs.writeFileSync(archivePath, JSON.stringify(archives, null, 2), 'utf8'); } catch {}
-  delete data.agents[subId];
-  saveSubAgents(deptId, data);
-  console.log(`[SubAgent] Archived and removed ${subId} "${agent.name}"`);
-  return true;
+async function removeSubAgent(deptId, subId) {
+  return withFileLock(subAgentsPath(deptId), () => {
+    const data = loadSubAgents(deptId);
+    const agent = data.agents[subId];
+    if (!agent) return false;
+    const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
+    let archives = [];
+    try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch {}
+    archives.push({ id: subId, ...agent, archived: new Date().toISOString() });
+    try { safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2)); } catch {}
+    delete data.agents[subId];
+    saveSubAgents(deptId, data);
+    console.log(`[SubAgent] Archived and removed ${subId} "${agent.name}"`);
+    return true;
+  });
 }
 
 // ---- Exports ----

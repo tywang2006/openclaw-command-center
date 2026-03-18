@@ -100,6 +100,10 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
   const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [healthStatus, setHealthStatus] = useState<Record<string, { consecutiveErrors: number; status: string }>>({})
   const [trustScores, setTrustScores] = useState<TrustScoreData[]>([])
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false)
+  const [broadcastInput, setBroadcastInput] = useState('')
+  const [broadcastSending, setBroadcastSending] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null)
   const { t } = useLocale()
 
   const fetchMetrics = useCallback(async () => {
@@ -217,6 +221,14 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
   useVisibilityInterval(fetchIntegrations, 60000, [fetchIntegrations])
   useVisibilityInterval(fetchTrustScores, 15000, [fetchTrustScores])
 
+  // Auto-dismiss status message after 3 seconds
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [statusMessage])
+
   const formatUptime = (seconds: number): string => {
     if (seconds < 60) return `${Math.floor(seconds)}s`
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -246,28 +258,41 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
   }
 
   const handleBroadcast = () => {
-    // Trigger broadcast to all departments
-    const message = prompt('Enter message to broadcast to all departments:')
-    if (message) {
-      authedFetch('/api/broadcast', {
+    setShowBroadcastModal(true)
+    setBroadcastInput('')
+  }
+
+  const handleBroadcastSubmit = async () => {
+    if (!broadcastInput.trim()) return
+
+    setBroadcastSending(true)
+    try {
+      await authedFetch('/api/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      }).then(() => alert('Broadcast sent!'))
-        .catch(() => alert('Broadcast failed'))
+        body: JSON.stringify({ command: broadcastInput })
+      })
+      setStatusMessage({ text: t('dashboard.action.broadcast.sent'), type: 'success' })
+      setShowBroadcastModal(false)
+      setBroadcastInput('')
+    } catch (err) {
+      setStatusMessage({ text: t('dashboard.action.broadcast.failed'), type: 'error' })
+    } finally {
+      setBroadcastSending(false)
     }
+  }
+
+  const handleBroadcastCancel = () => {
+    setShowBroadcastModal(false)
+    setBroadcastInput('')
   }
 
   const handleStartMeeting = () => {
-    if (onSwitchTab) {
-      onSwitchTab('meeting')
-    } else {
-      alert('Meeting feature coming soon!')
-    }
+    onSwitchTab?.('meeting')
   }
 
   const handleCreateWorkflow = () => {
-    alert('Please use the Workflow tab to create workflows')
+    setStatusMessage({ text: t('dashboard.action.workflow.hint'), type: 'info' })
   }
 
   // Chart components
@@ -296,8 +321,9 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
   const SVGLineChart = ({ data }: { data: DailyData[] }) => {
     if (!data.length) return null
     const maxTime = Math.max(...data.map(d => d.avgResponseMs), 1)
+    const denom = Math.max(data.length - 1, 1)
     const points = data.map((d, i) => {
-      const x = (i / (data.length - 1)) * 280 + 10
+      const x = (i / denom) * 280 + 10
       const y = 90 - (d.avgResponseMs / maxTime) * 70
       return `${x},${y}`
     }).join(' ')
@@ -305,7 +331,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
       <svg viewBox="0 0 300 100" style={{ width: '100%', height: '100px' }}>
         <polyline points={points} fill="none" stroke="#ffbb00" strokeWidth="2" />
         {data.map((d, i) => {
-          const x = (i / (data.length - 1)) * 280 + 10
+          const x = (i / denom) * 280 + 10
           const y = 90 - (d.avgResponseMs / maxTime) * 70
           return <circle key={d.date} cx={x} cy={y} r="3" fill="#ffbb00"><title>{d.date}: {Math.round(d.avgResponseMs)}ms</title></circle>
         })}
@@ -316,13 +342,14 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
   const SVGStackedArea = ({ data }: { data: DailyData[] }) => {
     if (!data.length) return null
     const maxTokens = Math.max(...data.map(d => d.tokens.input + d.tokens.output), 1)
+    const denom = Math.max(data.length - 1, 1)
     const inputPath = data.map((d, i) => {
-      const x = (i / (data.length - 1)) * 280 + 10
+      const x = (i / denom) * 280 + 10
       const y = 90 - (d.tokens.input / maxTokens) * 70
       return i === 0 ? `M${x},${y}` : `L${x},${y}`
     }).join(' ') + ` L290,90 L10,90 Z`
     const totalPath = data.map((d, i) => {
-      const x = (i / (data.length - 1)) * 280 + 10
+      const x = (i / denom) * 280 + 10
       const y = 90 - ((d.tokens.input + d.tokens.output) / maxTokens) * 70
       return i === 0 ? `M${x},${y}` : `L${x},${y}`
     }).join(' ') + ` L290,90 L10,90 Z`
@@ -423,7 +450,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
           <h3>{t('dashboard.gateway.title')}</h3>
           <div className="dashboard-gateway-grid">
             <div className="gateway-stat">
-              <span className={`gateway-status ${gatewayStats.connected ? 'connected' : 'disconnected'}`}>
+              <span className={`dash-gw-status ${gatewayStats.connected ? 'connected' : 'disconnected'}`}>
                 {gatewayStats.connected ? t('dashboard.gateway.connected') : t('dashboard.gateway.disconnected')}
               </span>
             </div>
@@ -481,7 +508,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
 
             return (
               <div key={dept.id} className={`dashboard-dept-card ${health}`}>
-                <div className="dept-card-header">
+                <div className="dashboard-dept-header">
                   <DeptIcon deptId={dept.id} size={16} />
                   <span className="dept-card-name" style={{ color: `var(--dept-${dept.id})` }}>
                     {dept.name}
@@ -626,6 +653,49 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Broadcast Modal */}
+      {showBroadcastModal && (
+        <div className="dashboard-modal-overlay" onClick={handleBroadcastCancel}>
+          <div className="dashboard-modal" onClick={e => e.stopPropagation()}>
+            <div className="dashboard-modal-header">
+              <h3>{t('dashboard.action.broadcast')}</h3>
+              <button className="dashboard-modal-close" onClick={handleBroadcastCancel}>&times;</button>
+            </div>
+            <div className="dashboard-modal-body">
+              <label className="dashboard-modal-label">{t('dashboard.action.broadcast.prompt')}</label>
+              <textarea
+                className="dashboard-modal-input"
+                value={broadcastInput}
+                onChange={e => setBroadcastInput(e.target.value)}
+                placeholder={t('dashboard.action.broadcast.prompt')}
+                rows={4}
+                autoFocus
+              />
+            </div>
+            <div className="dashboard-modal-footer">
+              <button className="dashboard-btn-cancel" onClick={handleBroadcastCancel}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="dashboard-btn-submit"
+                onClick={handleBroadcastSubmit}
+                disabled={!broadcastInput.trim() || broadcastSending}
+              >
+                {broadcastSending ? t('common.saving') : t('dashboard.action.broadcast')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Message */}
+      {statusMessage && (
+        <div className={`dashboard-status-message ${statusMessage.type}`} onClick={() => setStatusMessage(null)}>
+          <span className="status-message-text">{statusMessage.text}</span>
+          <button className="status-message-close" onClick={() => setStatusMessage(null)}>&times;</button>
         </div>
       )}
     </div>

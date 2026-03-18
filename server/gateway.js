@@ -10,6 +10,7 @@ const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
+const MAX_STREAM_BUFFER_BYTES = 1048576; // 1MB per stream buffer
 
 // Fatal error codes — do not reconnect on these
 const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN', 'INVALID_REQUEST'];
@@ -134,6 +135,7 @@ class GatewayClient {
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.shutdownRequested = false;
+    this._hasEverConnected = false;
 
     // Map<requestId, { resolve, reject, timer }>
     this.pendingRequests = new Map();
@@ -150,6 +152,9 @@ class GatewayClient {
 
     // Event listeners for Gateway events (agent streaming, channel messages, etc.)
     this._eventListeners = [];
+
+    // Status change listeners (connected/disconnected/fatal)
+    this._statusListeners = [];
 
     // Accumulate streaming text per runId: Map<runId, { sessionKey, chunks, userMessage }>
     this._streamBuffers = new Map();
@@ -174,7 +179,7 @@ class GatewayClient {
     // Periodic cleanup of resolved request IDs (every 60s, keep last 30s)
     this._resolvedCleanupTimer = setInterval(() => {
       if (this._resolvedRequests.size === 0) return;
-      const cutoff = Date.now() - 30000;
+      const cutoff = Date.now() - REQUEST_TIMEOUT_MS; // Match 120s request timeout
       for (const [id, ts] of this._resolvedRequests) {
         if (ts < cutoff) this._resolvedRequests.delete(id);
       }
@@ -207,11 +212,14 @@ class GatewayClient {
       this._connectReject = reject;
 
       // Cleanup old WebSocket if it exists and isn't closed
-      if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
-        try {
-          this.ws.close(1000, 'Reconnecting');
-        } catch (err) {
-          console.error('[Gateway] Error closing old WebSocket:', err.message);
+      if (this.ws) {
+        this.ws.removeAllListeners();
+        if (this.ws.readyState !== WebSocket.CLOSED) {
+          try {
+            this.ws.close(1000, 'Reconnecting');
+          } catch (err) {
+            console.error('[Gateway] Error closing old WebSocket:', err.message);
+          }
         }
       }
 
@@ -398,6 +406,7 @@ class GatewayClient {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
           }
+          this._emitStatus('fatal', `${code}: ${msg}`);
         }
 
         if (this._connectReject) {
@@ -429,6 +438,9 @@ class GatewayClient {
 
       // Notify all waiting callbacks that we're ready
       this._notifyReadyCallbacks();
+      const isReconnect = this._hasEverConnected;
+      this._hasEverConnected = true;
+      this._emitStatus('connected', isReconnect ? 'reconnected' : 'initial');
       return;
     }
 
@@ -523,8 +535,14 @@ class GatewayClient {
       buffer.userMessage = payload.userMessage;
     }
 
-    // Accumulate assistant text chunks
+    // Accumulate assistant text chunks (cap at MAX_STREAM_BUFFER_BYTES)
     if (stream === 'assistant' && chunk?.type === 'text' && chunk.text) {
+      buffer.totalBytes = (buffer.totalBytes || 0) + Buffer.byteLength(chunk.text, 'utf8');
+      if (buffer.totalBytes > MAX_STREAM_BUFFER_BYTES) {
+        console.warn(`[Gateway] Stream buffer ${bufferId} exceeded ${MAX_STREAM_BUFFER_BYTES / 1024}KB, truncating`);
+        this._streamBuffers.delete(bufferId);
+        return;
+      }
       buffer.assistantChunks.push(chunk.text);
 
       // Strip context tags from streaming chunks
@@ -644,6 +662,17 @@ class GatewayClient {
     if (idx >= 0) this._eventListeners.splice(idx, 1);
   }
 
+  /** Register a listener for gateway status changes (connected/disconnected/fatal) */
+  onStatus(callback) {
+    this._statusListeners.push(callback);
+  }
+
+  _emitStatus(status, detail) {
+    for (const listener of this._statusListeners) {
+      try { listener({ status, detail }); } catch {}
+    }
+  }
+
   _handleClose(code, reason) {
     const reasonStr = reason ? reason.toString() : '';
     console.log(`[Gateway] Connection closed: code=${code} reason=${reasonStr}`);
@@ -669,6 +698,7 @@ class GatewayClient {
 
     // Set ws to null before scheduling reconnect to prevent duplicate reconnects
     this.ws = null;
+    this._emitStatus('disconnected', `code=${code}`);
 
     if (!this.shutdownRequested) {
       this._scheduleReconnect();
@@ -708,21 +738,21 @@ class GatewayClient {
     }, delay);
   }
 
-  /** Background retry every 5 minutes after max reconnect attempts exhausted */
+  /** Background retry after max reconnect attempts exhausted — exponential backoff capped at 60s */
   _scheduleBackgroundRetry() {
     if (this.shutdownRequested || this._backgroundRetryTimer) return;
-    this._backgroundRetryTimer = setInterval(() => {
-      if (this.shutdownRequested || this.connected) {
-        clearInterval(this._backgroundRetryTimer);
-        this._backgroundRetryTimer = null;
-        return;
-      }
-      console.log('[Gateway] Background retry attempt...');
+    let bgDelay = 30000; // Start at 30s
+    const retry = () => {
+      if (this.shutdownRequested || this.connected) return;
+      console.log(`[Gateway] Background retry attempt (next in ${bgDelay / 1000}s)...`);
       this.reconnectAttempt = 0; // Reset so _scheduleReconnect works again if this fails
       this.connect().catch(err => {
         console.error('[Gateway] Background retry failed:', err.message);
+        bgDelay = Math.min(bgDelay * 1.5, 60000);
+        this._backgroundRetryTimer = setTimeout(retry, bgDelay);
       });
-    }, 5 * 60 * 1000); // 5 minutes
+    };
+    this._backgroundRetryTimer = setTimeout(retry, bgDelay);
   }
 
   _startHeartbeat() {
@@ -815,8 +845,9 @@ class GatewayClient {
         return reject(new Error('Gateway not connected'));
       }
 
-      const requestId = `req_${randomUUID().replace(/-/g, '')}`;
-      const idempotencyKey = `cmd_${sessionKey}_${Date.now()}`;
+      const reqUuid = randomUUID().replace(/-/g, '');
+      const requestId = `req_${reqUuid}`;
+      const idempotencyKey = `cmd_${sessionKey}_${Date.now()}_${reqUuid.substring(0, 8)}`;
 
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
@@ -860,8 +891,9 @@ class GatewayClient {
       throw new Error('Gateway not connected');
     }
 
-    const requestId = `req_${randomUUID().replace(/-/g, '')}`;
-    const idempotencyKey = `cmd_${sessionKey}_${Date.now()}`;
+    const reqUuid = randomUUID().replace(/-/g, '');
+    const requestId = `req_${reqUuid}`;
+    const idempotencyKey = `cmd_${sessionKey}_${Date.now()}_${reqUuid.substring(0, 8)}`;
 
     this._send({
       type: 'req',

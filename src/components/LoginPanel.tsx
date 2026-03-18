@@ -55,7 +55,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
       setError(t('login.error.mismatch'))
       return
     }
-    if (password.length < 6) {
+    if (password.length < 8) {
       setError(t('login.error.short'))
       return
     }

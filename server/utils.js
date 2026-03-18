@@ -72,9 +72,12 @@ export function readJsonFile(filePath) {
 /**
  * Atomically write file (write to tmp, then rename)
  */
-export function safeWriteFileSync(filePath, data) {
+export function safeWriteFileSync(filePath, data, options) {
   const tmp = filePath + '.tmp.' + process.pid;
   fs.writeFileSync(tmp, data, 'utf8');
+  if (options && options.mode != null) {
+    fs.chmodSync(tmp, options.mode);
+  }
   fs.renameSync(tmp, filePath);
 }
 

@@ -9,6 +9,16 @@ const router = express.Router();
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
 
 /**
+ * Escape a string for safe inclusion as a YAML frontmatter value.
+ * Wraps in double quotes and escapes backslashes, double quotes, and newlines
+ * to prevent YAML injection (e.g. "test\nmalicious_key: value").
+ */
+function yamlEscape(str) {
+  if (!str) return '""';
+  return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
+}
+
+/**
  * Helper: Get skill data from a directory
  */
 function getSkillData(skillDir, slug) {
@@ -279,10 +289,10 @@ router.post('/skills', (req, res) => {
       return res.status(409).json({ error: `Skill "${slug}" already exists` });
     }
 
-    // Build SKILL.md with frontmatter
-    const fmLines = [`---`, `name: ${name}`];
-    if (summary) fmLines.push(`summary: ${summary}`);
-    if (description) fmLines.push(`description: ${description}`);
+    // Build SKILL.md with frontmatter (values escaped to prevent YAML injection)
+    const fmLines = [`---`, `name: ${yamlEscape(name)}`];
+    if (summary) fmLines.push(`summary: ${yamlEscape(summary)}`);
+    if (description) fmLines.push(`description: ${yamlEscape(description)}`);
     if (tags) {
       const tagList = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean);
       fmLines.push(`tags: [${tagList.join(', ')}]`);
@@ -336,14 +346,14 @@ router.put('/skills/:slug', (req, res) => {
       fm.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()).filter(Boolean);
     }
 
-    // Rebuild SKILL.md
+    // Rebuild SKILL.md (string values escaped to prevent YAML injection)
     const fmLines = [`---`];
     for (const [k, v] of Object.entries(fm)) {
       if (v === null || v === undefined) continue;
       if (Array.isArray(v)) {
         fmLines.push(`${k}: [${v.join(', ')}]`);
       } else {
-        fmLines.push(`${k}: ${v}`);
+        fmLines.push(`${k}: ${yamlEscape(String(v))}`);
       }
     }
     fmLines.push(`---`);

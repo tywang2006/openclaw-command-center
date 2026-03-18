@@ -90,7 +90,16 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
       {/* Responses from all departments */}
       {responses.length > 0 && (
         <div className="broadcast-responses">
-          <div className="broadcast-responses-title">{t('bulletin.responses.title', { count: responses.length })}</div>
+          <div className="broadcast-responses-title">
+            {t('bulletin.responses.title', { count: responses.length })}
+            <button
+              className="clear-responses-btn"
+              onClick={() => setResponses([])}
+              title="清除结果"
+            >
+              清除
+            </button>
+          </div>
           {responses.map((resp, i) => (
             <div key={`resp-${resp.deptId}-${i}`} className={`broadcast-response ${resp.reply.startsWith('[Error]') ? 'error' : ''}`}>
               <div className="broadcast-response-header">

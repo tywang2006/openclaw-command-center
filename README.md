@@ -320,6 +320,42 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.6.0] - 2026-03-18
+
+**Added / 新增**
+- **Negotiation voting / 协商投票**: Multi-round AI debate with voting in meeting room. 会议室多轮AI辩论协商投票
+- **Action item extraction / 行动项提取**: AI auto-extracts action items on meeting end. 会议结束AI自动提取行动项
+- **Trust scores / 信任评分**: Department reliability leaderboard. 部门可靠性排行榜
+- **Sub-agent delegation / 子代理委派**: sessions_spawn non-blocking delegation (fixes deadlock). 子代理使用sessions_spawn非阻塞委派(修复死锁)
+- **Mobile responsive / 移动端适配**: Responsive layout for tablet (768px) and phone (480px). 平板和手机端响应式布局
+- **Broadcast modal / 广播弹窗**: Dashboard broadcast replaced blocking prompt() with modal UI. 仪表盘广播用弹窗替代阻塞prompt
+- **Bulletin clear button / 公告清除**: Clear broadcast responses in bulletin board. 公告板清除广播回复按钮
+- **CommandPalette tabs / 命令面板标签**: Added meeting, requests, skills, guide tabs. 命令面板新增会议/请求/技能/指南标签
+
+**Fixed / 修复**
+- **Chinese IME / 中文输入法**: Enter key no longer sends message during IME composition. 输入法组字时回车不再发送消息
+- **Gateway reconnect / 网关重连**: Fixed listener leak on reconnect destroying new connection. 修复重连时旧监听器销毁新连接
+- **Dashboard chart / 仪表盘图表**: Fixed division by zero in SVG chart rendering. 修复SVG图表除零错误
+- **Dashboard broadcast / 仪表盘广播**: Fixed parameter name mismatch (message -> command). 修复广播参数名不匹配
+- **CronTab PUT / 定时任务更新**: Fixed message payload nesting mismatch. 修复消息载荷嵌套不匹配
+- **CronTab chart / 定时图表**: Fixed division by zero in duration chart. 修复执行时长图表除零
+- **sourceDept validation / 来源部门校验**: Added path traversal protection. 增加路径穿越防护
+- **Password validation / 密码校验**: Frontend min length synced with backend (8 chars). 前端密码最短长度与后端同步(8位)
+- **WS 1008 reconnect loop / WS重连循环**: Auth-revoked close code now clears token and reloads. 认证撤销关闭码现在清除令牌并刷新
+- **Meeting negotiation cleanup / 会议协商清理**: Negotiation state properly reset on meeting end. 会议结束时协商状态正确重置
+- **Meeting memory leak / 会议内存泄漏**: Ended meetings removed from Map after 5 minutes. 结束的会议5分钟后从内存移除
+- **Skills tags / 技能标签**: Tags now correctly sent as array (was string). 标签现在正确发送为数组
+- **Time validation / 时间校验**: Autobackup time regex rejects invalid times (was accepting "99:99"). 自动备份时间正则拒绝无效时间
+- **YAML injection / YAML注入**: Skills frontmatter now escapes user input. 技能前置信息现在转义用户输入
+- **WorkflowEditor alert / 工作流提示**: Replaced blocking alert() with status message. 用状态消息替代阻塞alert
+- **chat() safety return / 聊天安全返回**: Added defensive return after retry exhaustion. 重试耗尽后增加防御性返回
+- **Workflow lock / 工作流锁**: Restructured to release file lock during AI execution. AI执行期间释放文件锁
+
+**Security / 安全**
+- Path traversal protection on sourceDept parameter. 来源部门参数路径穿越防护
+- YAML frontmatter injection prevention in skills. 技能YAML前置信息注入防护
+- Gateway listener cleanup prevents connection hijacking. 网关监听器清理防止连接劫持
+
 ### [1.5.0] - 2026-03-17
 
 **Added / 新增**
