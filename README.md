@@ -20,27 +20,27 @@ Turn your AI agents into a virtual office team — pixel-art office, meeting roo
 
 **Pixel Office (Dark Theme) / 像素办公室（暗色主题）**
 
-![Pixel Office Dark](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/02-office-dark.png)
+![Pixel Office Dark](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/02-office-dark.png)
 
 **Department Chat / AI 部门对话**
 
-![Department Chat](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/03-chat.png)
+![Department Chat](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/03-chat.png)
 
 **Dashboard / 性能面板**
 
-![Dashboard](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/04-dashboard.png)
+![Dashboard](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/04-dashboard.png)
 
 **Scheduled Tasks / 定时任务**
 
-![Cron](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/06-cron.png)
+![Cron](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/06-cron.png)
 
 **System Config / 系统配置**
 
-![System](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/09-system.png)
+![System](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/09-system.png)
 
 **Light Theme / 亮色主题**
 
-![Light Theme](https://raw.githubusercontent.com/cwangmetawin/openclaw-office/master/docs/screenshots/12-office-light.png)
+![Light Theme](https://raw.githubusercontent.com/tywang2006/openclaw-command-center/master/docs/screenshots/12-office-light.png)
 
 ---
 
