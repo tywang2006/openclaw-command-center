@@ -418,19 +418,26 @@ class GatewayClient {
     if (frame.type === 'res') {
       this._handleResponse(frame);
     } else if (frame.type === 'event') {
-      // Log agent events only on start/completion, all other events always
-      if (frame.event === 'agent') {
+      // Log agent events only on start/completion; suppress noisy tick/health/heartbeat
+      const evName = frame.event;
+      if (evName === 'agent') {
         const status = frame.payload?.status;
         if (status === 'started' || status === 'completed' || status === 'done' || status === 'finished') {
           const preview = JSON.stringify(frame).substring(0, 300);
-          gLog.info(`Event ${frame.event}: ${preview}`);
+          gLog.info(`Event ${evName}: ${preview}`);
         } else if (process.env.GATEWAY_DEBUG) {
           const preview = JSON.stringify(frame).substring(0, 300);
-          gLog.info(`Event ${frame.event}: ${preview}`);
+          gLog.info(`Event ${evName}: ${preview}`);
+        }
+      } else if (evName === 'tick' || evName === 'health' || evName === 'heartbeat') {
+        // Suppress high-frequency events (~7200/day) — only log with GATEWAY_DEBUG
+        if (process.env.GATEWAY_DEBUG) {
+          const preview = JSON.stringify(frame).substring(0, 200);
+          gLog.info(`Event ${evName}: ${preview}`);
         }
       } else {
         const preview = JSON.stringify(frame).substring(0, 300);
-        gLog.info(`Event ${frame.event}: ${preview}`);
+        gLog.info(`Event ${evName}: ${preview}`);
       }
       this._handleEvent(frame);
     } else {
@@ -718,15 +725,7 @@ class GatewayClient {
       }
     }
 
-    // Clean up stale buffers (older than 5 minutes)
-    if (this._streamBuffers.size > 0) {
-      const staleThreshold = Date.now() - 300000;
-      for (const [id, buf] of this._streamBuffers) {
-        if (buf.startedAt < staleThreshold) {
-          this._streamBuffers.delete(id);
-        }
-      }
-    }
+    // Stale buffer cleanup handled by _bufferCleanupTimer (60s interval)
   }
 
   /** Track a resolved requestId to prevent late agent events from being broadcast */

@@ -210,13 +210,6 @@ app.use('/api/meetings', meetingsRoutes);
 app.use('/api/departments', chatRetryRouter);
 app.use('/api/push', pushRouter);
 
-// Global Express error handler
-app.use((err, req, res, next) => {
-  log.error('Unhandled Express error', { error: err.stack || err.message || err });
-  if (res.headersSent) return next(err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 // Serve static files in production under /cmd/
 const distPath = path.join(__dirname, '../dist');
 app.use('/cmd', express.static(distPath, {
@@ -235,7 +228,11 @@ app.get('/cmd/{*splat}', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile('index.html', { root: distPath });
+    res.sendFile('index.html', { root: distPath }, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).end();
+      }
+    });
   } else {
     res.status(404).json({
       error: 'Frontend not built yet',
@@ -250,6 +247,13 @@ app.get('/', (req, res) => {
 });
 app.get('/cmd', (req, res) => {
   res.redirect('/cmd/');
+});
+
+// Global Express error handler (must be after all routes)
+app.use((err, req, res, next) => {
+  log.error('Unhandled Express error', { error: err.stack || err.message || err });
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // WebSocket server — accept both /ws and /cmd/ws
@@ -597,6 +601,7 @@ function gracefulShutdown(signal) {
   flushMetrics();
   getGateway().disconnect();
   watcher.close();
+  try { fs.unwatchFile(deptConfigPath); } catch (_) { /* already unwatched */ }
 
   // Stop sub-agent cleanup scheduler
   if (subAgentCleanupInterval) {
