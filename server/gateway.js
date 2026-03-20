@@ -263,6 +263,10 @@ class GatewayClient {
     }
     this._stopHeartbeat();
 
+    if (this._challengeTimer) {
+      clearTimeout(this._challengeTimer);
+      this._challengeTimer = null;
+    }
     if (this._bufferCleanupTimer) {
       clearInterval(this._bufferCleanupTimer);
       this._bufferCleanupTimer = null;
@@ -701,6 +705,10 @@ class GatewayClient {
     this.connected = false;
     this.authenticated = false;
     this._stopHeartbeat();
+    if (this._challengeTimer) {
+      clearTimeout(this._challengeTimer);
+      this._challengeTimer = null;
+    }
 
     if (this._connectReject) {
       this._connectingPromise = null;

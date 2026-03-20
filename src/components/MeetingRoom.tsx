@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Department } from '../hooks/useAgentState'
 import { consumeMeetingDeptResponse, consumeMeetingRoundComplete, consumeMeetingEvent, useMeetingEvents } from '../hooks/useAgentState'
+import { useLocale } from '../i18n/index'
 import { DeptIcon } from './Icons'
 import { authedFetch } from '../utils/api'
 import './MeetingRoom.css'
@@ -34,10 +35,10 @@ const TemplateIcons: Record<string, React.ReactNode> = {
 }
 
 const MEETING_TEMPLATES = [
-  { id: 'standup', name: '每日站会', topic: '每日站会 - 今日工作同步', depts: 'all' as const },
-  { id: 'weekly', name: '每周总结', topic: '每周工作总结与下周计划', depts: 'all' as const },
-  { id: 'tech-review', name: '技术评审', topic: '技术方案评审', depts: ['engineering', 'operations', 'blockchain'] },
-  { id: 'product-sync', name: '产品同步', topic: '产品需求与进度同步', depts: ['product', 'engineering', 'research'] },
+  { id: 'standup', nameKey: 'meeting.template.standup' as const, topicZh: '每日站会 - 今日工作同步', topicEn: 'Daily Standup - Today\'s Work Sync', depts: 'all' as const },
+  { id: 'weekly', nameKey: 'meeting.template.weekly' as const, topicZh: '每周工作总结与下周计划', topicEn: 'Weekly Summary & Next Week Plan', depts: 'all' as const },
+  { id: 'tech-review', nameKey: 'meeting.template.techReview' as const, topicZh: '技术方案评审', topicEn: 'Tech Architecture Review', depts: ['engineering', 'operations', 'blockchain'] },
+  { id: 'product-sync', nameKey: 'meeting.template.productSync' as const, topicZh: '产品需求与进度同步', topicEn: 'Product Requirements & Progress Sync', depts: ['product', 'engineering', 'research'] },
 ]
 
 interface MeetingMessage {
@@ -71,6 +72,7 @@ interface MeetingRoomProps {
 }
 
 export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) {
+  const { t, locale } = useLocale()
   const [meetings, setMeetings] = useState<{ id: string; topic: string; deptIds: string[]; messageCount: number }[]>([])
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null)
   const [text, setText] = useState('')
@@ -83,6 +85,12 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   const currentRoundIdRef = useRef<string | null>(null)
   const sendingTimeoutRef = useRef<number | null>(null)
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current)
+    }
+  }, [])
 
   // Load meetings list — auto-enter first active meeting
   useEffect(() => {
@@ -278,10 +286,10 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
   const getStanceLabel = (stance: string): string => {
     switch (stance) {
-      case 'agree': return '同意'
-      case 'disagree': return '反对'
-      case 'modify': return '修改'
-      default: return '弃权'
+      case 'agree': return t('meeting.negotiate.agree')
+      case 'disagree': return t('meeting.negotiate.disagree')
+      case 'modify': return t('meeting.negotiate.modify')
+      default: return t('meeting.negotiate.abstain')
     }
   }
 
@@ -360,7 +368,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
   // Apply template — directly creates the meeting
   const applyTemplate = async (tmpl: typeof MEETING_TEMPLATES[0]) => {
-    const topic = tmpl.topic
+    const topic = locale === 'zh' ? tmpl.topicZh : tmpl.topicEn
     const deptIds = tmpl.depts === 'all'
       ? departments.map(d => d.id)
       : (tmpl.depts as string[]).filter(dId => departments.some(d => d.id === dId))
@@ -395,9 +403,9 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   }
 
   const getDeptName = (deptId: string): string => {
-    if (deptId === 'user') return '你'
-    if (deptId === 'negotiation') return '谈判系统'
-    if (deptId === 'action-items') return '行动事项'
+    if (deptId === 'user') return t('meeting.user')
+    if (deptId === 'negotiation') return t('meeting.negotiationSystem')
+    if (deptId === 'action-items') return t('meeting.actionItems')
     return departments.find(d => d.id === deptId)?.name || deptId
   }
 
@@ -405,14 +413,14 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     <div className="meeting-room-inline">
       <div className="meeting-room">
         <div className="meeting-header">
-          <h3>会议室</h3>
+          <h3>{t('meeting.title')}</h3>
           {activeMeeting && (
             <span className="meeting-topic">{activeMeeting.topic}</span>
           )}
           <div className="meeting-header-actions">
             {activeMeeting && !meetingEnded && (
               <button className="meeting-btn end" onClick={endMeeting} disabled={ending}>
-                {ending ? '...' : '结束会议'}
+                {ending ? '...' : t('meeting.endMeeting')}
               </button>
             )}
           </div>
@@ -420,13 +428,13 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
         {!activeMeeting && !showCreate && (
           <div className="meeting-list">
-            <button className="meeting-btn create" onClick={() => setShowCreate(true)}>+ 发起会议</button>
-            {meetings.length === 0 && <p className="meeting-empty">暂无进行中的会议</p>}
+            <button className="meeting-btn create" onClick={() => setShowCreate(true)}>{t('meeting.create')}</button>
+            {meetings.length === 0 && <p className="meeting-empty">{t('meeting.empty')}</p>}
             {meetings.map(m => (
               <div key={m.id} className="meeting-list-item" onClick={() => loadMeeting(m.id)}>
                 <span className="meeting-list-topic">{m.topic}</span>
                 <span className="meeting-list-depts">{m.deptIds.map(getDeptName).join(', ')}</span>
-                <span className="meeting-list-count">{m.messageCount} 条消息</span>
+                <span className="meeting-list-count">{t('meeting.messages', { count: m.messageCount })}</span>
               </div>
             ))}
           </div>
@@ -436,7 +444,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
           <div className="meeting-create">
             {/* Template picker grid */}
             <div className="meeting-template-section">
-              <p className="meeting-template-label">快速创建:</p>
+              <p className="meeting-template-label">{t('meeting.templates')}:</p>
               <div className="meeting-template-grid">
                 {MEETING_TEMPLATES.map(tmpl => (
                   <button
@@ -445,7 +453,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                     onClick={() => applyTemplate(tmpl)}
                   >
                     <span className="meeting-template-icon">{TemplateIcons[tmpl.id]}</span>
-                    <span className="meeting-template-name">{tmpl.name}</span>
+                    <span className="meeting-template-name">{t(tmpl.nameKey)}</span>
                   </button>
                 ))}
               </div>
@@ -453,7 +461,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
             {/* Divider */}
             <div className="meeting-divider">
-              <span>或自定义</span>
+              <span>{t('meeting.templates.or')}</span>
             </div>
 
             {/* Custom form */}
@@ -461,10 +469,10 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
               className="meeting-input"
               value={newTopic}
               onChange={e => setNewTopic(e.target.value)}
-              placeholder="会议主题"
+              placeholder={t('meeting.topic.placeholder')}
             />
             <div className="meeting-dept-select">
-              <p className="meeting-dept-label">选择参会部门 (至少2个):</p>
+              <p className="meeting-dept-label">{t('meeting.selectDepts')}</p>
               <div className="meeting-dept-chips">
                 {departments.map(d => (
                   <button
@@ -480,9 +488,9 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
               </div>
             </div>
             <div className="meeting-create-actions">
-              <button className="meeting-btn" onClick={() => setShowCreate(false)}>取消</button>
+              <button className="meeting-btn" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
               <button className="meeting-btn create" onClick={createMeeting} disabled={!newTopic.trim() || selectedDepts.length < 2}>
-                创建会议
+                {t('meeting.createMeeting')}
               </button>
             </div>
           </div>
@@ -490,22 +498,22 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
         {meetingEnded && activeMeeting && (
           <div className="meeting-ended-summary">
-            <h4>会议已结束: {activeMeeting.topic}</h4>
+            <h4>{t('meeting.endedTitle', { topic: activeMeeting.topic })}</h4>
             <p className="meeting-summary-meta">
-              参会: {activeMeeting.deptIds.map(getDeptName).join(', ')} |
-              消息: {activeMeeting.messages.length} 条 |
-              时长: {Math.round((Date.now() - activeMeeting.createdAt) / 1000 / 60)} 分钟
+              {t('meeting.summary.participants')}: {activeMeeting.deptIds.map(getDeptName).join(', ')} |
+              {t('meeting.summary.messages', { count: activeMeeting.messages.length })} |
+              {t('meeting.summary.duration', { minutes: Math.round((Date.now() - activeMeeting.createdAt) / 1000 / 60) })}
             </p>
             {driveLink && (
               <a href={driveLink} target="_blank" rel="noopener noreferrer" className="meeting-drive-link">
-                查看 Google Drive 纪要
+                {t('meeting.export.drive')}
               </a>
             )}
 
             {/* Action Items Section */}
             {activeMeeting.actionItems && activeMeeting.actionItems.length > 0 && (
               <div className="meeting-action-items">
-                <h5>行动事项</h5>
+                <h5>{t('meeting.actionItems')}</h5>
                 {activeMeeting.actionItems.map((item, i) => (
                   <div key={i} className="meeting-action-item">
                     <span className={`action-priority ${item.priority}`}>
@@ -524,7 +532,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
             )}
 
             <div className="meeting-minutes">
-              <h5>会议记录</h5>
+              <h5>{t('meeting.minutesTitle')}</h5>
               {activeMeeting.messages.map((msg, i) => (
                 <div key={i} className="meeting-minute-item">
                   <span className="meeting-minute-sender" style={{ color: getDeptColor(msg.deptId) }}>
@@ -533,10 +541,10 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                   <span className="meeting-minute-text">{msg.text}</span>
                 </div>
               ))}
-              {activeMeeting.messages.length === 0 && <p className="meeting-empty">无会议消息记录</p>}
+              {activeMeeting.messages.length === 0 && <p className="meeting-empty">{t('meeting.noMessages')}</p>}
             </div>
             <button className="meeting-btn" onClick={() => { setDriveLink(null); setActiveMeeting(null); setMeetingEnded(false) }}>
-              关闭
+              {t('common.close')}
             </button>
           </div>
         )}
@@ -582,7 +590,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                           <span className="negotiation-vote-stance" style={{ color: getStanceColor(stance) }}>{getStanceLabel(stance)}</span>
                         </div>
                         <div className="negotiation-vote-reason">{reason}</div>
-                        {suggestion && <div className="negotiation-vote-suggestion">建议: {suggestion}</div>}
+                        {suggestion && <div className="negotiation-vote-suggestion">{t('meeting.negotiate.suggestion')}{suggestion}</div>}
                       </div>
                     )
                   }
@@ -596,7 +604,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                         {getDeptName(msg.deptId)}
                       </span>
                       <span className="meeting-msg-time">
-                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {new Date(msg.timestamp).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                       </span>
                     </div>
                     <div className="meeting-msg-text">{msg.text}</div>
@@ -607,29 +615,29 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
               {/* Negotiation progress indicator */}
               {negotiating && negotiationRound > 0 && (
                 <div className="negotiation-progress">
-                  <div className="negotiation-progress-header">轮次 {negotiationRound}/{negotiationMaxRounds}</div>
+                  <div className="negotiation-progress-header">{t('meeting.roundProgress', { current: negotiationRound, max: negotiationMaxRounds })}</div>
                   <div className="negotiation-progress-bar">
                     <div className="negotiation-progress-fill" style={{
                       width: `${negotiationTotal > 0 ? (negotiationAgreeCount / negotiationTotal) * 100 : 0}%`,
                       background: negotiationAgreeCount === negotiationTotal ? '#10b981' : 'var(--accent-color)'
                     }} />
                   </div>
-                  <div className="negotiation-progress-text">{negotiationAgreeCount}/{negotiationTotal} 同意</div>
+                  <div className="negotiation-progress-text">{t('meeting.negotiate.approved', { count: negotiationAgreeCount, total: negotiationTotal })}</div>
                 </div>
               )}
 
               {/* Negotiation result banner */}
               {negotiationResult && (
                 <div className={`negotiation-result negotiation-result-${negotiationResult}`}>
-                  <strong>{negotiationResult === 'consensus' ? '达成共识' : negotiationResult === 'majority' ? '多数同意' : '未达共识'}</strong>
-                  <span> - {negotiationAgreeCount}/{negotiationTotal} 同意</span>
+                  <strong>{negotiationResult === 'consensus' ? t('meeting.negotiate.consensus') : negotiationResult === 'majority' ? t('meeting.negotiate.majority') : t('meeting.negotiate.noconsensus')}</strong>
+                  <span> - {t('meeting.negotiate.approved', { count: negotiationAgreeCount, total: negotiationTotal })}</span>
                 </div>
               )}
 
               {sending && (
                 <div className="meeting-msg dept">
                   <div className="meeting-msg-meta">
-                    <span className="meeting-msg-sender">各部门思考中...</span>
+                    <span className="meeting-msg-sender">{t('meeting.deptThinking')}</span>
                   </div>
                   <div className="meeting-typing"><span></span><span></span><span></span></div>
                 </div>
@@ -643,19 +651,19 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                   className="meeting-input"
                   value={negotiationProposal}
                   onChange={e => setNegotiationProposal(e.target.value)}
-                  placeholder="输入需要各部门讨论的提案..."
+                  placeholder={t('meeting.negotiate.placeholder')}
                   rows={3}
                 />
                 <div className="meeting-negotiate-form-row">
                   <label>
-                    轮次:
+                    {t('meeting.negotiate.rounds')}:
                     <input type="number" min="1" max="5" value={negotiationRounds}
                       onChange={e => setNegotiationRounds(parseInt(e.target.value) || 3)}
                       style={{ width: '60px', marginLeft: '8px' }} />
                   </label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="meeting-btn" onClick={() => { setShowNegotiateForm(false); setNegotiationProposal('') }}>取消</button>
-                    <button className="meeting-btn create" onClick={startNegotiation} disabled={!negotiationProposal.trim()}>开始谈判</button>
+                    <button className="meeting-btn" onClick={() => { setShowNegotiateForm(false); setNegotiationProposal('') }}>{t('common.cancel')}</button>
+                    <button className="meeting-btn create" onClick={startNegotiation} disabled={!negotiationProposal.trim()}>{t('meeting.negotiate.start')}</button>
                   </div>
                 </div>
               </div>
@@ -668,14 +676,14 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                 value={text}
                 onChange={e => setText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="输入会议议题或指令..."
+                placeholder={t('meeting.inputPlaceholder')}
                 disabled={sending || negotiating}
               />
               {!showNegotiateForm && !negotiating && (
-                <button className="meeting-btn" onClick={() => setShowNegotiateForm(true)} title="发起谈判">谈判</button>
+                <button className="meeting-btn" onClick={() => setShowNegotiateForm(true)} title={t('meeting.negotiate')}>{t('meeting.negotiate')}</button>
               )}
               <button className="meeting-btn send" onClick={sendMessage} disabled={sending || !text.trim() || negotiating}>
-                {sending ? '...' : '发送'}
+                {sending ? '...' : t('common.send')}
               </button>
             </div>
           </>

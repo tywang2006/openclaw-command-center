@@ -41,7 +41,9 @@ function loadMeetingsFromDisk() {
       if (data.id && data.status === 'active') {
         meetings.set(data.id, data);
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[Meetings] Failed to parse ${file}:`, err.message);
+    }
   }
   console.log(`[Meetings] Loaded ${meetings.size} active meetings from disk`);
 }

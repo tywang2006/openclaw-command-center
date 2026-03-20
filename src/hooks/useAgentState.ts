@@ -64,9 +64,20 @@ let _streamingTexts = new Map<string, string>()
 let _streamingVersion = 0
 const _streamingListeners = new Set<() => void>()
 
-function _notifyStreamListeners() {
+let _streamNotifyTimer: ReturnType<typeof setTimeout> | null = null
+function _flushStreamNotify() {
+  if (_streamNotifyTimer) { clearTimeout(_streamNotifyTimer); _streamNotifyTimer = null }
   _streamingVersion++
   for (const fn of _streamingListeners) fn()
+}
+function _notifyStreamListeners() {
+  // Debounce: batch streaming notifications every 50ms to reduce re-renders during fast streaming
+  if (_streamNotifyTimer) return
+  _streamNotifyTimer = setTimeout(() => {
+    _streamNotifyTimer = null
+    _streamingVersion++
+    for (const fn of _streamingListeners) fn()
+  }, 50)
 }
 
 export function getStreamingSnapshot() { return _streamingTexts }
@@ -399,7 +410,7 @@ export function useAgentState() {
           if (data?.deptId && _streamingTexts.has(data.deptId)) {
             _streamingTexts = new Map(_streamingTexts)
             _streamingTexts.delete(data.deptId)
-            _notifyStreamListeners()
+            _flushStreamNotify()
           }
           // Handle both single-message format (from telegram.js/gateway events)
           // and multi-message format (from watcher.js session files)

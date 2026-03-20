@@ -545,6 +545,24 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.7.3] - 2026-03-20
+
+**i18n / 国际化**
+- MeetingRoom fully internationalized: 30+ hardcoded Chinese strings replaced with `t()` calls. Meeting room now works in English locale. 会议室完全国际化，30+硬编码中文替换为t()调用
+- Removed 5 superseded duplicate i18n keys (`ops.approvals.tab.*`, `ops.approvals.stats.tools/topTool/recentHour`). 移除5个废弃重复i18n键
+
+**Security / 安全**
+- WebSocket connection limit: fixed off-by-one (`> 10` to `>= 10`) and TOCTOU race (check before setting `_authenticated`). WS连接限制修复：越界错误和竞争条件
+
+**Fixed / 修复**
+- Gateway `_challengeTimer` leak: timer now properly cleared on connection close/disconnect. 网关挑战计时器泄漏修复
+- MeetingRoom `sendingTimeoutRef` cleanup on unmount (memory leak). 会议室发送超时引用卸载清理
+- ActivityTab `playbackRef` timeout cleanup on unmount (memory leak). 活动面板回放超时卸载清理
+- `loadMeetingsFromDisk()` now logs parse errors instead of silently swallowing them. 加载会议文件错误现在会记录日志
+
+**Performance / 性能**
+- Streaming text notifications debounced (50ms) to reduce re-renders during AI responses. 流式文本通知防抖50ms减少重渲染
+
 ### [1.7.2] - 2026-03-20
 
 **Security / 安全**

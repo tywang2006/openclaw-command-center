@@ -24,6 +24,13 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
   const [playbackState, setPlaybackState] = useState<{ playing: boolean; current: number; total: number; speed: number } | null>(null)
   const playbackRef = useRef<number | null>(null)
 
+  // Cleanup playback timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackRef.current !== null) clearTimeout(playbackRef.current)
+    }
+  }, [])
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight

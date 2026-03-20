@@ -284,19 +284,20 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
+      // Connection limit check (before marking authenticated to prevent TOCTOU race)
+      const authCount = [...wss.clients].filter(c => c._authenticated).length;
+      if (authCount >= 10) {
+        console.warn(`[WebSocket] Connection limit reached (${authCount}), rejecting`);
+        clearTimeout(authTimeout);
+        ws.close(1013, 'Max connections reached');
+        return;
+      }
+
       authenticated = true;
       ws._authenticated = true;
       ws._authToken = msg.token;
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
-
-      // Connection limit check
-      const authCount = [...wss.clients].filter(c => c._authenticated).length;
-      if (authCount > 10) {
-        console.warn(`[WebSocket] Connection limit reached (${authCount}), rejecting`);
-        ws.close(1013, 'Max connections reached');
-        return;
-      }
 
       console.log(`[WebSocket] Client authenticated from ${clientIp} (total: ${wss.clients.size})`);
 
