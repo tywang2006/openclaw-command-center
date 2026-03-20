@@ -545,6 +545,15 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.7.4] - 2026-03-20
+
+**Security / 安全**
+- VAPID push key file now written with mode 0600 (was world-readable). Push密钥文件权限改为0600
+- System-extras error responses no longer leak `error.message` (generic messages only). 系统扩展接口错误响应不再泄露error.message
+- Admin/credential endpoints rate-limited to 5 req/min (`/system/config`, `/system/shutdown`, `/integrations/config`, `/skills/install`). 管理/凭证端点限速5次/分钟
+- Audit log and notifications data moved from package-relative path to persistent `DATA_DIR` (survives npm updates). 审计日志和通知数据从包内路径迁移到持久DATA_DIR
+- File uploads/outputs paths moved to persistent `DATA_DIR/uploads` and `DATA_DIR/outputs`. 文件上传/输出路径迁移到持久DATA_DIR
+
 ### [1.7.3] - 2026-03-20
 
 **i18n / 国际化**

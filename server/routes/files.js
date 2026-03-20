@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { DATA_DIR } from '../utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,8 +16,8 @@ const router = express.Router();
 const execFileAsync = promisify(execFile);
 
 // ── Directories ──────────────────────────────────────────────
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
-const OUTPUTS_DIR = path.join(__dirname, '../../outputs');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const OUTPUTS_DIR = path.join(DATA_DIR, 'outputs');
 
 async function ensureDirs() {
   await fs.mkdir(UPLOADS_DIR, { recursive: true });

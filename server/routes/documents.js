@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import { DATA_DIR, BASE_PATH } from '../utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,8 +14,8 @@ const execFileAsync = promisify(execFile);
 
 // Allowed directories for document processing
 const ALLOWED_DIRS = [
-  path.resolve(path.join(__dirname, '../../uploads')),
-  path.resolve(path.join(__dirname, '../../departments')),
+  path.resolve(path.join(DATA_DIR, 'uploads')),
+  path.resolve(path.join(BASE_PATH, 'departments')),
 ];
 
 // Document processing endpoint

@@ -1,15 +1,12 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import crypto from 'node:crypto';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { DATA_DIR } from '../utils.js';
 
 const router = express.Router();
 
-const AUDIT_FILE = path.join(__dirname, '../../audit.jsonl');
+const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl');
 const MAX_ENTRIES = 500;
 
 let auditLog = [];

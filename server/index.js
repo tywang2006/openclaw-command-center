@@ -163,6 +163,20 @@ app.use('/api/voice/transcribe', heavyLimiter);
 app.use('/api/drive/upload', heavyLimiter);
 app.use('/api/drive/backup', heavyLimiter);
 
+// Strict rate limiting for admin/credential endpoints (5 req/min)
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin requests, please slow down' },
+});
+app.use('/api/system/config', adminLimiter);
+app.use('/api/system/shutdown', adminLimiter);
+app.use('/api/system/openclaw/update', adminLimiter);
+app.use('/api/integrations/config', adminLimiter);
+app.use('/api/skills/install', adminLimiter);
+
 // API routes
 app.use('/api', apiRoutes);
 app.use('/api', skillsRoutes);

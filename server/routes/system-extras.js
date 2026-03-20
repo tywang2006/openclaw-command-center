@@ -172,7 +172,7 @@ router.get('/system/sessions', (req, res) => {
     res.json({ sessions });
   } catch (error) {
     console.error('[SystemExtras] GET /system/sessions error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -218,7 +218,7 @@ router.get('/system/devices', (req, res) => {
     res.json({ devices: maskedDevices });
   } catch (error) {
     console.error('[SystemExtras] GET /system/devices error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -253,7 +253,7 @@ router.get('/departments/:id/persona', (req, res) => {
     res.json({ content });
   } catch (error) {
     console.error('[SystemExtras] GET /departments/:id/persona error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -291,7 +291,7 @@ router.put('/departments/:id/persona', (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('[SystemExtras] PUT /departments/:id/persona error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -404,7 +404,7 @@ router.post('/system/openclaw/update', async (req, res) => {
   } catch (error) {
     console.error('[SystemExtras] POST /system/openclaw/update error:', error);
     broadcast(`Update failed: ${error.message}`, true, true);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

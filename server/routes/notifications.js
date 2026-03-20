@@ -1,16 +1,12 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import crypto from 'node:crypto';
-import { safeWriteFileSync } from '../utils.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { DATA_DIR, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 
-const STORE_PATH = path.join(__dirname, '../../notifications.json');
+const STORE_PATH = path.join(DATA_DIR, 'notifications.json');
 const MAX_NOTIFICATIONS = 200;
 
 let notifications = [];

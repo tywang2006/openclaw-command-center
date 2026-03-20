@@ -27,7 +27,7 @@ function loadConfig() {
 function saveConfig() {
   const dir = path.dirname(CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  safeWriteFileSync(CONFIG_PATH, JSON.stringify({ vapidKeys, subscriptions }, null, 2));
+  safeWriteFileSync(CONFIG_PATH, JSON.stringify({ vapidKeys, subscriptions }, null, 2), { mode: 0o600 });
 }
 
 loadConfig();
