@@ -101,14 +101,21 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
   useEffect(() => {
     if (showSkillSection && availableSkills.length === 0 && !skillsLoading) {
       setSkillsLoading(true)
+      interface RawSkill {
+        slug: string
+        name?: string
+        tags?: string[]
+      }
       authedFetch('/api/skills')
         .then(r => r.json())
         .then(data => {
           if (Array.isArray(data.skills)) {
-            setAvailableSkills(data.skills.map((s: any) => ({ slug: s.slug, name: s.name || s.slug, tags: s.tags || [] })))
+            setAvailableSkills((data.skills as RawSkill[]).map((s) => ({ slug: s.slug, name: s.name || s.slug, tags: s.tags || [] })))
           }
         })
-        .catch(() => {})
+        .catch((err) => {
+          if (import.meta.env.DEV) console.warn('Fetch skills failed:', err);
+        })
         .finally(() => setSkillsLoading(false))
     }
   }, [showSkillSection])
@@ -127,10 +134,21 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
     if (!name.trim()) { setError(t('dept.error.nameRequired')); return }
     if (!isEdit && !id.trim()) { setError(t('dept.error.idRequired')); return }
 
+    interface DeptRequestBody {
+      id?: string
+      name: string
+      agent: string
+      icon: string
+      color: string
+      hue: number
+      skills: string[]
+      apiGroups: string[]
+      telegramTopicId?: number
+    }
     setSaving(true)
     setError('')
     try {
-      const body: any = { name, agent: agent || name, icon, color, hue, skills, apiGroups }
+      const body: DeptRequestBody = { name, agent: agent || name, icon, color, hue, skills, apiGroups }
       if (topicId) body.telegramTopicId = parseInt(topicId, 10)
 
       let res
@@ -152,8 +170,8 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Failed')
       onClose()
-    } catch (err: any) {
-      setError(err.message || 'Failed to save')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSaving(false)
     }

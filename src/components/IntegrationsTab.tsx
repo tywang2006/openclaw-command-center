@@ -142,15 +142,25 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     authedFetch('/api/integrations/config')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setIntegConfig(d) })
-      .catch(() => {})
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch integration config failed:', err);
+      })
   }, [])
 
   // Fetch system configs
   useEffect(() => {
-    authedFetch('/api/system/config/models').then(r => r.ok ? r.json() : null).then(d => { if (d) setModelConfig(d) }).catch(() => {})
-    authedFetch('/api/system/config/telegram').then(r => r.ok ? r.json() : null).then(d => { if (d) setTelegramConfig(d) }).catch(() => {})
-    authedFetch('/api/system/config/skills').then(r => r.ok ? r.json() : null).then(d => { if (d) setSkillsConfig(d.skills || []) }).catch(() => {})
-    authedFetch('/api/integrations/autobackup').then(r => r.ok ? r.json() : null).then(d => { if (d) setAutoBackupConfig(d) }).catch(() => {})
+    authedFetch('/api/system/config/models').then(r => r.ok ? r.json() : null).then(d => { if (d) setModelConfig(d) }).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch model config failed:', err);
+    })
+    authedFetch('/api/system/config/telegram').then(r => r.ok ? r.json() : null).then(d => { if (d) setTelegramConfig(d) }).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch telegram config failed:', err);
+    })
+    authedFetch('/api/system/config/skills').then(r => r.ok ? r.json() : null).then(d => { if (d) setSkillsConfig(d.skills || []) }).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch skills config failed:', err);
+    })
+    authedFetch('/api/integrations/autobackup').then(r => r.ok ? r.json() : null).then(d => { if (d) setAutoBackupConfig(d) }).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch auto backup config failed:', err);
+    })
   }, [])
 
   const toggle = (section: string) =>
@@ -193,7 +203,6 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setTestResult(null)
     try {
       const body = cleanFormForSave(configForm)
-      console.log('[IntegConfig] Saving', serviceId, Object.keys(body), 'serviceAccountKey type:', typeof body.serviceAccountKey)
       const res = await authedFetch(`/api/integrations/config/${serviceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -340,7 +349,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setSysSaving(true)
     setSysTestResult(null)
     try {
-      const body: any = {
+      const body: { primary: string; fallbacks: string[]; providers?: Record<string, { apiKey: string }> } = {
         primary: sysForm.primary,
         fallbacks: sysForm.fallbacks.split(',').map((s: string) => s.trim()).filter(Boolean),
       }
@@ -349,7 +358,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       if (Object.keys(provKeys).length > 0) {
         body.providers = {}
         for (const [id, key] of Object.entries(provKeys)) {
-          if (key) body.providers[id] = { apiKey: key }
+          if (key && typeof key === 'string') body.providers[id] = { apiKey: key }
         }
       }
       const res = await authedFetch('/api/system/config/models', {
@@ -392,7 +401,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setSysSaving(true)
     setSysTestResult(null)
     try {
-      const body: any = {
+      const body: Record<string, unknown> = {
         enabled: sysForm.enabled,
         dmPolicy: sysForm.dmPolicy,
         allowFrom: sysForm.allowFrom,

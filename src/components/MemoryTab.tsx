@@ -68,7 +68,8 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         setMemoryContent(content)
         setEditContent(content)
       })
-      .catch(() => {
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch memory failed:', err);
         setMemoryContent('')
         setEditContent('')
       })
@@ -103,7 +104,8 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         setPersonaContent(d.content || '')
         setPersonaEdit(d.content || '')
       })
-      .catch(() => {
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch persona failed:', err);
         setPersonaContent('')
         setPersonaEdit('')
       })
@@ -134,7 +136,9 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
 
   // Check drive status
   useEffect(() => {
-    authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch(() => {})
+    authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch drive status failed:', err);
+    })
   }, [])
 
   const handleSearch = useCallback(async () => {

@@ -15,6 +15,8 @@ import {
 import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './OfficeCanvas.css'
 
+const COLLAB_POLL_INTERVAL_MS = 60000
+
 // Initialize furniture catalog once at module load
 let catalogInitialized = false
 if (!catalogInitialized) {
@@ -194,9 +196,11 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
           activeCollabRef.current.set(key, { agents: [fromIdx, toIdx], color })
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch collaboration failed:', err);
+      })
   }, [departments])
-  useVisibilityInterval(fetchCollab, 60000, [fetchCollab])
+  useVisibilityInterval(fetchCollab, COLLAB_POLL_INTERVAL_MS, [fetchCollab])
 
   // Update selection
   useEffect(() => {
@@ -317,8 +321,6 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
 
       const depts = departmentsRef.current
 
-      console.log('[OfficeCanvas] Meeting event consumed:', event.type, event.meetingId)
-
       if (event.type === 'start') {
         if (processedMeetingsRef.current.has(event.meetingId)) return
         processedMeetingsRef.current.add(event.meetingId)
@@ -386,6 +388,10 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     let offscreen = document.createElement('canvas')
     let offCtx = offscreen.getContext('2d')!
 
+    // Frame rate limiting: cap at 60fps to avoid wasteful rendering on high refresh displays
+    const TARGET_FRAME_MS = 1000 / 60
+    let lastFrameTime = 0
+
     const render = (time: number) => {
       // Skip rendering when tab is hidden to save resources
       if (document.hidden) {
@@ -393,8 +399,15 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         return
       }
 
+      // Frame rate cap: skip if insufficient time has elapsed since last frame
+      if (lastFrameTime > 0 && time - lastFrameTime < TARGET_FRAME_MS) {
+        rafRef.current = requestAnimationFrame(render)
+        return
+      }
+
       const dt = lastTimeRef.current ? Math.min((time - lastTimeRef.current) / 1000, 0.1) : 0
       lastTimeRef.current = time
+      lastFrameTime = time
 
       if (officeStateRef.current) {
         officeStateRef.current.update(dt)
@@ -693,7 +706,6 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
 
           if (nearestDist <= 1) {
             // Click on desk/computer → open department chat
-            console.log('[OfficeCanvas] Clicked furniture near', nearestDept.name, '- opening chat')
             onSelectDept(nearestDept.id)
             // Trigger chat tab switch would be handled by parent component
           }

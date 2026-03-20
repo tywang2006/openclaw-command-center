@@ -3,7 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { safeWriteFileSync } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Replay');
 const router = express.Router();
 
 const REPLAYS_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '../../replays');
@@ -54,7 +56,7 @@ router.post('/start', (req, res) => {
     events: [],
   };
 
-  console.log(`[Replay] Started recording: ${recording.id}`);
+  log.info('Started recording', { id: recording.id, name: recording.name });
   res.json({ success: true, id: recording.id, name: recording.name });
 });
 
@@ -83,12 +85,12 @@ router.post('/stop', (req, res) => {
   try {
     safeWriteFileSync(filePath, JSON.stringify(replay, null, 2));
   } catch (err) {
-    console.error('[Replay] Failed to save:', err.message);
+    log.error('Failed to save replay', { error: err.message });
     recording = null;
     return res.status(500).json({ error: 'Failed to save replay' });
   }
 
-  console.log(`[Replay] Stopped recording: ${replay.id}, ${replay.eventCount} events, ${replay.durationMs}ms`);
+  log.info('Stopped recording', { id: replay.id, eventCount: replay.eventCount, durationMs: replay.durationMs });
   recording = null;
 
   res.json({

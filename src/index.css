@@ -17,6 +17,7 @@
   --bg-panel: #161619;
   --bg-card: #1e1e23;
   --bg-elevated: #28282f;
+  --bg-secondary: #1a1a20;
 
   /* Borders — neutral gray */
   --border-color: #3a3a42;
@@ -63,6 +64,16 @@
   --transition-fast: 80ms step-end;
   --transition-normal: 100ms ease;
   --transition-slow: 200ms ease;
+
+  /* Z-index layers */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-overlay: 200;
+  --z-drawer: 500;
+  --z-modal: 1000;
+  --z-toast: 2000;
+  --z-critical: 5000;
 }
 
 /* ---- Light Theme ---- */
@@ -71,6 +82,7 @@
   --bg-panel: #ffffff;
   --bg-card: #f8f8fa;
   --bg-elevated: #ededf0;
+  --bg-secondary: #e8e8ec;
 
   --border-color: #c8c8d0;
   --border-subtle: #dddde2;

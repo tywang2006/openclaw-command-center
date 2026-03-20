@@ -4,8 +4,46 @@ import path from 'path';
 import { OPENCLAW_HOME, CONFIG_PATH, getOpenClawConfig, safeWriteFileSync } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { getGateway } from '../gateway.js';
+import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('SystemConfig');
 const router = express.Router();
+
+// ================================================
+// Security: Config update whitelist
+// ================================================
+
+/**
+ * Keys that are allowed to be modified via the REST API.
+ * Sensitive infrastructure credentials (gateway URL, gateway auth token)
+ * must NOT be changeable remotely -- they should only be edited via
+ * direct file access on the server or through the CLI.
+ *
+ * This prevents an attacker who compromises the web auth from
+ * redirecting Gateway traffic to a malicious endpoint or stealing/replacing
+ * the gateway token.
+ */
+const GATEWAY_MUTABLE_FIELDS = new Set(['clientId', 'clientMode']);
+// gateway.url and gateway.auth.token are intentionally excluded
+
+/**
+ * Validate that a string value is safe for config storage.
+ * Rejects control characters and enforces a maximum length.
+ */
+function validateConfigString(value, fieldName, maxLen = 512) {
+  if (typeof value !== 'string') {
+    return `${fieldName} must be a string`;
+  }
+  if (value.length > maxLen) {
+    return `${fieldName} exceeds maximum length (${maxLen})`;
+  }
+  // Block control characters (except normal whitespace like \t \n \r)
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) {
+    return `${fieldName} contains invalid control characters`;
+  }
+  return null;
+}
 
 /**
  * Helper: Read openclaw.json
@@ -14,7 +52,7 @@ function readConfig() {
   try {
     return getOpenClawConfig();
   } catch (error) {
-    console.error('[SystemConfig] Error reading openclaw.json:', error.message);
+    log.error('Error reading openclaw.json: ' + error.message);
     return null;
   }
 }
@@ -29,7 +67,7 @@ async function writeConfig(data) {
     });
     return true;
   } catch (error) {
-    console.error('[SystemConfig] Error writing openclaw.json:', error.message);
+    log.error('Error writing openclaw.json: ' + error.message);
     return false;
   }
 }
@@ -72,37 +110,67 @@ router.get('/system/config/gateway', (req, res) => {
       stats,
     });
   } catch (error) {
-    console.error('[SystemConfig] GET /system/config/gateway error:', error);
+    log.error('GET /system/config/gateway error: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch gateway config' });
   }
 });
 
 /**
  * PUT /system/config/gateway
- * Update gateway URL and/or auth token
- * Body: { url?, token?, clientId?, clientMode? }
+ * Update non-sensitive gateway settings (clientId, clientMode).
+ * gateway.url and gateway.auth.token are NOT modifiable via API -- they must
+ * be changed via direct file edit or CLI to prevent remote credential hijacking.
+ * Body: { clientId?, clientMode? }
  */
 router.put('/system/config/gateway', async (req, res) => {
   try {
+    // Reject requests that attempt to modify protected fields
+    const protectedAttempts = [];
+    if (req.body.url !== undefined) protectedAttempts.push('url');
+    if (req.body.token !== undefined) protectedAttempts.push('token');
+    if (protectedAttempts.length > 0) {
+      recordAudit({
+        action: 'config:gateway:blocked',
+        target: 'gateway',
+        details: { rejectedFields: protectedAttempts },
+        ip: req.ip,
+      });
+      return res.status(403).json({
+        error: `Modifying ${protectedAttempts.join(', ')} via API is not allowed. Edit openclaw.json directly on the server or use the CLI.`,
+      });
+    }
+
+    // Only allow whitelisted fields
+    const allowedUpdates = {};
+    for (const [key, value] of Object.entries(req.body)) {
+      if (!GATEWAY_MUTABLE_FIELDS.has(key)) {
+        return res.status(400).json({ error: `Unknown or disallowed field: ${key}` });
+      }
+      const err = validateConfigString(value, key, 128);
+      if (err) return res.status(400).json({ error: err });
+      allowedUpdates[key] = value;
+    }
+
+    if (Object.keys(allowedUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
 
     if (!config.gateway) config.gateway = {};
-    if (!config.gateway.auth) config.gateway.auth = {};
 
-    const { url, token, clientId, clientMode } = req.body;
-    if (url !== undefined) config.gateway.url = url;
-    if (token !== undefined) config.gateway.auth.token = token;
-    if (clientId !== undefined) config.gateway.clientId = clientId;
-    if (clientMode !== undefined) config.gateway.clientMode = clientMode;
+    if (allowedUpdates.clientId !== undefined) config.gateway.clientId = allowedUpdates.clientId;
+    if (allowedUpdates.clientMode !== undefined) config.gateway.clientMode = allowedUpdates.clientMode;
 
     if (!await writeConfig(config)) {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
+    recordAudit({ action: 'config:gateway', target: 'gateway', details: { updated: Object.keys(allowedUpdates) }, ip: req.ip });
     res.json({ success: true, hint: 'Restart the server for changes to take effect.' });
   } catch (error) {
-    console.error('[SystemConfig] PUT /system/config/gateway error:', error);
+    log.error('PUT /system/config/gateway error: ' + error.message);
     res.status(500).json({ error: 'Failed to update gateway config' });
   }
 });
@@ -160,7 +228,7 @@ router.get('/system/config/models', (req, res) => {
       fallbacks: defaults.fallbacks || [],
     });
   } catch (error) {
-    console.error('[SystemConfig] GET /system/config/models error:', error);
+    log.error('GET /system/config/models error: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch model config' });
   }
 });
@@ -172,6 +240,14 @@ router.get('/system/config/models', (req, res) => {
  */
 router.put('/system/config/models', async (req, res) => {
   try {
+    // Reject unknown top-level keys
+    const ALLOWED_MODEL_KEYS = new Set(['primary', 'fallbacks', 'providers']);
+    for (const key of Object.keys(req.body)) {
+      if (!ALLOWED_MODEL_KEYS.has(key)) {
+        return res.status(400).json({ error: `Unknown field: ${key}` });
+      }
+    }
+
     const config = readConfig();
     if (!config) return res.status(500).json({ error: 'Failed to read config' });
 
@@ -183,26 +259,48 @@ router.put('/system/config/models', async (req, res) => {
     if (!config.agents.defaults.model) config.agents.defaults.model = {};
 
     if (primary !== undefined) {
+      const err = validateConfigString(primary, 'primary', 256);
+      if (err) return res.status(400).json({ error: err });
       config.agents.defaults.model.primary = primary;
     }
     if (fallbacks !== undefined) {
       if (!Array.isArray(fallbacks)) {
         return res.status(400).json({ error: 'fallbacks must be an array' });
       }
+      for (const fb of fallbacks) {
+        const err = validateConfigString(fb, 'fallback entry', 256);
+        if (err) return res.status(400).json({ error: err });
+      }
       config.agents.defaults.model.fallbacks = fallbacks;
     }
 
-    // Update provider keys
+    // Update provider keys -- only apiKey and baseUrl for existing providers
     if (providers && typeof providers === 'object') {
+      if (Array.isArray(providers)) {
+        return res.status(400).json({ error: 'providers must be an object, not an array' });
+      }
       if (!config.models) config.models = {};
       if (!config.models.providers) config.models.providers = {};
 
+      const ALLOWED_PROVIDER_FIELDS = new Set(['apiKey', 'baseUrl']);
       for (const [id, updates] of Object.entries(providers)) {
         if (!config.models.providers[id]) continue;
+        if (typeof updates !== 'object' || updates === null || Array.isArray(updates)) {
+          return res.status(400).json({ error: `Provider "${id}" updates must be an object` });
+        }
+        for (const field of Object.keys(updates)) {
+          if (!ALLOWED_PROVIDER_FIELDS.has(field)) {
+            return res.status(400).json({ error: `Unknown provider field: ${field}` });
+          }
+        }
         if (updates.apiKey !== undefined) {
+          const err = validateConfigString(updates.apiKey, `providers.${id}.apiKey`, 1024);
+          if (err) return res.status(400).json({ error: err });
           config.models.providers[id].apiKey = updates.apiKey;
         }
         if (updates.baseUrl !== undefined) {
+          const err = validateConfigString(updates.baseUrl, `providers.${id}.baseUrl`, 1024);
+          if (err) return res.status(400).json({ error: err });
           config.models.providers[id].baseUrl = updates.baseUrl;
         }
       }
@@ -212,9 +310,10 @@ router.put('/system/config/models', async (req, res) => {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
+    recordAudit({ action: 'config:models', target: 'models', details: { primary, fallbackCount: fallbacks?.length }, ip: req.ip });
     res.json({ success: true });
   } catch (error) {
-    console.error('[SystemConfig] PUT /system/config/models error:', error);
+    log.error('PUT /system/config/models error: ' + error.message);
     res.status(500).json({ error: 'Failed to update model config' });
   }
 });
@@ -265,7 +364,7 @@ router.post('/system/config/models/provider', async (req, res) => {
 
     res.json({ success: true, fullModelId: `${id}/${model.id}` });
   } catch (error) {
-    console.error('[SystemConfig] POST /system/config/models/provider error:', error);
+    log.error('POST /system/config/models/provider error: ' + error.message);
     res.status(500).json({ error: 'Failed to add provider' });
   }
 });
@@ -311,7 +410,7 @@ router.post('/system/config/models/provider/:providerId/model', async (req, res)
 
     res.json({ success: true, fullModelId: `${providerId}/${id}` });
   } catch (error) {
-    console.error('[SystemConfig] POST model error:', error);
+    log.error('POST model error: ' + error.message);
     res.status(500).json({ error: 'Failed to add model' });
   }
 });
@@ -350,7 +449,7 @@ router.delete('/system/config/models/provider/:providerId', async (req, res) => 
 
     res.json({ success: true });
   } catch (error) {
-    console.error('[SystemConfig] DELETE provider error:', error);
+    log.error('DELETE provider error: ' + error.message);
     res.status(500).json({ error: 'Failed to delete provider' });
   }
 });
@@ -381,9 +480,10 @@ router.post('/system/config/models/test', async (req, res) => {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         res.json({ success: true, message: `${provider} API key is valid` });
       } else if (prov.api === 'google-generative-ai') {
-        // Google: list models
+        // Google: list models (use header instead of URL param to avoid key leakage in logs)
         const response = await fetch(
-          `${prov.baseUrl}/v1beta/models?key=${prov.apiKey}`
+          `${prov.baseUrl}/v1beta/models`,
+          { headers: { 'x-goog-api-key': prov.apiKey } }
         );
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         res.json({ success: true, message: `${provider} API key is valid` });
@@ -394,7 +494,7 @@ router.post('/system/config/models/test', async (req, res) => {
       res.status(502).json({ error: `API test failed: ${error.message}` });
     }
   } catch (error) {
-    console.error('[SystemConfig] POST /system/config/models/test error:', error);
+    log.error('POST /system/config/models/test error: ' + error.message);
     res.status(500).json({ error: 'Test failed' });
   }
 });
@@ -442,10 +542,10 @@ router.post('/system/config/models/sync', async (req, res) => {
             });
           }
         } else if (prov.api === 'google-generative-ai') {
-          // Google Generative AI
+          // Google Generative AI (use header instead of URL param to avoid key leakage in logs)
           const response = await fetch(
-            `${prov.baseUrl}/v1beta/models?key=${prov.apiKey}`,
-            { signal: AbortSignal.timeout(15000) }
+            `${prov.baseUrl}/v1beta/models`,
+            { headers: { 'x-goog-api-key': prov.apiKey }, signal: AbortSignal.timeout(15000) }
           );
           if (!response.ok) throw new Error(`API returned ${response.status}`);
           const data = await response.json();
@@ -497,7 +597,7 @@ router.post('/system/config/models/sync', async (req, res) => {
 
     res.json({ success: true, results });
   } catch (error) {
-    console.error('[SystemConfig] POST /system/config/models/sync error:', error);
+    log.error('POST /system/config/models/sync error: ' + error.message);
     res.status(500).json({ error: 'Sync failed' });
   }
 });
@@ -539,7 +639,7 @@ router.get('/system/config/telegram', (req, res) => {
       groupPolicy: tg.groupPolicy || null,
     });
   } catch (error) {
-    console.error('[SystemConfig] GET /system/config/telegram error:', error);
+    log.error('GET /system/config/telegram error: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch telegram config' });
   }
 });
@@ -577,7 +677,7 @@ router.put('/system/config/telegram', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('[SystemConfig] PUT /system/config/telegram error:', error);
+    log.error('PUT /system/config/telegram error: ' + error.message);
     res.status(500).json({ error: 'Failed to update telegram config' });
   }
 });
@@ -595,7 +695,9 @@ router.post('/system/config/telegram/test', async (req, res) => {
     if (!botToken) return res.status(400).json({ error: 'No bot token configured' });
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, {
+        signal: AbortSignal.timeout(30000)
+      });
       const data = await response.json();
       if (data.ok) {
         res.json({ success: true, message: `Bot: @${data.result.username} (${data.result.first_name})` });
@@ -606,7 +708,7 @@ router.post('/system/config/telegram/test', async (req, res) => {
       res.status(502).json({ error: `Telegram test failed: ${error.message}` });
     }
   } catch (error) {
-    console.error('[SystemConfig] POST /system/config/telegram/test error:', error);
+    log.error('POST /system/config/telegram/test error: ' + error.message);
     res.status(500).json({ error: 'Test failed' });
   }
 });
@@ -646,7 +748,7 @@ router.put('/system/config/plugins/:id', async (req, res) => {
 
     res.json({ success: true, id, enabled });
   } catch (error) {
-    console.error('[SystemConfig] PUT /system/config/plugins/:id error:', error);
+    log.error('PUT /system/config/plugins/:id error: ' + error.message);
     res.status(500).json({ error: 'Failed to update plugin config' });
   }
 });
@@ -677,7 +779,7 @@ router.get('/system/config/skills', (req, res) => {
 
     res.json({ skills });
   } catch (error) {
-    console.error('[SystemConfig] GET /system/config/skills error:', error);
+    log.error('GET /system/config/skills error: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch skill config' });
   }
 });
@@ -721,7 +823,7 @@ router.put('/system/config/skills/:slug', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('[SystemConfig] PUT /system/config/skills/:slug error:', error);
+    log.error('PUT /system/config/skills/:slug error: ' + error.message);
     res.status(500).json({ error: 'Failed to update skill config' });
   }
 });
@@ -760,9 +862,10 @@ router.post('/system/config/skills/:slug/test', async (req, res) => {
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         res.json({ success: true, message: 'Tavily API key is valid' });
       } else if (slug.includes('nano-banana') || slug.includes('google')) {
-        // Google AI: list models
+        // Google AI: list models (use header instead of URL param to avoid key leakage in logs)
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+          `https://generativelanguage.googleapis.com/v1beta/models`,
+          { headers: { 'x-goog-api-key': apiKey } }
         );
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         res.json({ success: true, message: 'Google AI API key is valid' });
@@ -773,7 +876,7 @@ router.post('/system/config/skills/:slug/test', async (req, res) => {
       res.status(502).json({ error: `API test failed: ${error.message}` });
     }
   } catch (error) {
-    console.error('[SystemConfig] POST /system/config/skills/:slug/test error:', error);
+    log.error('POST /system/config/skills/:slug/test error: ' + error.message);
     res.status(500).json({ error: 'Test failed' });
   }
 });

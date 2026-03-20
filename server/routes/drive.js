@@ -5,7 +5,10 @@ import { Readable } from 'stream';
 import { google } from 'googleapis';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
+import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Drive');
 const router = express.Router();
 
 const VALID_FOLDER_ID = /^[a-zA-Z0-9_-]+$/;
@@ -21,7 +24,7 @@ function writeJsonFile(filePath, data) {
     safeWriteFileSync(filePath, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
-    console.error(`[Drive] Error writing JSON file ${filePath}:`, error.message);
+    log.error(`Error writing JSON file ${filePath}: ` + error.message);
     return false;
   }
 }
@@ -87,7 +90,7 @@ function getDriveClient(driveConfig) {
           ? (clientCreds.installed || clientCreds.web || clientCreds)
           : {};
         if (!cred.client_id || !cred.client_secret) {
-          console.error('[Drive] OAuth credentials missing client_id or client_secret');
+          log.error('OAuth credentials missing client_id or client_secret');
           throw new Error('Invalid OAuth credentials');
         }
         const oauth2 = new google.auth.OAuth2(cred.client_id, cred.client_secret);
@@ -99,7 +102,7 @@ function getDriveClient(driveConfig) {
         return google.drive({ version: 'v3', auth: oauth2 });
       }
     } catch (e) {
-      console.warn('[Drive] OAuth token load failed, falling back to service account:', e.message);
+      log.warn('OAuth token load failed, falling back to service account: ' + e.message);
     }
   }
 
@@ -118,7 +121,7 @@ async function getOrCreateBackupFolder(drive, driveConfig) {
   let folderId = driveConfig.folderId;
 
   if (folderId && !VALID_FOLDER_ID.test(folderId)) {
-    console.error('[Drive] Invalid folder ID format:', folderId);
+    log.error('Invalid folder ID format:', folderId);
     throw new Error('Invalid folder ID format');
   }
 
@@ -128,7 +131,7 @@ async function getOrCreateBackupFolder(drive, driveConfig) {
       await drive.files.get({ fileId: folderId });
       return folderId;
     } catch (error) {
-      console.log('[Drive] Folder not found, creating new one');
+      log.info('Folder not found, creating new one');
       folderId = null;
     }
   }
@@ -167,7 +170,7 @@ router.get('/drive/status', (req, res) => {
       folderId: driveConfig.folderId || null
     });
   } catch (error) {
-    console.error('[Drive] Error in GET /drive/status:', error);
+    log.error('Error in GET /drive/status: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch drive status' });
   }
 });
@@ -226,8 +229,9 @@ router.post('/drive/upload', async (req, res) => {
         fields: 'id, name, webViewLink'
       });
 
-      console.log(`[Drive] Uploaded file: ${filename} (${file.data.id})`);
+      log.info(`Uploaded file: ${filename} (${file.data.id})`);
 
+      recordAudit({ action: 'drive:upload', target: filename, details: { fileId: file.data.id }, ip: req.ip });
       res.json({
         success: true,
         fileId: file.data.id,
@@ -235,11 +239,11 @@ router.post('/drive/upload', async (req, res) => {
         webViewLink: file.data.webViewLink
       });
     } catch (error) {
-      console.error('[Drive] Upload failed:', error);
+      log.error('Upload failed: ' + error.message);
       res.status(502).json({ error: 'Failed to upload to Drive', detail: error.message });
     }
   } catch (error) {
-    console.error('[Drive] Error in POST /drive/upload:', error);
+    log.error('Error in POST /drive/upload: ' + error.message);
     res.status(500).json({ error: 'Failed to upload file' });
   }
 });
@@ -347,16 +351,17 @@ router.post('/drive/backup', async (req, res) => {
           fileName: file.data.name
         });
 
-        console.log(`[Drive] Backed up ${id}: ${file.data.id}`);
+        log.info(`Backed up ${id}: ${file.data.id}`);
       }
 
+      recordAudit({ action: 'drive:backup', target: 'all', details: { count: files.length }, ip: req.ip });
       res.json({ success: true, files });
     } catch (error) {
-      console.error('[Drive] Backup failed:', error);
+      log.error('Backup failed: ' + error.message);
       res.status(502).json({ error: 'Failed to backup to Drive', detail: error.message });
     }
   } catch (error) {
-    console.error('[Drive] Error in POST /drive/backup:', error);
+    log.error('Error in POST /drive/backup: ' + error.message);
     res.status(500).json({ error: 'Failed to backup files' });
   }
 });
@@ -405,11 +410,11 @@ router.get('/drive/files', async (req, res) => {
 
       res.json({ files });
     } catch (error) {
-      console.error('[Drive] List files failed:', error);
+      log.error('List files failed: ' + error.message);
       res.status(502).json({ error: 'Failed to list Drive files', detail: error.message });
     }
   } catch (error) {
-    console.error('[Drive] Error in GET /drive/files:', error);
+    log.error('Error in GET /drive/files: ' + error.message);
     res.status(500).json({ error: 'Failed to list files' });
   }
 });

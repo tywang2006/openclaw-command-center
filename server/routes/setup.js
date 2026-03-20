@@ -5,18 +5,59 @@ import path from 'path';
 import { OPENCLAW_HOME, BASE_PATH, CONFIG_PATH, getConfigValue, safeWriteFileSync } from '../utils.js';
 import { getGateway } from '../gateway.js';
 import { isPasswordConfigured } from '../auth.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Setup');
 const router = Router();
 
 const DEPT_CONFIG = path.join(BASE_PATH, 'departments', 'config.json');
 const DEPT_STATUS = path.join(BASE_PATH, 'departments', 'status.json');
 const BULLETIN = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
 
+// Rate limit for setup endpoints — 10 requests per minute per IP.
+// Prevents brute-force or enumeration attacks on unauthenticated setup routes.
+const setupCallCounts = new Map();
+const SETUP_RATE_WINDOW_MS = 60 * 1000;
+const SETUP_RATE_MAX = 10;
+
+// Cleanup stale rate limit entries every 60s
+setInterval(() => {
+  const cutoff = Date.now() - SETUP_RATE_WINDOW_MS;
+  for (const [ip, entry] of setupCallCounts) {
+    if (entry.windowStart < cutoff) setupCallCounts.delete(ip);
+  }
+}, SETUP_RATE_WINDOW_MS);
+
+function setupRateLimit(req, res, next) {
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  const now = Date.now();
+  let entry = setupCallCounts.get(ip);
+
+  if (!entry || now - entry.windowStart > SETUP_RATE_WINDOW_MS) {
+    entry = { windowStart: now, count: 0 };
+    setupCallCounts.set(ip, entry);
+  }
+  entry.count++;
+
+  if (entry.count > SETUP_RATE_MAX) {
+    return res.status(429).json({ error: 'Too many setup requests, please slow down' });
+  }
+  next();
+}
+
+router.use('/setup', setupRateLimit);
+
 /**
  * GET /api/setup/status
- * Check whether OpenClaw is installed and configured
+ * Check whether OpenClaw is installed and configured.
+ * If the system is already initialized (password file exists), return
+ * only a minimal { ready: true } response to prevent information disclosure.
  */
 router.get('/setup/status', (req, res) => {
+  // If already initialized, block detailed status to unauthenticated callers
+  if (isPasswordConfigured()) {
+    return res.json({ ready: true, initialized: true });
+  }
   const status = checkSetupStatus();
   res.json(status);
 });
@@ -46,7 +87,9 @@ router.post('/setup/install', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
     wss?.clients?.forEach(c => {
-      if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {}
+      if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {
+        // client disconnected — expected
+      }
     });
   };
 
@@ -102,7 +145,7 @@ router.post('/setup/install', async (req, res) => {
     broadcast('done', 'OpenClaw setup complete! Reloading...', true);
     res.json({ success: true, message: 'Setup complete' });
   } catch (err) {
-    console.error('[Setup] Run failed:', err);
+    log.error('Setup run failed', { error: err.message });
     broadcast('error', 'Setup failed. Check server logs for details.', true, true);
     res.status(500).json({ error: 'Setup failed' });
   }
@@ -119,7 +162,9 @@ function checkSetupStatus() {
     }).trim();
     cliInstalled = true;
     cliVersion = result;
-  } catch {}
+  } catch {
+    // CLI not found — expected on first run
+  }
 
   const configExists = fs.existsSync(CONFIG_PATH);
   const deptConfigExists = fs.existsSync(DEPT_CONFIG);
@@ -130,7 +175,9 @@ function checkSetupStatus() {
   if (configExists) {
     try {
       gatewayToken = !!getConfigValue('gateway.auth.token');
-    } catch {}
+    } catch {
+      // Config read failed — non-critical
+    }
   }
 
   // Config + departments + gateway token = system is set up.

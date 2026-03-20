@@ -2,7 +2,9 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { BASE_PATH } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Search');
 const router = express.Router();
 
 const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
@@ -119,7 +121,7 @@ router.get('/search', (req, res) => {
             }
           }
         } catch (err) {
-          console.error('[Search] Chat search error:', err.message);
+          log.error('Chat search error: ' + err.message);
         }
       }
     }
@@ -134,7 +136,7 @@ router.get('/search', (req, res) => {
 
     res.json({ results: results.slice(0, limit), total: results.length, query: q });
   } catch (error) {
-    console.error('[Search] Error:', error);
+    log.error('Error: ' + error.message);
     res.status(500).json({ error: 'Search failed' });
   }
 });

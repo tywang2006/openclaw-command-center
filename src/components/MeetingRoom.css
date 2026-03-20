@@ -135,7 +135,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -411,8 +411,8 @@
 }
 
 .action-priority.medium {
-  color: #f0a030;
-  border-color: #f0a030;
+  color: var(--warning);
+  border-color: var(--warning);
 }
 
 .action-priority.low {
@@ -505,7 +505,7 @@
   font-size: 11px;
   text-transform: uppercase;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -569,8 +569,8 @@
 
 .negotiation-result-consensus {
   background: rgba(16, 185, 129, 0.1);
-  border: 2px solid #10b981;
-  color: #10b981;
+  border: 2px solid var(--success);
+  color: var(--success);
 }
 
 .negotiation-result-majority {
@@ -581,8 +581,8 @@
 
 .negotiation-result-no-consensus {
   background: rgba(239, 68, 68, 0.1);
-  border: 2px solid #ef4444;
-  color: #ef4444;
+  border: 2px solid var(--danger);
+  color: var(--danger);
 }
 
 .negotiation-system-msg {

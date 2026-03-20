@@ -254,7 +254,7 @@
 }
 
 [data-theme="light"] .ops-activity-stat-value {
-  color: #0066cc;
+  color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-activity-time,
@@ -276,12 +276,12 @@
 
 [data-theme="light"] .ops-activity-export:hover:not(:disabled),
 [data-theme="light"] .ops-activity-load-more button:hover:not(:disabled) {
-  background: #0066cc;
-  border-color: #0066cc;
+  background: var(--accent-color);
+  border-color: var(--accent-color);
   color: #fff;
 }
 
 [data-theme="light"] .ops-activity-filter-group select:focus {
-  border-color: #0066cc;
-  box-shadow: 0 0 0 1px #0066cc;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-color);
 }

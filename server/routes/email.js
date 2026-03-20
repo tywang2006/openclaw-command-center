@@ -4,7 +4,9 @@ import path from 'path';
 import { BASE_PATH, readJsonFile } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
 import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Email');
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
@@ -59,7 +61,7 @@ async function createTransporter(gmailConfig) {
       await transporter.verify();
       return transporter;
     } catch (err) {
-      console.log(`[Email] Port ${cfg.port} failed: ${err.message}`);
+      log.info(`Port ${cfg.port} failed: ${err.message}`);
     }
   }
   throw new Error('Cannot connect to Gmail SMTP on any port');
@@ -74,6 +76,15 @@ function isValidEmail(email) {
 }
 
 /**
+ * Helper: Extract domain from email address
+ */
+function getDomain(email) {
+  if (!email || typeof email !== 'string') return null;
+  const parts = email.split('@');
+  return parts.length === 2 ? parts[1].toLowerCase() : null;
+}
+
+/**
  * Helper: Get allowed email domains from config
  */
 function getAllowedDomains() {
@@ -82,13 +93,63 @@ function getAllowedDomains() {
   if (config?.gmail?.allowedDomains && Array.isArray(config.gmail.allowedDomains)) {
     return config.gmail.allowedDomains.map(d => d.toLowerCase());
   }
-  // Default: only allow sending to the sender's own domain
-  const gmailConfig = config?.gmail || {};
-  if (gmailConfig.email) {
-    const domain = gmailConfig.email.split('@')[1];
-    if (domain) return [domain.toLowerCase()];
-  }
+  // Default: empty array (allow all for backward compatibility)
   return [];
+}
+
+/**
+ * Helper: Validate recipient addresses against domain whitelist
+ * Returns { valid: boolean, error?: string }
+ */
+function validateRecipients(to, cc, bcc) {
+  const allowedDomains = getAllowedDomains();
+
+  // Parse recipients (support comma-separated lists)
+  const parseEmails = (field) => {
+    if (!field) return [];
+    if (typeof field === 'string') {
+      return field.split(',').map(e => e.trim()).filter(e => e);
+    }
+    if (Array.isArray(field)) {
+      return field.map(e => String(e).trim()).filter(e => e);
+    }
+    return [];
+  };
+
+  const toList = parseEmails(to);
+  const ccList = parseEmails(cc);
+  const bccList = parseEmails(bcc);
+  const allRecipients = [...toList, ...ccList, ...bccList];
+
+  // Check max recipients limit
+  if (allRecipients.length === 0) {
+    return { valid: false, error: 'At least one recipient is required' };
+  }
+  if (allRecipients.length > 10) {
+    return { valid: false, error: `Too many recipients (max 10, got ${allRecipients.length})` };
+  }
+
+  // Validate email format
+  for (const email of allRecipients) {
+    if (!isValidEmail(email)) {
+      return { valid: false, error: `Invalid email address: ${email}` };
+    }
+  }
+
+  // Validate against domain whitelist (only if configured)
+  if (allowedDomains.length > 0) {
+    for (const email of allRecipients) {
+      const domain = getDomain(email);
+      if (!domain || !allowedDomains.includes(domain)) {
+        return {
+          valid: false,
+          error: `Recipient domain not allowed: ${email}. Allowed domains: ${allowedDomains.join(', ')}`
+        };
+      }
+    }
+  }
+
+  return { valid: true };
 }
 
 /**
@@ -106,7 +167,7 @@ router.get('/email/status', (req, res) => {
       email: gmailConfig.email || null
     });
   } catch (error) {
-    console.error('[Email] Error in GET /email/status:', error);
+    log.error(`Error in GET /email/status: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch email status' });
   }
 });
@@ -126,7 +187,7 @@ router.post('/email/test', async (req, res) => {
     const transporter = await createTransporter(gmailConfig);
       res.json({ success: true, message: 'Gmail connection successful' });
   } catch (error) {
-    console.error('[Email] Error in POST /email/test:', error);
+    log.error(`Error in POST /email/test: ${error.message}`);
     res.status(502).json({ error: 'Gmail connection failed', detail: error.message });
   }
 });
@@ -134,34 +195,26 @@ router.post('/email/test', async (req, res) => {
 /**
  * POST /email/send
  * Send email via Gmail
- * Body: { to, subject, body, html?, attachments? }
+ * Body: { to, cc?, bcc?, subject, body, html?, attachments? }
  */
 router.post('/email/send', async (req, res) => {
   try {
-    const { to, subject, body, html, attachments } = req.body;
+    const { to, cc, bcc, subject, body, html, attachments } = req.body;
 
-    // Validation
-    if (!to || !isValidEmail(to)) {
-      return res.status(400).json({ error: 'Valid recipient email is required' });
-    }
-
+    // Validate subject
     if (!subject || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
 
+    // Validate body
     if (!body && !html) {
       return res.status(400).json({ error: 'Email body or html content is required' });
     }
 
-    // Domain whitelist check
-    const allowedDomains = getAllowedDomains();
-    if (allowedDomains.length > 0) {
-      const recipientDomain = to.split('@')[1]?.toLowerCase();
-      if (!recipientDomain || !allowedDomains.includes(recipientDomain)) {
-        return res.status(403).json({
-          error: `Recipient domain not allowed. Allowed domains: ${allowedDomains.join(', ')}`,
-        });
-      }
+    // Validate recipients (format, count, domain whitelist)
+    const validation = validateRecipients(to, cc, bcc);
+    if (!validation.valid) {
+      return res.status(403).json({ error: validation.error });
     }
 
     const gmailConfig = getGmailConfig();
@@ -184,6 +237,9 @@ router.post('/email/send', async (req, res) => {
       text: body,
     };
 
+    if (cc) mailOptions.cc = cc;
+    if (bcc) mailOptions.bcc = bcc;
+
     if (html) {
       mailOptions.html = sanitizeHtml(html);
     }
@@ -198,15 +254,16 @@ router.post('/email/send', async (req, res) => {
 
     try {
       const info = await transporter.sendMail(mailOptions);
-      console.log(`[Email] Sent email to ${to}: ${info.messageId}`);
-      recordAudit({ action: 'email:send', target: to, details: { subject }, ip: req.ip });
+      const recipientCount = [to, cc, bcc].filter(Boolean).join(',').split(',').length;
+      log.info(`Sent email to ${recipientCount} recipient(s): ${info.messageId}`);
+      recordAudit({ action: 'email:send', target: to, details: { subject, cc, bcc, recipientCount }, ip: req.ip });
       res.json({ success: true, messageId: info.messageId });
     } catch (error) {
-      console.error('[Email] Failed to send email:', error);
+      log.error(`Failed to send email: ${error.message}`);
       res.status(502).json({ error: 'Failed to send email', detail: error.message });
     }
   } catch (error) {
-    console.error('[Email] Error in POST /email/send:', error);
+    log.error(`Error in POST /email/send: ${error.message}`);
     res.status(500).json({ error: 'Failed to send email' });
   }
 });

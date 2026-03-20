@@ -1,4 +1,8 @@
 // Stub file for vscode API compatibility
 // This is not used in the command-center context but needed for build compatibility
 
-export const vscode: any = null
+interface VsCodeApi {
+  postMessage: (message: { type: string; [key: string]: unknown }) => void
+}
+
+export const vscode: VsCodeApi | null = null

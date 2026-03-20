@@ -3,6 +3,8 @@ import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
 import './SkillsTab.css'
 
+const STATUS_DISPLAY_MS = 3000
+
 interface SkillSummary {
   slug: string
   name: string
@@ -139,7 +141,7 @@ export default function SkillsTab() {
   // Clear status after 3s
   useEffect(() => {
     if (!status) return
-    const t = setTimeout(() => setStatus(null), 3000)
+    const t = setTimeout(() => setStatus(null), STATUS_DISPLAY_MS)
     return () => clearTimeout(t)
   }, [status])
 

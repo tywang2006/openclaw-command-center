@@ -5,7 +5,9 @@ import { getSessionKey, wrapWithContext } from '../agent.js';
 import fs from 'fs';
 import path from 'path';
 import { BASE_PATH } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('ChatRetry');
 const router = express.Router();
 
 /**
@@ -60,7 +62,7 @@ router.post('/:id/chat/retry', async (req, res) => {
     const sessionKey = getSessionKey(deptId);
     const wrappedMessage = wrapWithContext(deptId, lastUserMessage);
 
-    console.log(`[ChatRetry] Retrying message for ${deptId}: "${lastUserMessage.substring(0, 50)}..."`);
+    log.info('Retrying message', { deptId, messagePreview: lastUserMessage.substring(0, 50) });
 
     const startMs = Date.now();
     try {
@@ -74,7 +76,7 @@ router.post('/:id/chat/retry', async (req, res) => {
           recordTokens(deptId, result.usage);
         }
 
-        console.log(`[ChatRetry] Retry successful for ${deptId}, ${result.text.length} chars`);
+        log.info('Retry successful', { deptId, charCount: result.text.length });
         return res.json({
           success: true,
           reply: result.text,
@@ -88,7 +90,7 @@ router.post('/:id/chat/retry', async (req, res) => {
       });
     } catch (err) {
       const durationMs = Date.now() - startMs;
-      console.error(`[ChatRetry] Retry failed for ${deptId}:`, err.message);
+      log.error('Retry failed', { deptId, error: err.message });
       recordChat(deptId, durationMs, true);
       return res.status(502).json({
         error: 'Failed to retry chat',
@@ -96,7 +98,7 @@ router.post('/:id/chat/retry', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error(`Error in POST /api/departments/:id/chat/retry:`, error);
+    log.error('Error in POST /api/departments/:id/chat/retry', { error: error.message });
     res.status(500).json({ error: 'Failed to retry chat' });
   }
 });

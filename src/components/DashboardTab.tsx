@@ -251,8 +251,8 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
     setBroadcastInput('')
   }
 
-  // Mini charts
-  const WorkloadChart = () => {
+  // Mini charts — memoized to avoid full DOM rebuild on every render
+  const workloadChart = useMemo(() => {
     if (!metrics?.departments.length) return null
     const maxMsgs = Math.max(...metrics.departments.map(d => d.messages), 1)
     return (
@@ -273,9 +273,9 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         })}
       </div>
     )
-  }
+  }, [metrics?.departments, departments])
 
-  const ThroughputChart = () => {
+  const throughputChart = useMemo(() => {
     if (!dailyData.length) return null
     const maxMsg = Math.max(...dailyData.map(d => d.messages), 1)
     const denom = Math.max(dailyData.length - 1, 1)
@@ -294,7 +294,7 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         })}
       </svg>
     )
-  }
+  }, [dailyData])
 
   if (loading) {
     return <div className="ops-dash-container"><div className="ops-dash-loading">{t('common.loading')}</div></div>
@@ -338,11 +338,11 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
       <div className="ops-dash-panel-row">
         <div className="ops-dash-panel">
           <h3>{t('ops.dash.panel.workload')}</h3>
-          <WorkloadChart />
+          {workloadChart}
         </div>
         <div className="ops-dash-panel">
           <h3>{t('ops.dash.panel.throughput')}</h3>
-          <ThroughputChart />
+          {throughputChart}
         </div>
         <div className="ops-dash-panel ops-dash-panel-gw">
           <h3>{t('ops.dash.panel.gateway')}</h3>

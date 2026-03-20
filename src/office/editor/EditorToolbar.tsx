@@ -164,16 +164,13 @@ export function EditorToolbar({
   useEffect(() => {
     if (loadedAssets) {
       try {
-        console.log(`[EditorToolbar] Building dynamic catalog with ${loadedAssets.catalog.length} assets...`)
         const success = buildDynamicCatalog(loadedAssets)
-        console.log(`[EditorToolbar] Catalog build result: ${success}`)
 
         // Reset to first available category if current doesn't exist
         const activeCategories = getActiveCategories()
         if (activeCategories.length > 0) {
           const firstCat = activeCategories[0]?.id
           if (firstCat) {
-            console.log(`[EditorToolbar] Setting active category to: ${firstCat}`)
             setActiveCategory(firstCat)
           }
         }

@@ -9,6 +9,9 @@ import path from 'path';
 import { safeWriteFileSync, BASE_PATH } from '../utils.js';
 import { withMutex } from '../file-lock.js';
 import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('Meetings');
 
 const router = express.Router();
 
@@ -17,7 +20,7 @@ const meetings = new Map();
 
 // Constants
 const MAX_ACTIVE_MEETINGS = 10;
-const MAX_MESSAGES_PER_MEETING = 50;
+const MAX_MESSAGES_PER_MEETING = 200;  // H7 Fix: Cap at 200 messages
 const DEPT_RESPONSE_TIMEOUT = 180000; // 3 minutes
 const NEGOTIATION_TIMEOUT = 600000; // 10 minutes
 
@@ -42,12 +45,41 @@ function loadMeetingsFromDisk() {
         meetings.set(data.id, data);
       }
     } catch (err) {
-      console.warn(`[Meetings] Failed to parse ${file}:`, err.message);
+      log.warn(`Failed to parse ${file}: ${err.message}`);
     }
   }
-  console.log(`[Meetings] Loaded ${meetings.size} active meetings from disk`);
+  log.info(`Loaded ${meetings.size} active meetings from disk`);
 }
 loadMeetingsFromDisk();
+
+// Clean up old meeting files (older than 30 days)
+function cleanupOldMeetings() {
+  try {
+    const dir = path.join(BASE_PATH, 'departments', 'meetings');
+    if (!fs.existsSync(dir)) return;
+    const now = Date.now();
+    const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+    let cleaned = 0;
+    for (const file of files) {
+      try {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > MAX_AGE_MS) {
+          fs.unlinkSync(filePath);
+          cleaned++;
+        }
+      } catch {}
+    }
+    if (cleaned > 0) log.info(`Cleaned up ${cleaned} old meeting files`);
+  } catch (err) {
+    log.warn('Cleanup error:', err.message);
+  }
+}
+
+// Run cleanup on startup and every 6 hours
+cleanupOldMeetings();
+setInterval(cleanupOldMeetings, 6 * 60 * 60 * 1000);
 
 // Persist meeting to disk
 function persistMeeting(meeting) {
@@ -96,7 +128,7 @@ router.post('/', async (req, res) => {
   meetings.set(meetingId, meeting);
   persistMeeting(meeting);
 
-  console.log(`[Meetings] Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
+  log.info(`Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
   recordAudit({ action: 'meeting:create', target: meetingId, details: { topic, deptIds }, ip: req.ip });
 
   // Broadcast meeting:start event to WebSocket clients
@@ -115,15 +147,20 @@ router.post('/', async (req, res) => {
       let sent = 0;
       wss.clients.forEach(c => {
         if (c.readyState === 1 && c._authenticated) {
-          try { c.send(msg); sent++; } catch {}
+          try {
+            c.send(msg);
+            sent++;
+          } catch (err) {
+            log.warn(`WS send error: ${err.message}`);
+          }
         }
       });
-      console.log(`[Meetings] Broadcast meeting:start to ${sent} WS clients (total: ${wss.clients.size})`);
+      log.info(`Broadcast meeting:start to ${sent} WS clients (total: ${wss.clients.size})`);
     } else {
-      console.log('[Meetings] No wss available for broadcast');
+      log.info('No wss available for broadcast');
     }
   } catch (err) {
-    console.error('[Meetings] WS broadcast error:', err.message);
+    log.error(`WS broadcast error: ${err.message}`);
   }
 
   res.json({ success: true, meetingId, meeting });
@@ -181,17 +218,22 @@ router.post('/:id/message', async (req, res) => {
 
   const roundId = randomUUID();
 
+  // C8 Fix: Sanitize meeting message to prevent context tag injection
+  const safeMessage = sanitizeContextTags(message);
+
   // Record user/initiator message
   meeting.messages.push({
     role: fromDeptId ? 'dept' : 'user',
     deptId: fromDeptId || 'user',
-    text: message,
+    text: safeMessage,
     timestamp: Date.now(),
   });
 
-  // P0 Fix #2: Cap messages array to most recent 50
+  // H7 Fix: Cap messages array — keep first 10 + last 190
   if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
-    meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+    const first10 = meeting.messages.slice(0, 10);
+    const last190 = meeting.messages.slice(-(MAX_MESSAGES_PER_MEETING - 10));
+    meeting.messages = [...first10, ...last190];
   }
 
   persistMeeting(meeting);
@@ -232,7 +274,7 @@ ${recentHistory}
       try {
         // P0 Fix #3: Add timeout for department response
         const result = await Promise.race([
-          chat(deptId, meetingPrompt),
+          chat(deptId, meetingPrompt, null, { traceId: req.traceId }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Department response timeout')), DEPT_RESPONSE_TIMEOUT)
           )
@@ -247,9 +289,11 @@ ${recentHistory}
           timestamp: Date.now(),
         });
 
-        // P0 Fix #2: Cap messages array after adding
+        // H7 Fix: Cap messages array — keep first 10 + last 190
         if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
-          meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+          const first10 = meeting.messages.slice(0, 10);
+          const last190 = meeting.messages.slice(-(MAX_MESSAGES_PER_MEETING - 10));
+          meeting.messages = [...first10, ...last190];
         }
 
         // P0 Fix #5: Move persistMeeting inside withMutex
@@ -273,7 +317,11 @@ ${recentHistory}
           });
           wss.clients.forEach(c => {
             if (c.readyState === 1 && c._authenticated) {
-              try { c.send(deptMsg); } catch {}
+              try {
+                c.send(deptMsg);
+              } catch (err) {
+                log.warn(`WS send error: ${err.message}`);
+              }
             }
           });
         }
@@ -284,7 +332,7 @@ ${recentHistory}
           ? `[Timeout] ${deptId} did not respond within 3 minutes`
           : `[Error] ${err.message}`;
 
-        console.log(`[Meetings] Department ${deptId} ${isTimeout ? 'timed out' : 'error'}: ${err.message}`);
+        log.info(`Department ${deptId} ${isTimeout ? 'timed out' : 'error'}: ${err.message}`);
 
         // Record error in messages
         meeting.messages.push({
@@ -294,9 +342,11 @@ ${recentHistory}
           timestamp: Date.now(),
         });
 
-        // P0 Fix #2: Cap messages array after adding
+        // H7 Fix: Cap messages array — keep first 10 + last 190
         if (meeting.messages.length > MAX_MESSAGES_PER_MEETING) {
-          meeting.messages = meeting.messages.slice(-MAX_MESSAGES_PER_MEETING);
+          const first10 = meeting.messages.slice(0, 10);
+          const last190 = meeting.messages.slice(-(MAX_MESSAGES_PER_MEETING - 10));
+          meeting.messages = [...first10, ...last190];
         }
 
         // P0 Fix #5: Move persistMeeting inside withMutex
@@ -321,7 +371,11 @@ ${recentHistory}
           });
           wss.clients.forEach(c => {
             if (c.readyState === 1 && c._authenticated) {
-              try { c.send(deptMsg); } catch {}
+              try {
+                c.send(deptMsg);
+              } catch (err) {
+                log.warn(`WS send error: ${err.message}`);
+              }
             }
           });
         }
@@ -342,12 +396,16 @@ ${recentHistory}
       });
       wss.clients.forEach(c => {
         if (c.readyState === 1 && c._authenticated) {
-          try { c.send(completeMsg); } catch {}
+          try {
+            c.send(completeMsg);
+          } catch (err) {
+            log.warn(`WS send error: ${err.message}`);
+          }
         }
       });
     }
     });
-    } catch (err) { console.error('[Meetings] Message round error:', err); }
+    } catch (err) { log.error(`Message round error: ${err.message}`); }
   });
 });
 
@@ -389,20 +447,23 @@ router.post('/:id/end', async (req, res) => {
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
 
-  meeting.status = 'ended';
-  meeting.endedAt = Date.now();
-  persistMeeting(meeting);
-  console.log(`[Meetings] Ended ${meeting.id}: ${meeting.topic}`);
+  // Wrap critical section in mutex to prevent race conditions
+  await withMutex(`meeting-${req.params.id}`, async () => {
+    meeting.status = 'ended';
+    meeting.endedAt = Date.now();
+    persistMeeting(meeting);
+    log.info(`Ended ${meeting.id}: ${meeting.topic}`);
 
-  recordAudit({ action: 'meeting:end', target: meeting.id, details: { topic: meeting.topic }, ip: req.ip });
+    recordAudit({ action: 'meeting:end', target: meeting.id, details: { topic: meeting.topic }, ip: req.ip });
 
-  // P0 Fix #4: Await action item extraction BEFORE scheduling deletion
-  const wss = req.app.locals.wss;
-  try {
-    await extractActionItems(meeting, wss);
-  } catch (err) {
-    console.error('[Meetings] Action item extraction failed:', err.message);
-  }
+    // P0 Fix #4: Await action item extraction BEFORE scheduling deletion
+    const wss = req.app.locals.wss;
+    try {
+      await extractActionItems(meeting, wss, req.traceId);
+    } catch (err) {
+      log.error(`Action item extraction failed: ${err.message}`);
+    }
+  });
 
   // Schedule removal from memory (data is persisted to disk)
   setTimeout(() => meetings.delete(meeting.id), 5 * 60 * 1000);
@@ -420,12 +481,16 @@ router.post('/:id/end', async (req, res) => {
       });
       wss.clients.forEach(c => {
         if (c.readyState === 1 && c._authenticated) {
-          try { c.send(msg); } catch {}
+          try {
+            c.send(msg);
+          } catch (err) {
+            log.warn(`WS send error: ${err.message}`);
+          }
         }
       });
     }
   } catch (err) {
-    console.error('[Meetings] WS broadcast error:', err.message);
+    log.error(`WS broadcast error: ${err.message}`);
   }
 
   let driveResult = null;
@@ -465,7 +530,7 @@ router.post('/:id/end', async (req, res) => {
         webViewLink: file.data.webViewLink
       };
 
-      console.log(`[Meetings] Exported to Drive: ${filename} (${file.data.id})`);
+      log.info(`Exported to Drive: ${filename} (${file.data.id})`);
 
       // Send notification
       notify({
@@ -476,7 +541,7 @@ router.post('/:id/end', async (req, res) => {
         actionUrl: file.data.webViewLink
       });
     } catch (error) {
-      console.error('[Meetings] Drive export failed (non-fatal):', error.message);
+      log.error(`Drive export failed (non-fatal): ${error.message}`);
       // Non-fatal: meeting still ends successfully
     }
   }
@@ -487,7 +552,7 @@ router.post('/:id/end', async (req, res) => {
 /**
  * Extract action items from meeting transcript using AI
  */
-async function extractActionItems(meeting, wss) {
+async function extractActionItems(meeting, wss, traceId) {
   if (meeting.messages.length < 3) return; // Too short
 
   // Build transcript
@@ -513,7 +578,7 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
   try {
     // Use the first department to extract (or a specific dept if available)
     const extractorDept = meeting.deptIds[0];
-    const result = await chat(extractorDept, prompt);
+    const result = await chat(extractorDept, prompt, null, { traceId });
 
     if (result.success && result.reply) {
       const jsonMatch = result.reply.match(/\[[\s\S]*?\]/);
@@ -526,7 +591,7 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
         meeting.messages.push({
           role: 'system', deptId: 'action-items',
           text: `[Action Items Extracted]\n${actionItems.map((item, i) =>
-            `${i+1}. [${(item.priority || 'medium').toUpperCase()}] ${item.task || '(no task)'} (Owner: ${item.owner || 'unassigned'}${item.deadline_hint ? ', ' + item.deadline_hint : ''})`
+            `${i+1}. [${String(item.priority || 'medium').toUpperCase()}] ${String(item.task || '(no task)')} (Owner: ${String(item.owner || 'unassigned')}${item.deadline_hint ? ', ' + String(item.deadline_hint) : ''})`
           ).join('\n')}`,
           timestamp: Date.now()
         });
@@ -541,15 +606,19 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
         });
         if (wss) wss.clients.forEach(c => {
           if (c.readyState === 1 && c._authenticated) {
-            try { c.send(msg); } catch {}
+            try {
+              c.send(msg);
+            } catch (err) {
+              log.warn(`WS send error: ${err.message}`);
+            }
           }
         });
 
-        console.log(`[Meetings] Extracted ${actionItems.length} action items for ${meeting.id}`);
+        log.info(`Extracted ${actionItems.length} action items for ${meeting.id}`);
       }
     }
   } catch (err) {
-    console.error('[Meetings] Action item extraction error:', err.message);
+    log.error(`Action item extraction error: ${err.message}`);
   }
 }
 
@@ -584,6 +653,7 @@ router.post('/:id/negotiate', async (req, res) => {
 
   // Return immediately, process in background
   const negotiationId = `neg_${Date.now().toString(36)}`;
+  recordAudit({ action: 'meeting:negotiate', target: id, details: { proposal: proposal.substring(0, 100), maxRounds: roundsCapped }, ip: req.ip });
   res.json({ status: 'accepted', negotiationId, maxRounds: roundsCapped });
 
   // Run negotiation rounds in background
@@ -591,14 +661,14 @@ router.post('/:id/negotiate', async (req, res) => {
   Promise.resolve(withMutex(`meeting:${meeting.id}`, async () => {
     try {
       await Promise.race([
-        runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss),
+        runNegotiation(meeting, proposal, roundsCapped, negotiationId, req.app.locals.wss, req.traceId),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Negotiation timeout')), NEGOTIATION_TIMEOUT)
         )
       ]);
     } catch (err) {
       if (err.message.includes('timeout')) {
-        console.error('[Meetings] Negotiation timed out after 10 minutes');
+        log.error('Negotiation timed out after 10 minutes');
         meeting.messages.push({
           role: 'system', deptId: 'negotiation',
           text: '[Negotiation Timeout] Process exceeded 10 minutes and was terminated',
@@ -614,13 +684,13 @@ router.post('/:id/negotiate', async (req, res) => {
         throw err;
       }
     }
-  })).catch(err => console.error('[Meetings] Negotiation error:', err));
+  })).catch(err => log.error(`Negotiation error: ${err.message}`));
 });
 
 /**
  * Run negotiation rounds: each dept evaluates proposal and votes
  */
-async function runNegotiation(meeting, proposal, maxRounds, negotiationId, wss) {
+async function runNegotiation(meeting, proposal, maxRounds, negotiationId, wss, traceId) {
   const targetDepts = meeting.deptIds;
   let currentProposal = sanitizeContextTags(proposal);
   let round = 0;
@@ -665,7 +735,7 @@ Based on your department's expertise and considering other departments' position
 Try to find common ground. Be concise.`;
 
       try {
-        const result = await chat(deptId, prompt);
+        const result = await chat(deptId, prompt, null, { traceId });
         let parsed;
         if (!result.success || !result.reply) {
           parsed = { stance: 'abstain', reason: result.error || 'No response', suggestion: '' };
@@ -685,7 +755,7 @@ Try to find common ground. Be concise.`;
         // Record in meeting messages (null-safe field access)
         meeting.messages.push({
           role: 'dept', deptId,
-          text: `[Round ${round}] ${(parsed.stance || 'abstain').toUpperCase()}: ${parsed.reason || ''}${parsed.suggestion ? '\nSuggestion: ' + parsed.suggestion : ''}`,
+          text: `[Round ${round}] ${String(parsed.stance || 'abstain').toUpperCase()}: ${parsed.reason || ''}${parsed.suggestion ? '\nSuggestion: ' + parsed.suggestion : ''}`,
           timestamp: Date.now(), negotiationId
         });
         persistMeeting(meeting);
@@ -768,7 +838,11 @@ function broadcastToMeeting(wss, meetingId, event, data) {
   const msg = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
   wss.clients.forEach(c => {
     if (c.readyState === 1 && c._authenticated) {
-      try { c.send(msg); } catch {}
+      try {
+        c.send(msg);
+      } catch (err) {
+        log.warn(`WS send error: ${err.message}`);
+      }
     }
   });
 }

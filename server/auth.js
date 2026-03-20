@@ -4,9 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DATA_DIR, safeWriteFileSync } from './utils.js';
+import { createLogger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const log = createLogger('Auth');
 
 // Configuration — store in persistent DATA_DIR so npm updates don't wipe the password
 const PASSWORD_FILE = path.join(DATA_DIR, '.auth_password');
@@ -17,9 +20,9 @@ if (!fs.existsSync(PASSWORD_FILE) && fs.existsSync(OLD_PASSWORD_FILE)) {
   try {
     fs.copyFileSync(OLD_PASSWORD_FILE, PASSWORD_FILE);
     fs.unlinkSync(OLD_PASSWORD_FILE);
-    console.log('[Auth] Migrated password file to persistent location:', PASSWORD_FILE);
+    log.info('Migrated password file to persistent location', { path: PASSWORD_FILE });
   } catch (err) {
-    console.warn('[Auth] Failed to migrate password file:', err.message);
+    log.warn('Failed to migrate password file', { error: err.message });
   }
 }
 const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -82,7 +85,7 @@ function getStoredPassword() {
       return fs.readFileSync(PASSWORD_FILE, 'utf8').trim();
     }
   } catch (error) {
-    console.error('[Auth] Error reading password file:', error.message);
+    log.error('Error reading password file', { error: error.message });
   }
   return null;
 }
@@ -100,7 +103,7 @@ function cleanupExpiredTokens() {
     }
   }
   if (removed > 0) {
-    console.log(`[Auth] Cleaned up ${removed} expired token(s)`);
+    log.info('Cleaned up expired tokens', { removedCount: removed });
   }
 }
 
@@ -211,7 +214,7 @@ authRouter.post('/setup', (req, res) => {
   try {
     const hashed = hashPassword(password);
     safeWriteFileSync(PASSWORD_FILE, hashed, { mode: 0o600 });
-    console.log('[Auth] Initial password set by user via setup wizard');
+    log.info('Initial password set by user via setup wizard');
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to save password' });
   }
@@ -269,8 +272,7 @@ authRouter.post('/login', (req, res) => {
   // Store token with timestamp
   activeTokens.set(token, timestamp);
 
-  console.log(`[Auth] New login successful, token issued (expires in 24h)`);
-  console.log(`[Auth] Active tokens: ${activeTokens.size}`);
+  log.info('New login successful, token issued', { activeTokens: activeTokens.size });
 
   res.json({
     success: true,
@@ -289,14 +291,14 @@ authRouter.post('/logout', (req, res) => {
     const token = authHeader.substring(7);
     if (activeTokens.has(token)) {
       activeTokens.delete(token);
-      console.log(`[Auth] Token revoked, active tokens: ${activeTokens.size}`);
+      log.info('Token revoked', { activeTokens: activeTokens.size });
 
       // Close WebSocket connections authenticated with this token
       for (const cb of _tokenRevokedCallbacks) {
         try {
           cb(token);
         } catch (err) {
-          console.error('[Auth] Error in token revoked callback:', err.message);
+          log.error('Error in token revoked callback', { error: err.message });
         }
       }
     }
@@ -352,7 +354,7 @@ authRouter.put('/password', (req, res) => {
     const hashedPassword = hashPassword(newPassword);
     safeWriteFileSync(PASSWORD_FILE, hashedPassword, { mode: 0o600 });
   } catch (error) {
-    console.error('[Auth] Error writing password file:', error.message);
+    log.error('Error writing password file', { error: error.message });
     return res.status(500).json({
       success: false,
       error: 'Failed to save new password'
@@ -362,8 +364,10 @@ authRouter.put('/password', (req, res) => {
   // Clear all active tokens to force re-login
   const tokenCount = activeTokens.size;
   activeTokens.clear();
-  console.log(`[Auth] Password changed, cleared ${tokenCount} active token(s)`);
-  for (const cb of _tokensClaredCallbacks) { try { cb(); } catch {} }
+  log.info('Password changed, cleared active tokens', { tokenCount });
+  for (const cb of _tokensClaredCallbacks) { try { cb(); } catch {
+    // Callback error — non-critical
+  } }
 
   res.json({
     success: true,
@@ -409,4 +413,4 @@ export function onTokensCleared(cb) { _tokensClaredCallbacks.push(cb); }
 const _tokenRevokedCallbacks = [];
 export function onTokenRevoked(cb) { _tokenRevokedCallbacks.push(cb); }
 
-export { authRouter, isPasswordConfigured };
+export { authRouter, isPasswordConfigured, verifyPassword, getStoredPassword };

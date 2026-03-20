@@ -57,6 +57,8 @@ export interface AgentState {
   /** Gateway connection status: connected/disconnected/fatal */
   gatewayStatus: 'unknown' | 'connected' | 'disconnected' | 'fatal'
   gatewayDetail?: string
+  /** WebSocket connection state for UI visibility */
+  connectionState: 'connected' | 'reconnecting' | 'background-retry' | 'disconnected'
 }
 
 // Streaming texts store — decoupled from main state to avoid per-chunk re-renders
@@ -127,6 +129,9 @@ export function consumeVisit(): DeptVisit | undefined {
 }
 
 // Meeting events store — decoupled for performance
+// Cap arrays to prevent unbounded growth if events aren't consumed
+const MAX_EVENT_QUEUE = 100
+
 interface MeetingEvent {
   type: 'start' | 'end'
   meetingId: string
@@ -143,7 +148,10 @@ function emitMeetingChange() {
 }
 
 export function consumeMeetingEvent(): MeetingEvent | undefined {
-  return meetingEvents.shift()
+  if (meetingEvents.length === 0) return undefined
+  const item = meetingEvents[0]
+  meetingEvents = meetingEvents.slice(1)
+  return item
 }
 
 export function useMeetingEvents(): MeetingEvent[] {
@@ -223,10 +231,24 @@ export function useMeetingRoundCompletes(): MeetingRoundComplete[] {
   )
 }
 
-function parseDepartment(d: any): Department {
+interface RawDepartment {
+  id?: string
+  name?: string
+  icon?: string
+  color?: string
+  hue?: number
+  order?: number
+  agent?: string
+  telegramTopicId?: number
+  status?: 'active' | 'idle' | 'offline'
+  lastSeen?: string | number
+  currentTask?: string
+}
+
+function parseDepartment(d: RawDepartment): Department {
   return {
-    id: d.id || d.name,
-    name: d.name || d.id,
+    id: d.id || d.name || '',
+    name: d.name || d.id || '',
     icon: d.icon || 'bolt',
     color: d.color || '#94a3b8',
     hue: d.hue ?? 200,
@@ -239,6 +261,9 @@ function parseDepartment(d: any): Department {
   }
 }
 
+const MAX_RETRIES = 20
+const BACKGROUND_RETRY_INTERVAL_MS = 60000
+
 export function useAgentState() {
   const [state, setState] = useState<AgentState>({
     departments: [],
@@ -250,6 +275,7 @@ export function useAgentState() {
     connected: false,
     toolStates: new Map(),
     gatewayStatus: 'unknown',
+    connectionState: 'disconnected',
   })
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -258,6 +284,7 @@ export function useAgentState() {
   const reconnectDelayRef = useRef<number>(1000)
   const reconnectCountRef = useRef<number>(0)
   const wsReceivedDepts = useRef(false)
+  const backgroundRetryTimerRef = useRef<number | null>(null)
 
   const connect = () => {
     if (reconnectTimeoutRef.current) {
@@ -271,22 +298,25 @@ export function useAgentState() {
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      console.log('[WS] Connected, sending auth')
       // Authenticate via first message instead of URL query param
       ws.send(JSON.stringify({ type: 'auth', token }))
       reconnectDelayRef.current = 1000
       reconnectCountRef.current = 0
+
+      // Clear background retry if active
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current)
+        backgroundRetryTimerRef.current = null
+      }
+
       if (mountedRef.current) {
-        setState(prev => ({ ...prev, connected: true }))
+        setState(prev => ({ ...prev, connected: true, connectionState: 'connected' }))
       }
     }
 
     ws.onclose = (event) => {
-      console.log('[WS] Disconnected')
-
-      // If auth was revoked (1008 policy violation), redirect to login
-      if (event.code === 1008) {
-        console.log('[WS] Auth revoked (1008), clearing token and reloading')
+      // If auth was revoked (4001 or 1008), redirect to login
+      if (event.code === 4001 || event.code === 1008) {
         clearToken()
         window.location.reload()
         return
@@ -299,13 +329,35 @@ export function useAgentState() {
 
       if (mountedRef.current) {
         reconnectCountRef.current++
-        const delay = reconnectDelayRef.current
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log(`[WS] Reconnecting... (attempt ${reconnectCountRef.current})`)
-          connect()
-        }, delay)
-        reconnectDelayRef.current = Math.min(delay * 2, 60000)
+
+        // After MAX_RETRIES, switch to background retry mode
+        if (reconnectCountRef.current > MAX_RETRIES) {
+          if (mountedRef.current) {
+            setState(prev => ({ ...prev, connectionState: 'background-retry' }))
+          }
+          scheduleBackgroundRetry()
+        } else {
+          const delay = reconnectDelayRef.current
+          if (mountedRef.current) {
+            setState(prev => ({ ...prev, connectionState: 'reconnecting' }))
+          }
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect()
+          }, delay)
+          reconnectDelayRef.current = Math.min(delay * 2, 60000)
+        }
       }
+    }
+
+    const scheduleBackgroundRetry = () => {
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current)
+      }
+
+      backgroundRetryTimerRef.current = window.setTimeout(() => {
+        if (!mountedRef.current) return
+        connect()
+      }, BACKGROUND_RETRY_INTERVAL_MS)
     }
 
     ws.onerror = (error) => {
@@ -324,27 +376,40 @@ export function useAgentState() {
     wsRef.current = ws
   }
 
-  const handleMessage = (message: any) => {
+  interface WebSocketMessage {
+    event: string
+    data?: unknown
+    timestamp?: number
+  }
+
+  const handleMessage = (message: WebSocketMessage) => {
     if (!mountedRef.current) return
 
     // Server sends { event, data, timestamp }
     const { event, data } = message
+    // Helper to safely cast data
+    const d = (data || {}) as Record<string, unknown>
 
     switch (event) {
       case 'connected':
         // Initial full state from server — takes priority over REST fallback
-        console.log('[WS] Received initial state')
         wsReceivedDepts.current = true
         if (mountedRef.current) {
           setState(prev => {
-            const departments = Array.isArray(data?.departments)
-              ? data.departments.map(parseDepartment)
+            const departments = Array.isArray(d.departments)
+              ? (d.departments as RawDepartment[]).map(parseDepartment)
               : prev.departments
-            const bulletin = data?.bulletin || prev.bulletin
-            const requests = Array.isArray(data?.requests)
-              ? data.requests.map((r: any) => ({
-                  filename: r.filename,
-                  content: r.content,
+            const bulletin = typeof d.bulletin === 'string' ? d.bulletin : prev.bulletin
+            interface RawRequest {
+              filename?: string
+              content?: string
+              modified?: string
+              created?: string
+            }
+            const requests = Array.isArray(d.requests)
+              ? (d.requests as RawRequest[]).map((r) => ({
+                  filename: r.filename || '',
+                  content: r.content || '',
                   date: r.modified || r.created || new Date().toISOString(),
                 }))
               : prev.requests
@@ -357,14 +422,15 @@ export function useAgentState() {
         if (mountedRef.current) {
           setState(prev => {
             const departments = [...prev.departments]
-            const deptId = data?.deptId || data?.id
-            const index = departments.findIndex(d => d.id === deptId)
+            const deptId = (d.deptId || d.id) as string | undefined
+            const index = deptId ? departments.findIndex(dept => dept.id === deptId) : -1
             if (index >= 0) {
+              const status = d.status as 'active' | 'idle' | 'offline' | undefined
               departments[index] = {
                 ...departments[index],
-                status: data.status || departments[index].status,
+                status: status || departments[index].status,
                 lastSeen: Date.now(),
-                currentTask: data.currentTask,
+                currentTask: d.currentTask as string | undefined,
               }
             }
             return { ...prev, departments }
@@ -374,7 +440,7 @@ export function useAgentState() {
 
       case 'bulletin:update':
         if (mountedRef.current) {
-          setState(prev => ({ ...prev, bulletin: data?.content || '' }))
+          setState(prev => ({ ...prev, bulletin: (d.content as string) || '' }))
         }
         break
 
@@ -382,7 +448,10 @@ export function useAgentState() {
         if (mountedRef.current) {
           setState(prev => {
             const memories = new Map(prev.memories)
-            memories.set(data?.deptId, data?.content || '')
+            const deptId = d.deptId as string | undefined
+            if (deptId) {
+              memories.set(deptId, (d.content as string) || '')
+            }
             return { ...prev, memories }
           })
         }
@@ -394,8 +463,8 @@ export function useAgentState() {
             ...prev,
             requests: [
               {
-                filename: data?.filename || 'unknown',
-                content: data?.content || '',
+                filename: (d.filename as string) || 'unknown',
+                content: (d.content as string) || '',
                 date: new Date().toISOString(),
               },
               ...prev.requests,
@@ -407,25 +476,31 @@ export function useAgentState() {
       case 'activity:new':
         if (mountedRef.current) {
           // Clear streaming text for this dept when final message arrives (F14)
-          if (data?.deptId && _streamingTexts.has(data.deptId)) {
+          const deptId = d.deptId as string | undefined
+          if (deptId && _streamingTexts.has(deptId)) {
             _streamingTexts = new Map(_streamingTexts)
-            _streamingTexts.delete(data.deptId)
+            _streamingTexts.delete(deptId)
             _flushStreamNotify()
           }
           // Handle both single-message format (from telegram.js/gateway events)
           // and multi-message format (from watcher.js session files)
-          if (Array.isArray(data?.messages)) {
+          if (Array.isArray(d.messages)) {
             // Multi-message format from session file watcher
+            interface RawMessage {
+              role?: string
+              text?: string
+              timestamp?: string | number
+            }
             setState(prev => ({
               ...prev,
               activities: [
                 ...prev.activities,
-                ...data.messages.map((msg: any) => ({
-                  deptId: data?.deptId,
+                ...(d.messages as RawMessage[]).map((msg) => ({
+                  deptId: deptId || '',
                   role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
                   text: msg.text || '',
                   timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-                  source: data?.source || 'session',
+                  source: (d.source as string) || 'session',
                 })),
               ].slice(-200),
             }))
@@ -436,12 +511,12 @@ export function useAgentState() {
               activities: [
                 ...prev.activities,
                 {
-                  deptId: data?.deptId,
-                  role: data?.role || 'assistant',
-                  text: data?.text || '',
+                  deptId: deptId || '',
+                  role: (d.role as 'user' | 'assistant') || 'assistant',
+                  text: (d.text as string) || '',
                   timestamp: Date.now(),
-                  source: data?.source,
-                  fromName: data?.fromName,
+                  source: d.source as string | undefined,
+                  fromName: d.fromName as string | undefined,
                 },
               ].slice(-200),
             }))
@@ -449,9 +524,11 @@ export function useAgentState() {
         }
         break
 
-      case 'chat:stream':
-        if (mountedRef.current && data?.deptId && data?.chunk) {
-          let chunk = data.chunk
+      case 'chat:stream': {
+        const streamDeptId = d.deptId as string | undefined
+        const streamChunk = d.chunk as string | undefined
+        if (mountedRef.current && streamDeptId && streamChunk) {
+          let chunk = streamChunk
           // Strip context tags from streaming chunks
           if (chunk.includes('<department_context>') || chunk.includes('<subagent_context>')) {
             chunk = chunk
@@ -460,22 +537,24 @@ export function useAgentState() {
           }
           if (!chunk) break
           _streamingTexts = new Map(_streamingTexts)
-          const existing = _streamingTexts.get(data.deptId) || ''
-          _streamingTexts.set(data.deptId, existing + chunk)
+          const existing = _streamingTexts.get(streamDeptId) || ''
+          _streamingTexts.set(streamDeptId, existing + chunk)
           _notifyStreamListeners()
         }
         break
+      }
 
-      case 'tool:update':
-        if (mountedRef.current && data?.deptId) {
+      case 'tool:update': {
+        const toolDeptId = d.deptId as string | undefined
+        if (mountedRef.current && toolDeptId) {
           setState(prev => {
             const toolStates = new Map(prev.toolStates)
-            if (data.done) {
-              toolStates.delete(data.deptId)
+            if (d.done) {
+              toolStates.delete(toolDeptId)
             } else {
-              toolStates.set(data.deptId, {
-                toolName: data.toolName || 'unknown',
-                status: data.toolStatus || 'running',
+              toolStates.set(toolDeptId, {
+                toolName: (d.toolName as string) || 'unknown',
+                status: (d.toolStatus as string) || 'running',
                 done: false,
               })
             }
@@ -483,36 +562,41 @@ export function useAgentState() {
           })
         }
         break
+      }
 
-      case 'dept:visit':
-        if (data?.from && data?.to) {
+      case 'dept:visit': {
+        const from = d.from as string | undefined
+        const to = d.to as string | undefined
+        if (from && to) {
           _deptVisits = [..._deptVisits, {
-            from: data.from,
-            to: data.to,
+            from,
+            to,
             id: Date.now() + Math.random(),
-            message: data.message
+            message: d.message as string | undefined
           }]
           _notifyVisitListeners()
         }
         break
+      }
 
       case 'meeting:start':
-        console.log('[WS] meeting:start received:', data)
+        if (meetingEvents.length >= MAX_EVENT_QUEUE) meetingEvents = meetingEvents.slice(-50)
         meetingEvents.push({
           type: 'start',
-          meetingId: data.meetingId,
-          topic: data.topic,
-          deptIds: data.deptIds,
+          meetingId: (d.meetingId as string) || '',
+          topic: d.topic as string | undefined,
+          deptIds: (d.deptIds as string[]) || [],
           timestamp: Date.now()
         })
         emitMeetingChange()
         break
 
       case 'meeting:end':
+        if (meetingEvents.length >= MAX_EVENT_QUEUE) meetingEvents = meetingEvents.slice(-50)
         meetingEvents.push({
           type: 'end',
-          meetingId: data.meetingId,
-          deptIds: data.deptIds,
+          meetingId: (d.meetingId as string) || '',
+          deptIds: (d.deptIds as string[]) || [],
           timestamp: Date.now()
         })
         emitMeetingChange()
@@ -523,66 +607,71 @@ export function useAgentState() {
       case 'meeting:negotiation-round':
       case 'meeting:negotiation-end':
         // Negotiation events - forward to meeting components via meeting events
+        if (meetingEvents.length >= MAX_EVENT_QUEUE) meetingEvents = meetingEvents.slice(-50)
         meetingEvents.push({
-          type: event,
-          ...data,
+          type: event as 'start' | 'end',
+          ...d,
           timestamp: Date.now()
-        } as any)
+        } as MeetingEvent)
         emitMeetingChange()
         break
 
       case 'meeting:dept-response':
-        console.log('[WS] meeting:dept-response received:', data)
+        if (meetingDeptResponses.length >= MAX_EVENT_QUEUE) meetingDeptResponses = meetingDeptResponses.slice(-50)
         meetingDeptResponses.push({
-          meetingId: data.meetingId,
-          deptId: data.deptId,
-          text: data.text,
-          roundId: data.roundId,
-          deptIndex: data.deptIndex,
-          totalDepts: data.totalDepts,
-          timestamp: data.timestamp || Date.now()
+          meetingId: (d.meetingId as string) || '',
+          deptId: (d.deptId as string) || '',
+          text: (d.text as string) || '',
+          roundId: (d.roundId as string) || '',
+          deptIndex: (d.deptIndex as number) || 0,
+          totalDepts: (d.totalDepts as number) || 0,
+          timestamp: (d.timestamp as number) || Date.now()
         })
         emitMeetingDeptChange()
         break
 
       case 'meeting:round-complete':
-        console.log('[WS] meeting:round-complete received:', data)
+        if (meetingRoundCompletes.length >= MAX_EVENT_QUEUE) meetingRoundCompletes = meetingRoundCompletes.slice(-50)
         meetingRoundCompletes.push({
-          meetingId: data.meetingId,
-          roundId: data.roundId,
-          messageCount: data.messageCount,
+          meetingId: (d.meetingId as string) || '',
+          roundId: (d.roundId as string) || '',
+          messageCount: (d.messageCount as number) || 0,
           timestamp: Date.now()
         })
         emitMeetingRoundChange()
         break
 
-      case 'gateway:status':
-        if (mountedRef.current && data?.status) {
+      case 'gateway:status': {
+        const status = d.status as 'unknown' | 'connected' | 'disconnected' | 'fatal' | undefined
+        if (mountedRef.current && status) {
           setState(prev => ({
             ...prev,
-            gatewayStatus: data.status,
-            gatewayDetail: data.detail || undefined,
+            gatewayStatus: status,
+            gatewayDetail: (d.detail as string) || undefined,
           }))
         }
         break
+      }
 
       case 'departments:updated':
         // Reload departments from REST API
         authedFetch('/api/departments')
           .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data?.departments) && mountedRef.current) {
+          .then(departmentsData => {
+            if (Array.isArray(departmentsData?.departments) && mountedRef.current) {
               setState(prev => ({
                 ...prev,
-                departments: data.departments.map(parseDepartment),
+                departments: (departmentsData.departments as RawDepartment[]).map(parseDepartment),
               }))
             }
           })
-          .catch(() => {})
+          .catch((err) => {
+            if (import.meta.env.DEV) console.warn('Reload departments failed:', err)
+          })
         break
 
       default:
-        console.log('[WS] Unknown event:', event, data)
+        break
     }
   }
 
@@ -617,6 +706,9 @@ export function useAgentState() {
       mountedRef.current = false
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
+      }
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current)
       }
       if (wsRef.current) {
         wsRef.current.close()

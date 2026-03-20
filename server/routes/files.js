@@ -8,12 +8,14 @@ import { createReadStream } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { DATA_DIR } from '../utils.js';
+import { createLogger } from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 const execFileAsync = promisify(execFile);
+const log = createLogger('Files');
 
 // ── Directories ──────────────────────────────────────────────
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -22,22 +24,6 @@ const OUTPUTS_DIR = path.join(DATA_DIR, 'outputs');
 async function ensureDirs() {
   await fs.mkdir(UPLOADS_DIR, { recursive: true });
   await fs.mkdir(OUTPUTS_DIR, { recursive: true });
-}
-
-// ── Logging helper ───────────────────────────────────────────
-function log(level, msg, meta = {}) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    level,
-    module: 'files',
-    message: msg,
-    ...meta,
-  };
-  if (level === 'error') {
-    console.error(JSON.stringify(entry));
-  } else {
-    console.log(JSON.stringify(entry));
-  }
 }
 
 // ── File type constants ──────────────────────────────────────
@@ -125,7 +111,7 @@ function createJob(filePath, originalName, ext) {
   };
   jobs.set(id, job);
   pendingQueue.push(id);
-  log('info', 'Job queued', { jobId: id, file: originalName });
+  log.info( 'Job queued', { jobId: id, file: originalName });
   processQueue(); // kick off if idle
   return job;
 }
@@ -140,7 +126,7 @@ async function processQueue() {
     if (!job) continue;
 
     job.status = 'processing';
-    log('info', 'Processing job', { jobId, file: job.originalName });
+    log.info( 'Processing job', { jobId, file: job.originalName });
 
     try {
       if (['.pdf', '.docx', '.xlsx', '.pptx'].includes(job.ext)) {
@@ -162,11 +148,11 @@ async function processQueue() {
         job.result = { text: content };
       }
       job.status = 'done';
-      log('info', 'Job done', { jobId, file: job.originalName });
+      log.info( 'Job done', { jobId, file: job.originalName });
     } catch (err) {
       job.status = 'error';
       job.error = err.message;
-      log('error', 'Job failed', { jobId, file: job.originalName, error: err.message });
+      log.error( 'Job failed', { jobId, file: job.originalName, error: err.message });
     }
   }
 
@@ -244,11 +230,11 @@ router.post('/files/upload', upload.single('file'), handleMulterError, async (re
     const magicOk = await verifyMagicBytes(filePath, ext);
     if (!magicOk) {
       await fs.unlink(filePath).catch(() => {});
-      log('warn', 'Magic-byte mismatch, file rejected', { file: originalName, ext });
+      log.warn( 'Magic-byte mismatch, file rejected', { file: originalName, ext });
       return res.status(400).json({ error: 'File content does not match its extension' });
     }
 
-    log('info', 'File uploaded', {
+    log.info( 'File uploaded', {
       file: originalName,
       size: req.file.size,
       ext,
@@ -283,7 +269,7 @@ router.post('/files/upload', upload.single('file'), handleMulterError, async (re
 
     res.json(result);
   } catch (err) {
-    log('error', 'Upload processing error', { error: err.message });
+    log.error( 'Upload processing error', { error: err.message });
     res.status(500).json({ error: 'File processing failed' });
   }
 });
@@ -314,7 +300,7 @@ router.post('/files/upload/async', upload.single('file'), handleMulterError, asy
       pollUrl: `/api/files/job/${job.id}`,
     });
   } catch (err) {
-    log('error', 'Async upload error', { error: err.message });
+    log.error( 'Async upload error', { error: err.message });
     res.status(500).json({ error: 'Failed to queue file for processing' });
   }
 });
@@ -382,7 +368,7 @@ router.get('/files/download/:filename', async (req, res) => {
 
       const stream = createReadStream(filePath, { start, end });
       stream.on('error', (err) => {
-        log('error', 'Stream error during ranged download', { filename, error: err.message });
+        log.error( 'Stream error during ranged download', { filename, error: err.message });
         if (!res.headersSent) {
           res.status(500).json({ error: 'Download failed' });
         }
@@ -397,7 +383,7 @@ router.get('/files/download/:filename', async (req, res) => {
 
       const stream = createReadStream(filePath);
       stream.on('error', (err) => {
-        log('error', 'Stream error during download', { filename, error: err.message });
+        log.error( 'Stream error during download', { filename, error: err.message });
         if (!res.headersSent) {
           res.status(500).json({ error: 'Download failed' });
         }
@@ -405,7 +391,7 @@ router.get('/files/download/:filename', async (req, res) => {
       stream.pipe(res);
     }
   } catch (err) {
-    log('error', 'Download error', { error: err.message });
+    log.error( 'Download error', { error: err.message });
     res.status(500).json({ error: 'Download failed' });
   }
 });
@@ -427,7 +413,7 @@ router.get('/files/list', async (req, res) => {
     );
     res.json({ files: fileList });
   } catch (err) {
-    log('error', 'List files error', { error: err.message });
+    log.error( 'List files error', { error: err.message });
     res.status(500).json({ error: 'Failed to list files' });
   }
 });
@@ -448,10 +434,10 @@ router.delete('/files/:filename', async (req, res) => {
     }
 
     await fs.unlink(filePath);
-    log('info', 'File deleted', { filename });
+    log.info( 'File deleted', { filename });
     res.json({ success: true, deleted: filename });
   } catch (err) {
-    log('error', 'Delete file error', { error: err.message });
+    log.error( 'Delete file error', { error: err.message });
     res.status(500).json({ error: 'Failed to delete file' });
   }
 });
@@ -509,10 +495,10 @@ router.post('/files/convert', async (req, res) => {
     );
 
     if (stderr) {
-      log('warn', 'Conversion stderr', { stderr: stderr.substring(0, 500) });
+      log.warn( 'Conversion stderr', { stderr: stderr.substring(0, 500) });
     }
 
-    log('info', 'File converted', { source: filename, target: outName });
+    log.info( 'File converted', { source: filename, target: outName });
 
     res.json({
       success: true,
@@ -520,7 +506,7 @@ router.post('/files/convert', async (req, res) => {
       downloadUrl: `/api/files/download/${encodeURIComponent(outName)}`,
     });
   } catch (err) {
-    log('error', 'Convert error', { error: err.message });
+    log.error( 'Convert error', { error: err.message });
     res.status(500).json({ error: 'Conversion failed' });
   }
 });

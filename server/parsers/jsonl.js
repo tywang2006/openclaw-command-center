@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('JSONL');
 
 /**
  * Parse a single JSONL line from OpenClaw session files
@@ -71,7 +74,7 @@ function parseJsonlLine(line) {
 
     return result;
   } catch (error) {
-    console.error('Error parsing JSONL line:', error.message);
+    log.error('Error parsing JSONL line', { error: error.message });
     return null;
   }
 }
@@ -135,7 +138,7 @@ function readLastLines(filePath, count) {
 
     return lines.slice(-count);
   } catch (error) {
-    console.error(`Error reading last lines from ${filePath}:`, error.message);
+    log.error('Error reading last lines', { filePath, error: error.message });
     return [];
   }
 }
@@ -174,7 +177,7 @@ function readFromOffset(filePath, offset) {
       fs.closeSync(fd);
     }
   } catch (error) {
-    console.error(`Error reading from offset in ${filePath}:`, error.message);
+    log.error('Error reading from offset', { filePath, error: error.message });
     return { lines: [], newOffset: offset };
   }
 }

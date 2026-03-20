@@ -8,6 +8,9 @@
 import fs from 'fs';
 import path from 'path';
 import { safeWriteFileSync } from './utils.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('LayoutGen');
 
 // Configuration
 const OFFICES_PER_ROW = 4;
@@ -264,7 +267,7 @@ export function generateLayout(departments) {
   const COLS = OFFICES_PER_ROW * (OFFICE_WIDTH + 1) + 1;
   const ROWS = 1 + numRows * OFFICE_HEIGHT + (numRows - 1) * HALLWAY_HEIGHT + 1;
 
-  console.log(`[LayoutGen] Generating layout for ${deptCount} departments (${numRows} rows, ${COLS}x${ROWS} grid)`);
+  log.info('Generating layout', { deptCount, numRows, cols: COLS, rows: ROWS });
 
   const { tiles, tileColors } = initializeLayout(COLS, ROWS);
   const furniture = [];
@@ -326,7 +329,7 @@ export function generateAndSave() {
   const configPath = path.join(BASE_PATH, 'departments', 'config.json');
 
   if (!fs.existsSync(configPath)) {
-    console.warn(`[LayoutGen] Department config not found at ${configPath}, skipping layout generation`);
+    log.warn('Department config not found, skipping layout generation', { configPath });
     return { cols: 0, rows: 0, departmentCount: 0, furnitureCount: 0, seatCount: 0, fileSize: 0 };
   }
 
@@ -342,7 +345,7 @@ export function generateAndSave() {
     }));
 
   if (departments.length === 0) {
-    console.warn('[LayoutGen] No departments found in config, skipping layout generation');
+    log.warn('No departments found in config, skipping layout generation');
     return { cols: 0, rows: 0, departmentCount: 0, furnitureCount: 0, seatCount: 0, fileSize: 0 };
   }
 
@@ -363,7 +366,7 @@ export function generateAndSave() {
       fs.mkdirSync(outputDir, { recursive: true });
     }
     safeWriteFileSync(outputPath, jsonData);
-    console.log(`[LayoutGen] Layout saved to ${outputPath}`);
+    log.info('Layout saved', { outputPath });
   }
 
   // Calculate stats
@@ -374,7 +377,13 @@ export function generateAndSave() {
 
   const fileSize = jsonData.length;
 
-  console.log(`[LayoutGen] Grid: ${layout.cols}x${layout.rows}, Departments: ${departments.length}, Furniture: ${layout.furniture.length}, Seats: ${chairCount}`);
+  log.info('Layout generation complete', {
+    cols: layout.cols,
+    rows: layout.rows,
+    departments: departments.length,
+    furniture: layout.furniture.length,
+    seats: chairCount
+  });
 
   return {
     cols: layout.cols,

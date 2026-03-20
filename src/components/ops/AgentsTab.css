@@ -235,12 +235,12 @@
 }
 
 [data-theme="light"] .ops-agents-row:hover {
-  border-color: #00bcd4;
+  border-color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-agents-row.selected {
   background: #f5f5f5;
-  border-color: #00bcd4;
+  border-color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-agents-trust-bar {
@@ -250,7 +250,7 @@
 
 [data-theme="light"] .ops-agents-detail {
   background: #f5f5f5;
-  border-color: #00bcd4;
+  border-color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-agents-persona-preview,

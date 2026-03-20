@@ -190,7 +190,7 @@
 /* Light theme overrides */
 [data-theme="light"] .ops-approvals-note {
   background: #f8f9fa;
-  border-left-color: #0066ff;
+  border-left-color: var(--accent-color);
   color: #495057;
 }
 
@@ -200,7 +200,7 @@
 }
 
 [data-theme="light"] .ops-approvals-stat-value {
-  color: #0066ff;
+  color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-approvals-stat-label {
@@ -221,8 +221,8 @@
 }
 
 [data-theme="light"] .ops-approvals-tabs button.active {
-  color: #0066ff;
-  border-bottom-color: #0066ff;
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-approvals-event {
@@ -235,9 +235,9 @@
 }
 
 [data-theme="light"] .ops-approvals-tool-badge {
-  background: color-mix(in srgb, #0066ff 10%, transparent);
-  color: #0066ff;
-  border-color: color-mix(in srgb, #0066ff 20%, transparent);
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  color: var(--accent-color);
+  border-color: color-mix(in srgb, var(--accent-color) 20%, transparent);
 }
 
 [data-theme="light"] .ops-approvals-event-time {
@@ -254,11 +254,11 @@
 }
 
 [data-theme="light"] .ops-approvals-bar {
-  background: #0066ff;
+  background: var(--accent-color);
 }
 
 [data-theme="light"] .ops-approvals-bar-value {
-  color: #0066ff;
+  color: var(--accent-color);
 }
 
 [data-theme="light"] .ops-approvals-empty {

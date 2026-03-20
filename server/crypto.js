@@ -20,9 +20,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DATA_DIR } from './utils.js';
+import { createLogger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const log = createLogger('Crypto');
 
 // --------------------------------------------------------------------------
 // Constants
@@ -38,9 +41,9 @@ if (!fs.existsSync(KEY_FILE) && fs.existsSync(OLD_KEY_FILE)) {
     fs.copyFileSync(OLD_KEY_FILE, KEY_FILE);
     fs.chmodSync(KEY_FILE, 0o600);
     fs.unlinkSync(OLD_KEY_FILE);
-    console.log('[Crypto] Migrated encryption key to persistent location:', KEY_FILE);
+    log.info('Migrated encryption key to persistent location', { path: KEY_FILE });
   } catch (err) {
-    console.warn('[Crypto] Failed to migrate encryption key:', err.message);
+    log.warn('Failed to migrate encryption key', { error: err.message });
   }
 }
 const ALGORITHM = 'aes-256-gcm';
@@ -83,7 +86,7 @@ export function getEncryptionKey() {
     const key = crypto.randomBytes(32);
     fs.writeSync(fd, key.toString('hex'));
     fs.closeSync(fd);
-    console.log('[Crypto] Generated new encryption key at', KEY_FILE);
+    log.info('Generated new encryption key', { path: KEY_FILE });
     _cachedKey = key;
     created = true;
   } catch (err) {
@@ -226,7 +229,7 @@ export function decryptSensitiveFields(config, key) {
     // serviceAccountKey / clientCredentials should be parsed back into an object
     if (fieldPath === 'drive.serviceAccountKey' || fieldPath === 'google-sheets.serviceAccountKey' || fieldPath === 'gogcli.clientCredentials') {
       try { decrypted = JSON.parse(decrypted); } catch {
-        console.warn(`[Crypto] Failed to parse decrypted ${fieldPath} as JSON`);
+        log.warn('Failed to parse decrypted field as JSON', { fieldPath });
       }
     }
 

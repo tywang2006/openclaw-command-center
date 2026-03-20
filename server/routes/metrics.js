@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { getGateway } from '../gateway.js';
 import { OPENCLAW_HOME, safeWriteFileSync } from '../utils.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('Metrics');
 
 const router = express.Router();
 
@@ -64,9 +67,9 @@ function loadMetrics() {
       Object.assign(metrics.daily, raw.daily);
     }
 
-    console.log(`[Metrics] Loaded from disk: ${metrics.global.totalMessages} messages, ${Object.keys(metrics.departments).length} depts, ${Object.keys(metrics.daily).length} days`);
+    log.info('Loaded from disk', { totalMessages: metrics.global.totalMessages, departments: Object.keys(metrics.departments).length, days: Object.keys(metrics.daily).length });
   } catch (err) {
-    console.error('[Metrics] Failed to load from disk:', err.message);
+    log.error('Failed to load from disk', { error: err.message });
   }
 }
 
@@ -77,7 +80,7 @@ function saveMetrics() {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     safeWriteFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2));
   } catch (err) {
-    console.error('[Metrics] Failed to save to disk:', err.message);
+    log.error('Failed to save to disk', { error: err.message });
   }
 }
 
@@ -104,7 +107,7 @@ const _saveTimer = setInterval(() => {
 export function flushMetrics() {
   clearInterval(_saveTimer);
   saveMetrics();
-  console.log('[Metrics] Flushed to disk');
+  log.info('Flushed to disk');
 }
 
 // Load on startup
@@ -362,7 +365,7 @@ router.get('/metrics', (req, res) => {
       healthStatus,
     });
   } catch (error) {
-    console.error('[Metrics] Error getting metrics:', error);
+    log.error('Error getting metrics', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -386,7 +389,7 @@ router.get('/gateway/stats', (req, res) => {
     const stats = gateway.stats;
     res.json({ success: true, timestamp: new Date().toISOString(), gateway: stats });
   } catch (error) {
-    console.error('[Metrics] Error getting gateway stats:', error);
+    log.error('Error getting gateway stats', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -415,10 +418,22 @@ function calculateTrustScore(deptId) {
   // Activity: more messages = higher engagement (0-25 points)
   const activity = Math.min(25, totalMessages * 0.5);
 
-  // Consistency: department is active today and system has daily data (0-20 points)
-  const today = new Date().toISOString().split('T')[0];
-  const dailyData = metrics.daily[today];
-  const consistency = dailyData && dailyData.messages > 0 && totalMessages > 0 ? 20 : 10;
+  // H28 Fix: Consistency - department has been active recently (0-20 points)
+  // Check if department has sent messages in the last 7 days
+  const now = Date.now();
+  const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+  let recentActivity = false;
+
+  // Check if any daily entries exist and if department was active
+  for (const [date, dayData] of Object.entries(metrics.daily)) {
+    const dayTimestamp = new Date(date).getTime();
+    if (dayTimestamp >= sevenDaysAgo && dayData.messages > 0) {
+      recentActivity = true;
+      break;
+    }
+  }
+
+  const consistency = (recentActivity && totalMessages > 0) ? 20 : 10;
 
   const total = Math.round(reliability + speed + activity + consistency);
 
@@ -457,7 +472,7 @@ router.get('/trust-scores', (req, res) => {
 
     res.json({ leaderboard, updatedAt: new Date().toISOString() });
   } catch (error) {
-    console.error('[Metrics] Error getting trust scores:', error);
+    log.error('Error getting trust scores', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 });

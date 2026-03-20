@@ -74,8 +74,12 @@ export default function ChatInput({
 
   // Check email and voice status
   useEffect(() => {
-    authedFetch('/api/email/status').then(r => r.json()).then(d => setEmailConfigured(d.configured && d.enabled)).catch(() => {})
-    authedFetch('/api/voice/status').then(r => r.json()).then(d => setVoiceConfigured(d.configured)).catch(() => {})
+    authedFetch('/api/email/status').then(r => r.json()).then(d => setEmailConfigured(d.configured && d.enabled)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch email status failed:', err);
+    })
+    authedFetch('/api/voice/status').then(r => r.json()).then(d => setVoiceConfigured(d.configured)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch voice status failed:', err);
+    })
   }, [])
 
   // Auto-resize textarea

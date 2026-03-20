@@ -33,10 +33,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { BASE_PATH } from './utils.js';
 import crypto from 'crypto';
-import { startSubAgentCleanup } from './agent.js';
+import { startSubAgentCleanup, handleGatewayDisconnect, cleanupAsyncRequest } from './agent.js';
+import { createLogger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const log = createLogger('Server');
 
 // Global interval references for cleanup
 let subAgentCleanupInterval = null;
@@ -50,7 +53,7 @@ const requiredDirs = [
 for (const dir of requiredDirs) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-    console.log(`[Bootstrap] Created missing directory: ${dir}`);
+    log.info('Created missing directory', { dir });
   }
 }
 
@@ -60,6 +63,11 @@ const server = http.createServer(app);
 // Configuration
 const HOST = process.env.CMD_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.CMD_PORT || '5100', 10);
+
+// Trust proxy — required behind nginx reverse proxy so req.ip reflects
+// the real client IP (from X-Forwarded-For) instead of nginx's 127.0.0.1.
+// This affects rate limiting and the setup endpoint's localhost check.
+app.set('trust proxy', 'loopback');
 
 // Security headers
 app.use(helmet({
@@ -162,6 +170,8 @@ app.use('/api/email/send', heavyLimiter);
 app.use('/api/voice/transcribe', heavyLimiter);
 app.use('/api/drive/upload', heavyLimiter);
 app.use('/api/drive/backup', heavyLimiter);
+app.use('/api/meetings/:id/message', heavyLimiter);
+app.use('/api/meetings/:id/negotiate', heavyLimiter);
 
 // Strict rate limiting for admin/credential endpoints (5 req/min)
 const adminLimiter = rateLimit({
@@ -202,7 +212,7 @@ app.use('/api/push', pushRouter);
 
 // Global Express error handler
 app.use((err, req, res, next) => {
-  console.error('[Server] Unhandled Express error:', err.stack || err.message || err);
+  log.error('Unhandled Express error', { error: err.stack || err.message || err });
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Internal server error' });
 });
@@ -246,6 +256,9 @@ app.get('/cmd', (req, res) => {
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1048576 });
 app.locals.wss = wss; // Expose to routes for broadcasting
 setWss(wss); // Pass to metrics for health alerts
+
+// Track active WebSocket connections with their auth tokens
+const activeWsConnections = new Set();
 
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
@@ -291,7 +304,7 @@ wss.on('connection', (ws, req) => {
         const now = Date.now();
         const last = _wsUnauthLog.get(clientIp) || 0;
         if (now - last > 30000) {
-          console.log(`[WebSocket] Unauthorized connection from ${clientIp}`);
+          log.info('Unauthorized WebSocket connection', { clientIp });
           _wsUnauthLog.set(clientIp, now);
         }
         ws.close(1008, 'Unauthorized');
@@ -301,7 +314,7 @@ wss.on('connection', (ws, req) => {
       // Connection limit check (before marking authenticated to prevent TOCTOU race)
       const authCount = [...wss.clients].filter(c => c._authenticated).length;
       if (authCount >= 10) {
-        console.warn(`[WebSocket] Connection limit reached (${authCount}), rejecting`);
+        log.warn('WebSocket connection limit reached', { authCount });
         clearTimeout(authTimeout);
         ws.close(1013, 'Max connections reached');
         return;
@@ -313,7 +326,10 @@ wss.on('connection', (ws, req) => {
       clearTimeout(authTimeout);
       ws.removeListener('message', onFirstMessage);
 
-      console.log(`[WebSocket] Client authenticated from ${clientIp} (total: ${wss.clients.size})`);
+      // Track this connection for auth revocation
+      activeWsConnections.add(ws);
+
+      log.info('WebSocket client authenticated', { clientIp, totalClients: wss.clients.size });
 
       // Start ping interval only after auth succeeds
       const pingInterval = setInterval(() => {
@@ -323,7 +339,10 @@ wss.on('connection', (ws, req) => {
           clearInterval(pingInterval);
         }
       }, 30000);
-      ws.on('close', () => { clearInterval(pingInterval); });
+      ws.on('close', () => {
+        clearInterval(pingInterval);
+        activeWsConnections.delete(ws);
+      });
 
       // Send initial state after successful auth
       try {
@@ -338,7 +357,7 @@ wss.on('connection', (ws, req) => {
           timestamp: new Date().toISOString()
         }));
       } catch (error) {
-        console.error('[WebSocket] Error sending initial state:', error.message);
+        log.error('Error sending initial state', { error: error.message });
       }
 
       // Set up normal message handler
@@ -346,13 +365,13 @@ wss.on('connection', (ws, req) => {
         try {
           const s = message.toString();
           if (s.length > 1000) return;
-          console.log(`[WebSocket] Received from ${clientIp}: ${s.substring(0, 100)}`);
+          log.info('WebSocket message received', { clientIp, message: s.substring(0, 100) });
         } catch (error) {
-          console.error('[WebSocket] Error processing message:', error.message);
+          log.error('Error processing WebSocket message', { clientIp, error: error.message });
         }
       });
     } catch (err) {
-      console.warn('[WebSocket] Invalid auth message:', err.message);
+      log.warn('Invalid WebSocket auth message', { clientIp, error: err.message });
       ws.close(1008, 'Invalid auth message');
     }
   });
@@ -360,12 +379,12 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     clearTimeout(authTimeout);
     if (authenticated) {
-      console.log(`[WebSocket] Client disconnected from ${clientIp} (total: ${wss.clients.size})`);
+      log.info('WebSocket client disconnected', { clientIp, totalClients: wss.clients.size });
     }
   });
 
   ws.on('error', (error) => {
-    console.error(`[WebSocket] Error for ${clientIp}:`, error.message);
+    log.error('WebSocket error', { clientIp, error: error.message });
   });
 
 });
@@ -376,11 +395,11 @@ const watcher = createWatcher(wss);
 // Connect to OpenClaw Gateway
 const gateway = getGateway();
 gateway.connect().then(() => {
-  console.log('[Gateway] Connected to OpenClaw Gateway');
+  log.info('Connected to OpenClaw Gateway');
   notifyInfo('gateway', 'Gateway Connected', 'Successfully connected to ChaoClaw Gateway');
 }).catch(err => {
-  console.warn('[Gateway] Initial connection failed:', err.message);
-  console.warn('[Gateway] AI features will be unavailable until Gateway connection is fixed.');
+  log.warn('Gateway initial connection failed', { error: err.message });
+  log.warn('AI features will be unavailable until Gateway connection is fixed');
   notifyWarning('gateway', 'Gateway Not Connected', err.message + ' — AI features unavailable');
 });
 
@@ -407,9 +426,9 @@ function loadDeptMaps() {
     }
     deptNames = idToName;
     topicToDept = topicToId;
-    console.log(`[Config] Loaded ${Object.keys(idToName).length} departments`);
+    log.info('Loaded department config', { departmentCount: Object.keys(idToName).length });
   } catch (err) {
-    console.error('[Config] Failed to load department config:', err.message);
+    log.error('Failed to load department config', { error: err.message });
   }
 }
 loadDeptMaps();
@@ -417,11 +436,11 @@ loadDeptMaps();
 // Watch config.json for hot-reload (forward-compatible with file moves)
 try {
   fs.watchFile(deptConfigPath, { interval: 2000 }, () => {
-    console.log('[Config] Department config changed, reloading...');
+    log.info('Department config changed, reloading');
     loadDeptMaps();
   });
 } catch (err) {
-  console.warn('[Config] Failed to watch config file:', err.message);
+  log.warn('Failed to watch config file', { error: err.message });
 }
 
 /**
@@ -450,6 +469,12 @@ function sessionKeyToDeptId(sessionKey) {
 // Broadcast gateway status changes to frontend
 gateway.onStatus(({ status, detail }) => {
   if (status === 'connected' && detail === 'reconnected') recordGatewayReconnect();
+
+  // H9 fix: Handle gateway disconnect - fail all pending async requests
+  if (status === 'disconnected' || status === 'fatal') {
+    handleGatewayDisconnect();
+  }
+
   const payload = JSON.stringify({
     event: 'gateway:status',
     data: { status, detail },
@@ -461,25 +486,24 @@ gateway.onStatus(({ status, detail }) => {
 // Close all authenticated WS connections when tokens are cleared (password change)
 onTokensCleared(() => {
   let closed = 0;
-  wss.clients.forEach(c => {
-    if (c._authenticated) {
-      try { c.close(1008, 'Token revoked'); } catch (err) { /* expected during cleanup */ }
-      closed++;
-    }
+  activeWsConnections.forEach(c => {
+    try { c.close(4001, 'auth-revoked'); } catch (err) { /* expected during cleanup */ }
+    closed++;
   });
-  if (closed > 0) console.log(`[WebSocket] Closed ${closed} connection(s) after token revocation`);
+  activeWsConnections.clear();
+  if (closed > 0) log.info('Closed WebSocket connections after password change', { closedCount: closed });
 });
 
 // Close specific WS connection when a single token is revoked (logout)
 onTokenRevoked((revokedToken) => {
   let closed = 0;
-  wss.clients.forEach(c => {
-    if (c._authenticated && c._authToken === revokedToken) {
-      try { c.close(1008, 'Token revoked'); } catch (err) { /* expected during cleanup */ }
+  activeWsConnections.forEach(c => {
+    if (c._authToken === revokedToken) {
+      try { c.close(4001, 'auth-revoked'); } catch (err) { /* expected during cleanup */ }
       closed++;
     }
   });
-  if (closed > 0) console.log(`[WebSocket] Closed ${closed} connection(s) for revoked token`);
+  if (closed > 0) log.info('Closed WebSocket connections for revoked token', { closedCount: closed });
 });
 
 // Listen for Gateway events (Telegram messages, cron responses, etc.)
@@ -487,14 +511,19 @@ gateway.onEvent((event) => {
   if (event.type === 'agent:message') {
     const deptId = sessionKeyToDeptId(event.sessionKey);
     if (!deptId) {
-      console.log(`[Gateway Event] Unmatched session: ${event.sessionKey}`);
+      log.info('Gateway event with unmatched session', { sessionKey: event.sessionKey });
       return;
     }
 
     const deptName = deptNames[deptId];
     const timestamp = new Date().toISOString();
 
-    console.log(`[Gateway Event] ${deptId}: reply=${(event.assistantMessage || '').length}chars session=${event.sessionKey}`);
+    log.info('Gateway event received', { deptId, replyLength: (event.assistantMessage || '').length, sessionKey: event.sessionKey });
+
+    // H9 fix: Clean up async request tracking when response arrives
+    if (event.requestId) {
+      cleanupAsyncRequest(event.requestId);
+    }
 
     // Broadcast assistant response to frontend WebSocket clients
     if (event.assistantMessage) {
@@ -564,7 +593,7 @@ subAgentCleanupInterval = startSubAgentCleanup();
 
 // Graceful shutdown
 function gracefulShutdown(signal) {
-  console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  log.info('Shutting down gracefully', { signal });
   flushMetrics();
   getGateway().disconnect();
   watcher.close();
@@ -572,7 +601,7 @@ function gracefulShutdown(signal) {
   // Stop sub-agent cleanup scheduler
   if (subAgentCleanupInterval) {
     clearInterval(subAgentCleanupInterval);
-    console.log('[SubAgent] Cleanup scheduler stopped');
+    log.info('SubAgent cleanup scheduler stopped');
   }
 
   // Close all WebSocket clients
@@ -581,13 +610,13 @@ function gracefulShutdown(signal) {
   }
 
   server.close(() => {
-    console.log('[Server] Closed all connections');
+    log.info('Closed all connections');
     process.exit(0);
   });
 
   // Force exit after 5s if graceful close hangs
   setTimeout(() => {
-    console.error('[Server] Forced exit after timeout');
+    log.error('Forced exit after timeout');
     process.exit(1);
   }, 5000);
 }
@@ -596,11 +625,11 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[Server] Unhandled Promise rejection:', reason);
+  log.error('Unhandled Promise rejection', { reason });
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[Server] Uncaught exception:', err);
+  log.error('Uncaught exception', { error: err });
   setTimeout(() => process.exit(1), 1000);
 });
 
@@ -611,24 +640,24 @@ try {
   const { generateAndSave } = await import('./layout-generator.js');
   const result = generateAndSave({ distPath });
   if (result.departmentCount > 0) {
-    console.log(`[Startup] Generated layout: ${result.departmentCount} departments`);
+    log.info('Generated layout', { departmentCount: result.departmentCount });
   }
 } catch (err) {
-  console.warn('[Startup] Layout generation skipped:', err.message);
+  log.warn('Layout generation skipped', { error: err.message });
 }
 
 // Start server
 server.listen(PORT, HOST, () => {
-  console.log('='.repeat(60));
-  console.log('ChaoClaw Command Center Backend');
-  console.log('='.repeat(60));
-  console.log(`HTTP Server: http://${HOST}:${PORT}`);
-  console.log(`WebSocket:   ws://${HOST}:${PORT}/ws`);
-  console.log(`API Base:    http://${HOST}:${PORT}/api`);
-  console.log('='.repeat(60));
-  console.log('Watching ChaoClaw workspace for changes...');
-  console.log('Press Ctrl+C to stop');
-  console.log('='.repeat(60));
+  log.info('='.repeat(60));
+  log.info('ChaoClaw Command Center Backend');
+  log.info('='.repeat(60));
+  log.info(`HTTP Server: http://${HOST}:${PORT}`);
+  log.info(`WebSocket:   ws://${HOST}:${PORT}/ws`);
+  log.info(`API Base:    http://${HOST}:${PORT}/api`);
+  log.info('='.repeat(60));
+  log.info('Watching ChaoClaw workspace for changes...');
+  log.info('Press Ctrl+C to stop');
+  log.info('='.repeat(60));
 });
 
 export { app, server, wss };

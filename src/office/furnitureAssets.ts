@@ -2843,10 +2843,6 @@ export function initFurnitureCatalog(): boolean {
     const assetData: LoadedAssetData = { catalog, sprites }
     const success = buildDynamicCatalog(assetData)
 
-    if (success) {
-      console.log(`✓ Initialized furniture catalog with ${ASSET_METADATA.length} procedurally-generated assets`)
-    }
-
     return success
   } catch (error) {
     console.error('Failed to initialize furniture catalog:', error)

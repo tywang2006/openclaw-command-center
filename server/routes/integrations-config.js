@@ -13,6 +13,10 @@ import {
 } from '../crypto.js';
 import { recordAudit } from './audit.js';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync, getConfigValue } from '../utils.js';
+import { withFileLock } from '../file-lock.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('IntegConfig');
 
 // OAuth CSRF state tokens (expire after 10 minutes)
 const oauthStates = new Map();
@@ -96,7 +100,7 @@ function writeJsonFile(filePath, data, { backup = false } = {}) {
     safeWriteFileSync(filePath, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
-    console.error(`[IntegrationsConfig] Error writing JSON file ${filePath}:`, error.message);
+    log.error('Error writing JSON file', { filePath, error: error.message });
     return false;
   }
 }
@@ -121,7 +125,7 @@ function getConfig() {
   const key = getEncryptionKey();
   const migrated = migratePlaintextFields(config, key);
   if (migrated > 0) {
-    console.log(`[Crypto] Migrated ${migrated} plaintext credential(s) to encrypted storage`);
+    log.info('Migrated plaintext credentials to encrypted storage', { count: migrated });
     writeJsonFile(CONFIG_PATH, config, { backup: true });
   }
 
@@ -141,7 +145,7 @@ function saveConfig(config) {
     encryptSensitiveFields(toWrite, key);
     return writeJsonFile(CONFIG_PATH, toWrite, { backup: true });
   }).catch(err => {
-    console.error('[IntegrationsConfig] saveConfig lock error:', err.message);
+    log.error('saveConfig lock error', { error: err.message });
     return false;
   });
   return _writeLock;
@@ -228,7 +232,7 @@ router.get('/integrations/config', (req, res) => {
     const masked = maskSensitiveFields(config);
     res.json(masked);
   } catch (error) {
-    console.error('[IntegrationsConfig] Error in GET /integrations/config:', error);
+    log.error('Error in GET /integrations/config', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch integrations config' });
   }
 });
@@ -248,7 +252,7 @@ router.put('/integrations/config/:service', async (req, res) => {
     const config = getConfig();
     const updates = req.body;
 
-    console.log(`[IntegrationsConfig] PUT ${service}:`, JSON.stringify(Object.keys(updates)), 'serviceAccountKey type:', typeof updates.serviceAccountKey);
+    log.info('PUT service config', { service, fields: Object.keys(updates), serviceAccountKeyType: typeof updates.serviceAccountKey });
 
     // Validate based on service type
     if (service === 'gmail') {
@@ -283,6 +287,9 @@ router.put('/integrations/config/:service', async (req, res) => {
     } else if (service === 'webhook') {
       if (updates.url !== undefined && typeof updates.url !== 'string') {
         return res.status(400).json({ error: 'url must be a string' });
+      }
+      if (updates.url && updates.url.length > 2048) {
+        return res.status(400).json({ error: 'Webhook URL must be 2048 characters or less' });
       }
       if (updates.url && isPrivateUrl(updates.url)) {
         return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
@@ -335,7 +342,7 @@ router.put('/integrations/config/:service', async (req, res) => {
     const masked = maskSensitiveFields(config);
     res.json({ success: true, config: masked[service] });
   } catch (error) {
-    console.error(`[IntegrationsConfig] Error in PUT /integrations/config/${req.params.service}:`, error);
+    log.error('Error in PUT /integrations/config/:service', { service: req.params.service, error: error.message });
     res.status(500).json({ error: 'Failed to update integration config' });
   }
 });
@@ -379,11 +386,11 @@ router.post('/integrations/config/:service/test', async (req, res) => {
           await transporter.verify();
           return res.json({ success: true, message: `Gmail connection successful (${smtp.label})` });
         } catch (error) {
-          console.log(`[IntegrationsConfig] Gmail test via ${smtp.label} failed: ${error.message}`);
+          log.info('Gmail test via port failed', { label: smtp.label, error: error.message });
           lastError = error;
         }
       }
-      console.error('[IntegrationsConfig] Gmail test failed on all ports:', lastError);
+      log.error('Gmail test failed on all ports', { error: lastError.message });
       res.status(502).json({ error: 'Gmail connection failed', detail: lastError.message });
     } else if (service === 'drive') {
       const { serviceAccountKey } = config.drive;
@@ -400,7 +407,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         await auth.getClient();
         res.json({ success: true, message: 'Google Drive connection successful' });
       } catch (error) {
-        console.error('[IntegrationsConfig] Drive test failed:', error);
+        log.error('Drive test failed', { error: error.message });
         res.status(502).json({ error: 'Drive connection failed', detail: error.message });
       }
     } else if (service === 'webhook') {
@@ -443,7 +450,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         }
         res.json({ success: true, message: 'Webhook test sent successfully' });
       } catch (error) {
-        console.error('[IntegrationsConfig] Webhook test failed:', error);
+        log.error('Webhook test failed', { error: error.message });
         res.status(502).json({ error: 'Webhook test failed', detail: error.message });
       }
     } else if (service === 'voice') {
@@ -471,7 +478,7 @@ router.post('/integrations/config/:service/test', async (req, res) => {
 
         res.json({ success: true, message: 'OpenAI Whisper API connection successful' });
       } catch (error) {
-        console.error('[IntegrationsConfig] Voice test failed:', error);
+        log.error('Voice test failed', { error: error.message });
         res.status(502).json({ error: 'Voice API connection failed', detail: error.message });
       }
     } else if (service === 'gogcli') {
@@ -514,7 +521,9 @@ router.post('/integrations/config/:service/test', async (req, res) => {
               }
             }
           }
-        } catch {}
+        } catch {
+          // Token refresh failed — expected, user needs to reauthorize
+        }
       }
       res.status(502).json({ error: 'Not authorized yet. Click "Authorize" to start OAuth flow.', detail: 'step:authorize' });
     } else if (service === 'google-sheets') {
@@ -531,12 +540,12 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         await auth.getClient();
         res.json({ success: true, message: 'Google Sheets API connection successful' });
       } catch (error) {
-        console.error('[IntegrationsConfig] Google Sheets test failed:', error);
+        log.error('Google Sheets test failed', { error: error.message });
         res.status(502).json({ error: 'Google Sheets connection failed', detail: error.message });
       }
     }
   } catch (error) {
-    console.error(`[IntegrationsConfig] Error in POST /integrations/config/${req.params.service}/test:`, error);
+    log.error('Error in POST /integrations/config/:service/test', { service: req.params.service, error: error.message });
     res.status(500).json({ error: 'Test connection failed' });
   }
 });
@@ -568,7 +577,7 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials: missing client_id or client_secret' });
     }
     const scopes = [
-      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/drive.file',
       'https://www.googleapis.com/auth/spreadsheets',
       'https://www.googleapis.com/auth/userinfo.email',
     ].join(' ');
@@ -594,7 +603,7 @@ router.post('/integrations/config/gogcli/authorize', (req, res) => {
       `&state=${encodeURIComponent(state)}`;
     res.json({ success: true, authUrl, redirectUri, flowType });
   } catch (error) {
-    console.error('[IntegrationsConfig] gogcli authorize error:', error);
+    log.error('gogcli authorize error', { error: error.message });
     res.status(500).json({ error: 'Failed to generate auth URL' });
   }
 });
@@ -665,7 +674,9 @@ router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
         const info = await infoResp.json();
         email = info.email || '';
       }
-    } catch {}
+    } catch {
+      // User info fetch failed — non-critical
+    }
 
     // Update account in config
     if (email) {
@@ -678,7 +689,7 @@ router.get('/integrations/config/gogcli/oauth-redirect', async (req, res) => {
     res.send(pageHtml('Authorization Successful',
       `<h2 class="ok">Authorization Successful!</h2><p>Logged in as <strong>${email || 'OK'}</strong></p><p>You can close this tab and return to Command Center.</p>`));
   } catch (error) {
-    console.error('[IntegrationsConfig] OAuth redirect error:', error);
+    log.error('OAuth redirect error', { error: error.message });
     const safeMsg = String(error.message).replace(/[<>&"']/g, '');
     res.send(pageHtml('Error', `<h2 class="err">Error</h2><p>${safeMsg}</p>`));
   }
@@ -733,7 +744,9 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
         const info = await infoResp.json();
         email = info.email || '';
       }
-    } catch {}
+    } catch {
+      // User info fetch failed — non-critical
+    }
 
     if (email) {
       config.gogcli.account = email;
@@ -744,7 +757,7 @@ router.post('/integrations/config/gogcli/callback', async (req, res) => {
     recordAudit({ action: 'gogcli.authorized', target: 'gogcli', details: { email }, ip: req.ip });
     res.json({ success: true, message: `Authorized as ${email || 'OK'}`, email });
   } catch (error) {
-    console.error('[IntegrationsConfig] gogcli callback error:', error);
+    log.error('gogcli callback error', { error: error.message });
     res.status(500).json({ error: 'Failed to exchange auth code for tokens' });
   }
 });
@@ -771,7 +784,7 @@ router.delete('/integrations/config/:service', async (req, res) => {
 
     res.json({ success: true, message: `${service} configuration reset to defaults` });
   } catch (error) {
-    console.error(`[IntegrationsConfig] Error in DELETE /integrations/config/${req.params.service}:`, error);
+    log.error('Error in DELETE /integrations/config/:service', { service: req.params.service, error: error.message });
     res.status(500).json({ error: 'Failed to reset integration config' });
   }
 });
@@ -812,7 +825,7 @@ router.get('/integrations/autobackup', (req, res) => {
       nextRun,
     });
   } catch (error) {
-    console.error('[IntegrationsConfig] GET /integrations/autobackup error:', error);
+    log.error('GET /integrations/autobackup error', { error: error.message });
     res.status(500).json({ error: 'Failed to fetch autobackup config' });
   }
 });
@@ -851,7 +864,7 @@ router.put('/integrations/autobackup', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('[IntegrationsConfig] PUT /integrations/autobackup error:', error);
+    log.error('PUT /integrations/autobackup error', { error: error.message });
     res.status(500).json({ error: 'Failed to update autobackup config' });
   }
 });
@@ -869,7 +882,7 @@ router.post('/integrations/autobackup/run', async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('[IntegrationsConfig] POST /integrations/autobackup/run error:', error);
+    log.error('POST /integrations/autobackup/run error', { error: error.message });
     res.status(500).json({ error: 'Backup failed' });
   }
 });
@@ -897,10 +910,10 @@ async function buildDriveClient(config) {
           ? (clientCreds.installed || clientCreds.web || clientCreds)
           : {};
         if (!cred.client_id || !cred.client_secret) {
-          console.error('[Drive] OAuth credentials missing client_id or client_secret. Type:', typeof clientCreds);
+          log.error('OAuth credentials missing client_id or client_secret', { credType: typeof clientCreds });
           throw new Error('Invalid OAuth credentials');
         }
-        console.log('[Drive] Using OAuth client_id:', cred.client_id.substring(0, 20) + '...');
+        log.info('Using OAuth client_id', { clientIdPrefix: cred.client_id.substring(0, 20) });
         const oauth2 = new googleapis.auth.OAuth2(cred.client_id, cred.client_secret);
         oauth2.setCredentials(tokens);
         // Auto-refresh: listen for new tokens
@@ -911,7 +924,7 @@ async function buildDriveClient(config) {
         return { drive: googleapis.drive({ version: 'v3', auth: oauth2 }), method: 'oauth' };
       }
     } catch (e) {
-      console.warn('[Drive] OAuth token load failed, trying service account:', e.message);
+      log.warn('OAuth token load failed, trying service account', { error: e.message });
     }
   }
 
@@ -996,10 +1009,10 @@ async function runAutoBackup() {
     config.autoBackup.lastRun = new Date().toISOString();
     await saveConfig(config);
 
-    console.log(`[AutoBackup] Completed (${client.method}): ${files.length} departments backed up`);
+    log.info('AutoBackup completed', { method: client.method, departmentCount: files.length });
     return { success: true, files };
   } catch (error) {
-    console.error('[AutoBackup] Failed:', error);
+    log.error('AutoBackup failed', { error: error.message });
     return { success: false, error: error.message };
   }
 }
@@ -1014,7 +1027,9 @@ function readCronJobs() {
     if (fs.existsSync(CRON_FILE_PATH)) {
       return JSON.parse(fs.readFileSync(CRON_FILE_PATH, 'utf8'));
     }
-  } catch {}
+  } catch {
+    // Cron file may not exist — expected
+  }
   return { version: 1, jobs: [] };
 }
 
@@ -1025,7 +1040,7 @@ function writeCronJobs(data) {
     safeWriteFileSync(CRON_FILE_PATH, JSON.stringify(data, null, 2));
     return true;
   } catch (err) {
-    console.error('[AutoBackup] Failed to write cron jobs:', err.message);
+    log.error('Failed to write cron jobs', { error: err.message });
     return false;
   }
 }
@@ -1047,7 +1062,7 @@ function buildCronExpr(schedule, time) {
  * Called on startup and whenever autoBackup settings change.
  */
 export function syncAutoBackupCronJob() {
-  try {
+  withFileLock(CRON_FILE_PATH, async () => {
     const config = getConfig();
     const ab = config.autoBackup || {};
     const data = readCronJobs();
@@ -1062,7 +1077,7 @@ export function syncAutoBackupCronJob() {
       job.enabled = !!ab.enabled;
       job.schedule = { kind: 'cron', expr: cronExpr };
       job.updatedAtMs = now;
-      console.log(`[AutoBackup] Synced cron job: enabled=${job.enabled}, expr=${cronExpr}`);
+      log.info('Synced cron job', { enabled: job.enabled, expr: cronExpr });
     } else {
       // Create new job
       job = {
@@ -1084,13 +1099,13 @@ export function syncAutoBackupCronJob() {
         state: { consecutiveErrors: 0 },
       };
       data.jobs.push(job);
-      console.log(`[AutoBackup] Created cron job: id=${job.id}, expr=${cronExpr}`);
+      log.info('Created cron job', { id: job.id, expr: cronExpr });
     }
 
     writeCronJobs(data);
-  } catch (error) {
-    console.error('[AutoBackup] Cron sync failed:', error.message);
-  }
+  }).catch(error => {
+    log.error('Cron sync failed', { error: error.message });
+  });
 }
 
 export default router;

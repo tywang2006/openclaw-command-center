@@ -590,7 +590,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
                     if (ch.isSubagent) continue
                     seats[ch.id] = { palette: ch.palette, seatId: ch.seatId }
                   }
-                  vscode.postMessage({ type: 'saveAgentSeats', seats })
+                  vscode?.postMessage({ type: 'saveAgentSeats', seats })
                   return
                 }
               }

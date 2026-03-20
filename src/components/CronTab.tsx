@@ -323,7 +323,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
   if (loading) {
     return (
       <div className="cron-tab">
-        <div className="loading">{t('cron.loading')}</div>
+        <div className="cron-loading">{t('cron.loading')}</div>
       </div>
     );
   }
@@ -351,8 +351,8 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       </div>
 
       {showCreateForm && (
-        <div className="create-form">
-          <div className="form-group">
+        <div className="cron-create-form">
+          <div className="cron-form-group">
             <label>{t('cron.form.name')}</label>
             <input
               type="text"
@@ -362,7 +362,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             />
           </div>
 
-          <div className="form-group">
+          <div className="cron-form-group">
             <label>{t('cron.form.assign')}</label>
             <select
               value={form.deptId}
@@ -377,7 +377,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
           </div>
 
           {form.deptId && subAgents.length > 0 && (
-            <div className="form-group">
+            <div className="cron-form-group">
               <label>{t('cron.form.subagent')}</label>
               <select
                 value={form.subAgentId}
@@ -392,7 +392,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             </div>
           )}
 
-          <div className="form-group">
+          <div className="cron-form-group">
             <label>{t('cron.form.schedule')}</label>
             <div className="schedule-type-selector">
               <button
@@ -411,7 +411,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
           </div>
 
           {form.scheduleKind === 'every' ? (
-            <div className="form-group">
+            <div className="cron-form-group">
               <label>{t('cron.form.interval')}</label>
               <input
                 type="number"
@@ -421,7 +421,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               />
             </div>
           ) : (
-            <div className="form-group">
+            <div className="cron-form-group">
               <label>{t('cron.form.cron')}</label>
               <input
                 type="text"
@@ -433,7 +433,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             </div>
           )}
 
-          <div className="form-group">
+          <div className="cron-form-group">
             <label>{t('cron.form.message')}</label>
             <textarea
               value={form.message}
@@ -443,7 +443,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
             />
           </div>
 
-          <div className="form-group">
+          <div className="cron-form-group">
             <label>{t('cron.form.timeout')}</label>
             <input
               type="number"

@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react'
 import './Toast.css'
 
+const TOAST_DISPLAY_MS = 3500
+const TOAST_EXIT_ANIMATION_MS = 300
+
 interface ToastItem {
   id: number
   message: string
@@ -47,13 +50,13 @@ function ToastItem({ toast, onRemove }: { toast: ToastItem; onRemove: (id: numbe
   const [exiting, setExiting] = useState(false)
 
   useEffect(() => {
-    const timer = setTimeout(() => setExiting(true), 3500)
+    const timer = setTimeout(() => setExiting(true), TOAST_DISPLAY_MS)
     return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
     if (exiting) {
-      const timer = setTimeout(() => onRemove(toast.id), 300)
+      const timer = setTimeout(() => onRemove(toast.id), TOAST_EXIT_ANIMATION_MS)
       return () => clearTimeout(timer)
     }
   }, [exiting, toast.id, onRemove])

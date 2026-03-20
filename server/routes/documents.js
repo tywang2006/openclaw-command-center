@@ -5,10 +5,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import { DATA_DIR, BASE_PATH } from '../utils.js';
+import { createLogger } from '../logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const log = createLogger('Documents');
 const router = express.Router();
 const execFileAsync = promisify(execFile);
 
@@ -43,13 +45,13 @@ router.post('/documents/process', async (req, res) => {
     const { stdout, stderr } = await execFileAsync('python3', [scriptPath, resolvedPath], { timeout: 60_000 });
 
     if (stderr) {
-      console.error('Document processing error:', stderr);
+      log.error('Document processing stderr output', { stderr });
     }
 
     const result = JSON.parse(stdout);
     res.json(result);
   } catch (err) {
-    console.error('[Documents] Process error:', err.message);
+    log.error('Process error', { error: err.message });
     res.status(500).json({ error: 'Document processing failed' });
   }
 });

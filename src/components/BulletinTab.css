@@ -54,9 +54,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid rgba(255, 107, 53, 0.3);
-  background: rgba(255, 107, 53, 0.08);
-  color: #ff6b35;
+  border: 2px solid rgba(232, 168, 56, 0.3);
+  background: rgba(232, 168, 56, 0.08);
+  color: var(--accent-secondary);
   cursor: pointer;
   padding: 0;
   border-radius: 0;
@@ -64,8 +64,8 @@
 }
 
 .broadcast-btn:hover:not(:disabled) {
-  background: rgba(255, 107, 53, 0.15);
-  border-color: rgba(255, 107, 53, 0.5);
+  background: rgba(232, 168, 56, 0.15);
+  border-color: rgba(232, 168, 56, 0.5);
 }
 
 .broadcast-btn:disabled {
@@ -111,7 +111,7 @@
 .broadcast-responses-title {
   font-size: 11px;
   font-weight: 600;
-  color: #ff6b35;
+  color: var(--accent-secondary);
   padding: 0 0 8px;
   border-bottom: 2px solid var(--border-color);
   margin-bottom: 8px;
@@ -125,9 +125,9 @@
 .clear-responses-btn {
   padding: 4px 10px;
   font-size: 11px;
-  border: 1px solid rgba(255, 107, 53, 0.3);
-  background: rgba(255, 107, 53, 0.08);
-  color: #ff6b35;
+  border: 1px solid rgba(232, 168, 56, 0.3);
+  background: rgba(232, 168, 56, 0.08);
+  color: var(--accent-secondary);
   cursor: pointer;
   border-radius: 0;
   transition: all var(--transition-fast);
@@ -137,8 +137,8 @@
 }
 
 .clear-responses-btn:hover {
-  background: rgba(255, 107, 53, 0.15);
-  border-color: rgba(255, 107, 53, 0.5);
+  background: rgba(232, 168, 56, 0.15);
+  border-color: rgba(232, 168, 56, 0.5);
 }
 
 .broadcast-response {

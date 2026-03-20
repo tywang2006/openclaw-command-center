@@ -3,8 +3,27 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'node:crypto';
 import { DATA_DIR } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Audit');
 const router = express.Router();
+
+/**
+ * Sanitize a value for safe CSV export.
+ * - Prefixes formula-injection characters (=, +, -, @) with a single quote
+ *   to prevent spreadsheet formula execution (e.g. =HYPERLINK(), =CMD()).
+ * - Wraps values in double quotes and escapes embedded double quotes.
+ * - Handles values containing commas, newlines, or double quotes.
+ */
+function csvSafe(value) {
+  let str = String(value);
+  // Neutralize formula injection: prefix dangerous leading characters with a quote
+  if (/^[=+\-@]/.test(str)) {
+    str = "'" + str;
+  }
+  // Escape double quotes by doubling them, then wrap in double quotes
+  return '"' + str.replace(/"/g, '""') + '"';
+}
 
 const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl');
 const MAX_ENTRIES = 500;
@@ -21,11 +40,11 @@ try {
       for (const line of recentLines) {
         try { auditLog.push(JSON.parse(line)); } catch { /* skip */ }
       }
-      console.log(`[Audit] Loaded ${auditLog.length} entries from audit.jsonl`);
+      log.info(`Loaded ${auditLog.length} entries from audit.jsonl`);
     }
   }
 } catch (err) {
-  console.error('[Audit] Failed to load:', err.message);
+  log.error('Failed to load: ' + err.message);
 }
 
 export function recordAudit({ action, target, deptId = null, details = null, ip = null }) {
@@ -45,7 +64,7 @@ export function recordAudit({ action, target, deptId = null, details = null, ip 
   }
 
   fs.appendFile(AUDIT_FILE, JSON.stringify(entry) + '\n', (err) => {
-    if (err) console.error('[Audit] Write failed:', err.message);
+    if (err) log.error('Write failed: ' + err.message);
   });
 
   return entry;
@@ -67,7 +86,7 @@ router.get('/audit', (req, res) => {
 
     res.json({ entries, total: filtered.length });
   } catch (error) {
-    console.error('[Audit] GET /audit error:', error);
+    log.error('GET /audit error: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch audit log' });
   }
 });
@@ -80,12 +99,19 @@ router.get('/audit/export', (req, res) => {
     const header = 'timestamp,action,target,deptId,details,ip\n';
     const rows = [...auditLog].reverse().map(e => {
       const details = e.details ? JSON.stringify(e.details).replace(/"/g, '""') : '';
-      return `${e.timestamp},"${e.action}","${e.target || ''}","${e.deptId || ''}","${details}","${e.ip || ''}"`;
+      return [
+        csvSafe(e.timestamp || ''),
+        csvSafe(e.action || ''),
+        csvSafe(e.target || ''),
+        csvSafe(e.deptId || ''),
+        csvSafe(details),
+        csvSafe(e.ip || ''),
+      ].join(',');
     }).join('\n');
 
     res.send(header + rows);
   } catch (error) {
-    console.error('[Audit] Export error:', error);
+    log.error('Export error: ' + error.message);
     res.status(500).json({ error: 'Export failed' });
   }
 });
@@ -107,7 +133,7 @@ router.get('/audit/stats', (req, res) => {
 
     res.json({ totalEntries: auditLog.length, byAction, byDepartment, recentHour });
   } catch (error) {
-    console.error('[Audit] Stats error:', error);
+    log.error('Stats error: ' + error.message);
     res.status(500).json({ error: 'Stats failed' });
   }
 });

@@ -1,11 +1,11 @@
 .command-panel {
-  border-top: 2px solid #3a3a42;
+  border-top: 2px solid var(--border-color);
   padding: 8px;
-  background: #161619;
+  background: var(--bg-panel);
 }
 
 .command-empty {
-  color: #666;
+  color: var(--text-muted);
   text-align: center;
   padding: 12px;
   font-size: 12px;
@@ -24,7 +24,7 @@
 }
 
 .target-name {
-  color: #00d4aa;
+  color: var(--accent-color);
   font-weight: bold;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -35,22 +35,22 @@
 .target-status {
   font-size: 10px;
   padding: 1px 6px;
-  border: 2px solid #3a3a42;
+  border: 2px solid var(--border-color);
 }
 
 .target-status.active {
-  color: #00ff88;
-  border-color: #00ff88;
+  color: var(--status-active);
+  border-color: var(--status-active);
 }
 
 .target-status.idle {
-  color: #ffaa00;
-  border-color: #ffaa00;
+  color: var(--status-idle);
+  border-color: var(--status-idle);
 }
 
 .target-status.offline {
-  color: #666;
-  border-color: #444;
+  color: var(--text-muted);
+  border-color: var(--border-color);
 }
 
 .image-preview {
@@ -58,7 +58,7 @@
   margin-bottom: 6px;
   max-height: 120px;
   overflow: hidden;
-  border: 2px solid #3a3a42;
+  border: 2px solid var(--border-color);
 }
 
 .image-preview img {
@@ -74,8 +74,8 @@
   right: 2px;
   width: 18px;
   height: 18px;
-  background: #c03030;
-  color: #fff;
+  background: var(--danger);
+  color: var(--text-primary);
   border: none;
   cursor: pointer;
   font-size: 10px;
@@ -92,9 +92,9 @@
 
 .command-input {
   flex: 1;
-  background: #0e0e12;
-  border: 2px solid #3a3a42;
-  color: #e0e0e0;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  color: var(--text-primary);
   padding: 6px 8px;
   font-family: inherit;
   font-size: 12px;
@@ -107,7 +107,7 @@
 }
 
 .command-input:focus {
-  border-color: #00d4aa;
+  border-color: var(--accent-color);
 }
 
 .command-actions {
@@ -119,9 +119,9 @@
 .action-btn {
   width: 36px;
   height: 32px;
-  border: 2px solid #3a3a42;
-  background: #1e1e23;
-  color: #e0e0e0;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
   cursor: pointer;
   font-size: 11px;
   font-family: inherit;
@@ -130,7 +130,7 @@
 }
 
 .action-btn:hover:not(:disabled) {
-  background: #3a3a42;
+  background: var(--border-color);
 }
 
 .action-btn:disabled {
@@ -138,16 +138,16 @@
   cursor: not-allowed;
 }
 
-.send-btn {
-  background: #00443a;
-  border-color: #00d4aa;
-  color: #00d4aa;
+.command-send-btn {
+  background: var(--accent-muted);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
   font-weight: bold;
   font-size: 14px;
 }
 
-.send-btn:hover:not(:disabled) {
-  background: #006655;
+.command-send-btn:hover:not(:disabled) {
+  background: var(--accent-glow);
 }
 
 .command-status {
@@ -157,87 +157,13 @@
 }
 
 .command-status.ok {
-  color: #00ff88;
+  color: var(--status-active);
 }
 
 .command-status.err {
-  color: #ff4444;
+  color: var(--danger);
 }
 
-/* ---- Light Theme Overrides ---- */
-[data-theme="light"] .command-panel {
-  border-top-color: #c8c8d0;
-  background: #ffffff;
-}
-
-[data-theme="light"] .command-empty {
-  color: #8a8a94;
-}
-
-[data-theme="light"] .target-name {
-  color: #009980;
-}
-
-[data-theme="light"] .target-status {
-  border-color: #c8c8d0;
-}
-
-[data-theme="light"] .target-status.active {
-  color: #00aa70;
-  border-color: #00aa70;
-}
-
-[data-theme="light"] .target-status.idle {
-  color: #cc8800;
-  border-color: #cc8800;
-}
-
-[data-theme="light"] .target-status.offline {
-  color: #999;
-  border-color: #c8c8d0;
-}
-
-[data-theme="light"] .image-preview {
-  border-color: #c8c8d0;
-}
-
-[data-theme="light"] .command-input {
-  background: #f8f8fa;
-  border-color: #c8c8d0;
-  color: #1a1a1e;
-}
-
-[data-theme="light"] .command-input:focus {
-  border-color: #009980;
-}
-
-[data-theme="light"] .action-btn {
-  border-color: #c8c8d0;
-  background: #f8f8fa;
-  color: #1a1a1e;
-}
-
-[data-theme="light"] .action-btn:hover:not(:disabled) {
-  background: #ededf0;
-}
-
-[data-theme="light"] .send-btn {
-  background: rgba(0, 153, 128, 0.08);
-  border-color: #009980;
-  color: #009980;
-}
-
-[data-theme="light"] .send-btn:hover:not(:disabled) {
-  background: rgba(0, 153, 128, 0.15);
-}
-
-[data-theme="light"] .command-status.ok {
-  color: #00aa70;
-}
-
-[data-theme="light"] .command-status.err {
-  color: #dd3355;
-}
 
 /* ---- Mobile Responsive ---- */
 @media (max-width: 768px) {
@@ -281,7 +207,7 @@
     transition: transform 60ms ease, opacity 60ms ease;
   }
 
-  .send-btn {
+  .command-send-btn {
     font-size: 18px;
   }
 

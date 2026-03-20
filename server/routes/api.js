@@ -2,12 +2,14 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readLastLines } from '../parsers/jsonl.js';
-import { chat, chatAsync, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand } from '../agent.js';
+import { chat, chatAsync, getChatHistory, loadMemory, saveMemory, loadBulletin, saveBulletin, createSubAgent, chatSubAgent, listSubAgents, removeSubAgent, broadcastCommand, sanitizeContextTags } from '../agent.js';
 import { generateAndSave, generateLayout } from '../layout-generator.js';
-import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync } from '../utils.js';
+import { BASE_PATH, readJsonFile, readTextFile, safeWriteFileSync, validateDepartmentId } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('API');
 const router = express.Router();
 const DEPT_CONFIG_PATH = path.join(BASE_PATH, 'departments', 'config.json');
 
@@ -17,14 +19,14 @@ function escapeHtml(str) {
 }
 
 // Input validation
-const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_SUB_ID = /^[a-z][a-z0-9_-]{0,60}$/;
 const MAX_MESSAGE_LENGTH = 10000;
 const MAX_TAIL = 500;
 
+// H17 Fix: Use shared validation from utils.js
 function validateDeptId(id) {
-  return typeof id === 'string' && VALID_DEPT_ID.test(id);
+  return validateDepartmentId(id);
 }
 
 function validateDate(date) {
@@ -85,7 +87,7 @@ router.get('/departments', (req, res) => {
       lastUpdated: status.lastUpdated || new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error in /api/departments:', error);
+    log.error('Error in /api/departments: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch departments' });
   }
 });
@@ -110,7 +112,7 @@ router.get('/departments/:id/memory', (req, res) => {
       exists: fs.existsSync(memoryPath)
     });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/memory:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/memory: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch department memory' });
   }
 });
@@ -119,6 +121,7 @@ router.get('/departments/:id/memory', (req, res) => {
  * PUT /api/departments/:id/memory
  * Update department's MEMORY.md content
  * Body: { content: "markdown content" }
+ * C3 Fix: Cross-department memory write restriction
  */
 router.put('/departments/:id/memory', (req, res) => {
   try {
@@ -126,18 +129,30 @@ router.put('/departments/:id/memory', (req, res) => {
     if (!validateDeptId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
+
+    // C3 Fix: Cross-department memory write restriction
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept && sourceDept !== id && sourceDept !== 'coo') {
+      return res.status(403).json({ error: 'Cross-department memory write not allowed. Only COO can write to other departments.' });
+    }
+
     const { content } = req.body;
     if (content === undefined || typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    if (Buffer.byteLength(content, 'utf8') > 51200) {
-      return res.status(400).json({ error: 'Memory content exceeds 50KB limit' });
+    // C8 Fix: Sanitize memory content to prevent context tag injection
+    const safeContent = sanitizeContextTags(content);
+    const size = Buffer.byteLength(safeContent, 'utf8');
+    if (size > 51200) {
+      return res.status(413).json({
+        error: `Memory content too large: ${(size / 1024).toFixed(2)} KB exceeds 50 KB limit`
+      });
     }
-    const success = saveMemory(id, content);
+    const success = saveMemory(id, safeContent);
     recordAudit({ action: 'memory:update', target: id, deptId: id, ip: req.ip });
     res.json({ success, departmentId: id });
   } catch (error) {
-    console.error(`Error in PUT /api/departments/${req.params.id}/memory:`, error);
+    log.error(`Error in PUT /api/departments/${req.params.id}/memory: ` + error.message);
     res.status(500).json({ error: 'Failed to save department memory' });
   }
 });
@@ -167,7 +182,7 @@ router.get('/departments/:id/daily/{:date}', (req, res) => {
       exists: fs.existsSync(dailyPath)
     });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/daily:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/daily: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch daily log' });
   }
 });
@@ -189,7 +204,7 @@ router.get('/bulletin', (req, res) => {
         : null
     });
   } catch (error) {
-    console.error('Error in /api/bulletin:', error);
+    log.error('Error in /api/bulletin: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch bulletin' });
   }
 });
@@ -224,7 +239,7 @@ router.get('/requests', (req, res) => {
 
     res.json({ requests });
   } catch (error) {
-    console.error('Error in /api/requests:', error);
+    log.error('Error in /api/requests: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch requests' });
   }
 });
@@ -284,7 +299,7 @@ router.get('/activity/{:topicId}', (req, res) => {
       count: messages.length
     });
   } catch (error) {
-    console.error('Error in /api/activity:', error);
+    log.error('Error in /api/activity: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch activity' });
   }
 });
@@ -303,7 +318,7 @@ router.get('/departments/:id/persona', (req, res) => {
     const content = readTextFile(personaPath);
     res.json({ departmentId: id, content, exists: fs.existsSync(personaPath) });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/persona:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/persona: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch persona' });
   }
 });
@@ -329,7 +344,7 @@ router.get('/departments/:id/daily-dates', (req, res) => {
       .reverse();
     res.json({ dates, departmentId: id });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/daily-dates:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/daily-dates: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch daily dates' });
   }
 });
@@ -363,7 +378,7 @@ router.get('/departments/:id/memory/history', (req, res) => {
       .slice(0, 20);
     res.json({ versions, departmentId: id });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/memory/history:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/memory/history: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch memory history' });
   }
 });
@@ -385,7 +400,7 @@ router.get('/departments/:id/memory/history/:filename', (req, res) => {
     const content = readTextFile(filePath);
     res.json({ content, filename, exists: fs.existsSync(filePath) });
   } catch (error) {
-    console.error(`Error in /api/departments/${req.params.id}/memory/history:`, error);
+    log.error(`Error in /api/departments/${req.params.id}/memory/history: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch memory version' });
   }
 });
@@ -454,7 +469,7 @@ router.get('/collaboration', (req, res) => {
 
     res.json({ links });
   } catch (error) {
-    console.error('Error in /api/collaboration:', error);
+    log.error('Error in /api/collaboration: ' + error.message);
     res.status(500).json({ error: 'Failed to fetch collaboration data' });
   }
 });
@@ -513,17 +528,19 @@ router.post('/departments/:id/message', async (req, res) => {
       params.set('message_thread_id', topicId);
     }
 
-    const tgRes = await fetch(`${TG_API}/sendMessage?${params}`);
+    const tgRes = await fetch(`${TG_API}/sendMessage?${params}`, {
+      signal: AbortSignal.timeout(30000)
+    });
     const tgData = await tgRes.json();
 
     if (!tgData.ok) {
-      console.error('[Telegram] sendMessage failed:', tgData);
+      log.error('Telegram sendMessage failed: ' + (tgData.description || 'Unknown error'));
       return res.status(502).json({ error: 'Failed to send message', detail: tgData.description });
     }
 
     res.json({ success: true, messageId: tgData.result.message_id });
   } catch (error) {
-    console.error(`Error in POST /api/departments/${req.params.id}/message:`, error);
+    log.error(`Error in POST /api/departments/${req.params.id}/message: ` + error.message);
     res.status(500).json({ error: 'Failed to send message' });
   }
 });
@@ -572,13 +589,13 @@ router.post('/departments/:id/photo', async (req, res) => {
     const tgData = await tgRes.json();
 
     if (!tgData.ok) {
-      console.error('[Telegram] sendPhoto failed:', tgData);
+      log.error('Telegram sendPhoto failed: ' + (tgData.description || 'Unknown error'));
       return res.status(502).json({ error: 'Failed to send photo', detail: tgData.description });
     }
 
     res.json({ success: true, messageId: tgData.result.message_id });
   } catch (error) {
-    console.error(`Error in POST /api/departments/${req.params.id}/photo:`, error);
+    log.error(`Error in POST /api/departments/${req.params.id}/photo: ` + error.message);
     res.status(500).json({ error: 'Failed to send photo' });
   }
 });
@@ -598,10 +615,13 @@ router.get('/departments/:id/history', async (req, res) => {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
     const limit = Math.min(parseInt(req.query.limit) || 30, 100);
-    const messages = await getChatHistory(id, limit);
-    res.json({ success: true, messages, deptId: id });
+    const result = await getChatHistory(id, limit);
+    if (!result.success) {
+      return res.status(503).json({ error: result.error || 'Failed to fetch chat history' });
+    }
+    res.json({ success: true, messages: result.messages, deptId: id });
   } catch (error) {
-    console.error(`Error in GET /api/departments/${req.params.id}/history:`, error);
+    log.error(`Error in GET /api/departments/${req.params.id}/history: ` + error.message);
     res.status(500).json({ error: 'Failed to fetch chat history' });
   }
 });
@@ -630,7 +650,7 @@ router.post('/departments/:id/chat', async (req, res) => {
     const msgText = (message || '').trim();
     const imgCount = Array.isArray(images) ? images.length : 0;
     const docCount = Array.isArray(documents) ? documents.length : 0;
-    console.log(`[Chat] ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}${docCount ? ` [+${docCount} docs]` : ''}`);
+    log.info(`trace=${req.traceId || ''} ${id} <- ${msgText.substring(0, 60)}${imgCount ? ` [+${imgCount} images]` : ''}${docCount ? ` [+${docCount} docs]` : ''}`);
 
     // Cross-department: broadcast visit event + create request file
     if (sourceDept && sourceDept !== id && validateDeptId(sourceDept)) {
@@ -669,13 +689,13 @@ router.post('/departments/:id/chat', async (req, res) => {
         const content = `# 跨部门请求\n\n- **发起部门**: ${fromName} (${sourceDept})\n- **目标部门**: ${toName} (${id})\n- **时间**: ${ts.toLocaleString('zh-CN')}\n\n## 内容\n\n${msgText}\n`;
         safeWriteFileSync(path.join(requestsDir, filename), content);
       } catch (err) {
-        console.error('[Chat] Failed to write request file:', err.message);
+        log.error('Failed to write request file: ' + err.message);
       }
     }
 
     // Async mode: fire-and-forget, return immediately
     if (isAsync) {
-      const result = chatAsync(id, msgText);
+      const result = chatAsync(id, msgText, { traceId: req.traceId });
       if (result.success) {
         return res.json({ success: true, status: 'sent', deptId: id });
       }
@@ -708,10 +728,10 @@ router.post('/departments/:id/chat', async (req, res) => {
       enhancedMessage += ']';
     }
 
-    const result = await chat(id, enhancedMessage, images);
+    const result = await chat(id, enhancedMessage, images, { traceId: req.traceId });
 
     if (result.success) {
-      console.log(`[Chat] ${id} -> ${result.reply.substring(0, 60)}`);
+      log.info(`trace=${req.traceId || ''} ${id} -> ${result.reply.substring(0, 60)}`);
       
       // Check if reply contains file references
       const attachments = [];
@@ -741,7 +761,7 @@ router.post('/departments/:id/chat', async (req, res) => {
       res.status(502).json({ error: errMsg });
     }
   } catch (error) {
-    console.error(`Error in POST /api/departments/${req.params.id}/chat:`, error);
+    log.error(`Error in POST /api/departments/${req.params.id}/chat: ` + error.message);
     res.status(500).json({ error: 'Chat failed' });
   }
 });
@@ -750,9 +770,16 @@ router.post('/departments/:id/chat', async (req, res) => {
  * POST /api/bulletin
  * Update the bulletin board
  * Body: { content: "markdown content" }
+ * C3 Fix: Only COO or human (no x-source-dept) can post bulletins
  */
 router.post('/bulletin', (req, res) => {
   try {
+    // C3 Fix: Only COO or human (no x-source-dept) can post bulletins
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept && sourceDept !== 'coo') {
+      return res.status(403).json({ error: 'Only COO department can post to bulletin board' });
+    }
+
     const { content } = req.body;
     if (content === undefined || typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
@@ -761,7 +788,7 @@ router.post('/bulletin', (req, res) => {
     recordAudit({ action: 'bulletin:update', target: 'board', ip: req.ip });
     res.json({ success });
   } catch (error) {
-    console.error('Error in POST /api/bulletin:', error);
+    log.error('Error in POST /api/bulletin: ' + error.message);
     res.status(500).json({ error: 'Failed to update bulletin' });
   }
 });
@@ -778,14 +805,14 @@ router.post('/broadcast', async (req, res) => {
       return res.status(400).json({ error: 'Command is required' });
     }
 
-    console.log(`[Broadcast] <- ${command.trim().substring(0, 80)}`);
-    const responses = await broadcastCommand(command.trim());
-    console.log(`[Broadcast] ${responses.length} departments responded`);
+    log.info(`trace=${req.traceId || ''} <- ${command.trim().substring(0, 80)}`);
+    const responses = await broadcastCommand(command.trim(), { traceId: req.traceId });
+    log.info(`trace=${req.traceId || ''} ${responses.length} departments responded`);
     recordAudit({ action: 'broadcast', target: 'all', details: { command: command.trim().substring(0, 200) }, ip: req.ip });
 
     res.json({ success: true, responses });
   } catch (error) {
-    console.error('Error in POST /api/broadcast:', error);
+    log.error('Error in POST /api/broadcast: ' + error.message);
     res.status(500).json({ error: 'Broadcast failed' });
   }
 });
@@ -844,10 +871,10 @@ router.post('/departments/:id/subagents/:subId/chat', async (req, res) => {
     if (message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` });
     }
-    const result = await chatSubAgent(req.params.id, req.params.subId, message.trim());
+    const result = await chatSubAgent(req.params.id, req.params.subId, message.trim(), { traceId: req.traceId });
     res.json(result);
   } catch (error) {
-    console.error('[API] Sub-agent chat error:', error);
+    log.error('Sub-agent chat error: ' + error.message);
     res.status(500).json({ error: 'Sub-agent chat failed' });
   }
 });
@@ -891,7 +918,11 @@ router.post('/departments/:id/export', async (req, res) => {
     const deptName = config.departments?.[id]?.name || id;
 
     // Fetch chat history
-    const messages = await getChatHistory(id, 100);
+    const result = await getChatHistory(id, 100);
+    if (!result.success) {
+      return res.status(503).json({ error: result.error || 'Failed to fetch chat history' });
+    }
+    const messages = result.messages;
     const timestamp = new Date().toISOString().split('T')[0];
 
     let content = '';
@@ -992,9 +1023,9 @@ router.post('/departments/:id/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(content);
 
-    console.log(`[Export] Generated ${format} export for ${id}: ${filename}`);
+    log.info(`Generated ${format} export for ${id}: ${filename}`);
   } catch (error) {
-    console.error(`[Export] Error in POST /api/departments/${req.params.id}/export:`, error);
+    log.error(`Error in POST /api/departments/${req.params.id}/export: ` + error.message);
     res.status(500).json({ error: 'Failed to generate export' });
   }
 });
@@ -1006,7 +1037,11 @@ async function generateExportMarkdown(id) {
   const configPath = path.join(BASE_PATH, 'departments', 'config.json');
   const config = readJsonFile(configPath) || { departments: {} };
   const deptName = config.departments?.[id]?.name || id;
-  const messages = await getChatHistory(id, 100);
+  const result = await getChatHistory(id, 100);
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to fetch chat history');
+  }
+  const messages = result.messages;
   const timestamp = new Date().toISOString().split('T')[0];
 
   let content = `# ${deptName} Conversation Export\n\n`;
@@ -1050,13 +1085,13 @@ router.post('/departments/:id/export/email', async (req, res) => {
 
     const emailData = await emailRes.json();
     if (emailData.success) {
-      console.log(`[Export] Emailed export for ${id} to ${to}`);
+      log.info(`Emailed export for ${id} to ${to}`);
       res.json({ success: true });
     } else {
       res.status(502).json({ error: emailData.error || 'Failed to send email' });
     }
   } catch (error) {
-    console.error(`[Export] Email export error for ${req.params.id}:`, error);
+    log.error(`Email export error for ${req.params.id}: ` + error.message);
     res.status(500).json({ error: 'Failed to email export' });
   }
 });
@@ -1088,13 +1123,13 @@ router.post('/departments/:id/export/drive', async (req, res) => {
 
     const driveData = await driveRes.json();
     if (driveData.success) {
-      console.log(`[Export] Uploaded export for ${id} to Drive: ${driveData.fileId}`);
+      log.info(`Uploaded export for ${id} to Drive: ${driveData.fileId}`);
       res.json({ success: true, fileId: driveData.fileId, webViewLink: driveData.webViewLink });
     } else {
       res.status(502).json({ error: driveData.error || 'Failed to upload to Drive' });
     }
   } catch (error) {
-    console.error(`[Export] Drive export error for ${req.params.id}:`, error);
+    log.error(`Drive export error for ${req.params.id}: ` + error.message);
     res.status(500).json({ error: 'Failed to upload export to Drive' });
   }
 });
@@ -1113,7 +1148,8 @@ router.post('/departments', async (req, res) => {
     await withFileLock(DEPT_CONFIG_PATH, async () => {
       const { id, name, agent, icon, color, hue, telegramTopicId, order, skills, apiGroups } = req.body;
 
-      if (!id || !VALID_DEPT_ID.test(id)) {
+      // H17 Fix: Use shared validation
+      if (!id || !validateDeptId(id)) {
         return res.status(400).json({ success: false, error: 'Invalid department ID' });
       }
       if (!name) {
@@ -1157,16 +1193,16 @@ router.post('/departments', async (req, res) => {
       // Rebuild layout with new department
       try {
         generateAndSave();
-        console.log(`[Layout] Auto-rebuilt after creating department: ${id}`);
+        log.info(`Auto-rebuilt layout after creating department: ${id}`);
       } catch (layoutError) {
-        console.error('[Layout] Auto-rebuild failed:', layoutError);
+        log.error('Layout auto-rebuild failed: ' + layoutError.message);
       }
 
       recordAudit({ action: 'dept:create', target: id, details: { name }, ip: req.ip });
       res.json({ success: true, department: { id, ...config.departments[id] } });
     });
   } catch (error) {
-    console.error('Error in POST /api/departments:', error);
+    log.error('Error in POST /api/departments: ' + error.message);
     res.status(500).json({ success: false, error: 'Failed to create department' });
   }
 });
@@ -1210,9 +1246,9 @@ router.put('/departments/:id', async (req, res) => {
       if (hue !== undefined || order !== undefined) {
         try {
           generateAndSave();
-          console.log(`[Layout] Auto-rebuilt after updating department: ${id}`);
+          log.info(`Auto-rebuilt layout after updating department: ${id}`);
         } catch (layoutError) {
-          console.error('[Layout] Auto-rebuild failed:', layoutError);
+          log.error('Layout auto-rebuild failed: ' + layoutError.message);
         }
       }
 
@@ -1220,7 +1256,7 @@ router.put('/departments/:id', async (req, res) => {
       res.json({ success: true, department: { id, ...config.departments[id] } });
     });
   } catch (error) {
-    console.error(`Error in PUT /api/departments/${req.params.id}:`, error);
+    log.error(`Error in PUT /api/departments/${req.params.id}: ` + error.message);
     res.status(500).json({ success: false, error: 'Failed to update department' });
   }
 });
@@ -1251,16 +1287,16 @@ router.delete('/departments/:id', async (req, res) => {
       // Rebuild layout after department deletion
       try {
         generateAndSave();
-        console.log(`[Layout] Auto-rebuilt after deleting department: ${id}`);
+        log.info(`Auto-rebuilt layout after deleting department: ${id}`);
       } catch (layoutError) {
-        console.error('[Layout] Auto-rebuild failed:', layoutError);
+        log.error('Layout auto-rebuild failed: ' + layoutError.message);
       }
 
       recordAudit({ action: 'dept:delete', target: id, ip: req.ip });
       res.json({ success: true });
     });
   } catch (error) {
-    console.error(`Error in DELETE /api/departments/${req.params.id}:`, error);
+    log.error(`Error in DELETE /api/departments/${req.params.id}: ` + error.message);
     res.status(500).json({ success: false, error: 'Failed to delete department' });
   }
 });
@@ -1285,7 +1321,7 @@ router.get('/layout', (req, res) => {
       .map(([id, dept]) => ({ id, hue: dept.hue ?? 200, order: dept.order ?? 99 }));
     res.json(generateLayout(departments));
   } catch (error) {
-    console.error('[Layout] Generate failed:', error);
+    log.error('Layout generate failed: ' + error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1296,11 +1332,11 @@ router.get('/layout', (req, res) => {
  */
 router.post('/layout/rebuild', async (req, res) => {
   try {
-    console.log('[Layout] Rebuild requested');
+    log.info('Layout rebuild requested');
     const result = generateAndSave();
     res.json({ success: true, ...result });
   } catch (error) {
-    console.error('[Layout] Rebuild failed:', error);
+    log.error('Layout rebuild failed: ' + error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

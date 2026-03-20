@@ -6,7 +6,10 @@ import { getGateway } from '../gateway.js';
 import { safeWriteFileSync } from '../utils.js';
 import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
+import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Cron');
 const router = express.Router();
 
 const CRON_FILE_PATH = path.join(OPENCLAW_HOME, 'cron', 'jobs.json');
@@ -30,7 +33,7 @@ function readCronJobs() {
     }
     return { version: 1, jobs: [] };
   } catch (error) {
-    console.error('Error reading cron jobs file:', error.message);
+    log.error(`Error reading cron jobs file: ${error.message}`);
     return { version: 1, jobs: [] };
   }
 }
@@ -43,7 +46,7 @@ function writeCronJobs(data) {
     safeWriteFileSync(CRON_FILE_PATH, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
-    console.error('Error writing cron jobs file:', error.message);
+    log.error(`Error writing cron jobs file: ${error.message}`);
     return false;
   }
 }
@@ -98,7 +101,7 @@ router.get('/jobs', (req, res) => {
       count: data.jobs.length
     });
   } catch (error) {
-    console.error('Error in GET /api/cron/jobs:', error);
+    log.error(`Error in GET /api/cron/jobs: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch cron jobs' });
   }
 });
@@ -110,6 +113,12 @@ router.get('/jobs', (req, res) => {
  */
 router.post('/jobs', async (req, res) => {
   try {
+    // C5 Fix: Reject cron job creation from AI agents (x-source-dept header)
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create cron jobs. Use the UI or ask a human operator.' });
+    }
+
     await withFileLock(CRON_FILE_PATH, async () => {
       const { name, schedule, message, model, timeoutSeconds, deptId, subAgentId } = req.body;
 
@@ -184,14 +193,15 @@ router.post('/jobs', async (req, res) => {
         return res.status(500).json({ error: 'Failed to save cron job' });
       }
 
-      console.log(`[Cron] Created job ${newJob.id}: "${newJob.name}"`);
+      log.info(`Created job ${newJob.id}: "${newJob.name}"`);
+      recordAudit({ action: 'cron:create', target: newJob.id, details: { name: newJob.name }, ip: req.ip });
       return res.status(201).json({
         success: true,
         job: newJob
       });
     });
   } catch (error) {
-    console.error('Error in POST /api/cron/jobs:', error);
+    log.error(`Error in POST /api/cron/jobs: ${error.message}`);
     res.status(500).json({ error: 'Failed to create cron job' });
   }
 });
@@ -283,14 +293,15 @@ router.put('/jobs/:id', async (req, res) => {
         return res.status(500).json({ error: 'Failed to update cron job' });
       }
 
-      console.log(`[Cron] Updated job ${id}: "${job.name}"`);
+      log.info(`Updated job ${id}: "${job.name}"`);
+      recordAudit({ action: 'cron:update', target: id, details: { fields: Object.keys(updates) }, ip: req.ip });
       return res.json({
         success: true,
         job
       });
     });
   } catch (error) {
-    console.error(`Error in PUT /api/cron/jobs/${req.params.id}:`, error);
+    log.error(`Error in PUT /api/cron/jobs/${req.params.id}: ${error.message}`);
     res.status(500).json({ error: 'Failed to update cron job' });
   }
 });
@@ -301,6 +312,12 @@ router.put('/jobs/:id', async (req, res) => {
  */
 router.delete('/jobs/:id', async (req, res) => {
   try {
+    // C5 Fix: Reject cron job deletion from AI agents (x-source-dept header)
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot delete cron jobs. Use the UI or ask a human operator.' });
+    }
+
     await withFileLock(CRON_FILE_PATH, async () => {
       const { id } = req.params;
 
@@ -322,7 +339,8 @@ router.delete('/jobs/:id', async (req, res) => {
         return res.status(500).json({ error: 'Failed to delete cron job' });
       }
 
-      console.log(`[Cron] Deleted job ${id}: "${job.name}"`);
+      log.info(`Deleted job ${id}: "${job.name}"`);
+      recordAudit({ action: 'cron:delete', target: id, details: { name: job.name }, ip: req.ip });
       return res.json({
         success: true,
         deletedJob: {
@@ -332,7 +350,7 @@ router.delete('/jobs/:id', async (req, res) => {
       });
     });
   } catch (error) {
-    console.error(`Error in DELETE /api/cron/jobs/${req.params.id}:`, error);
+    log.error(`Error in DELETE /api/cron/jobs/${req.params.id}: ${error.message}`);
     res.status(500).json({ error: 'Failed to delete cron job' });
   }
 });
@@ -363,7 +381,7 @@ router.post('/jobs/:id/toggle', async (req, res) => {
         return res.status(500).json({ error: 'Failed to toggle cron job' });
       }
 
-      console.log(`[Cron] Toggled job ${id}: "${job.name}" -> ${job.enabled ? 'enabled' : 'disabled'}`);
+      log.info(`Toggled job ${id}: "${job.name}" -> ${job.enabled ? 'enabled' : 'disabled'}`);
       return res.json({
         success: true,
         job: {
@@ -374,7 +392,7 @@ router.post('/jobs/:id/toggle', async (req, res) => {
       });
     });
   } catch (error) {
-    console.error(`Error in POST /api/cron/jobs/${req.params.id}/toggle:`, error);
+    log.error(`Error in POST /api/cron/jobs/${req.params.id}/toggle: ${error.message}`);
     res.status(500).json({ error: 'Failed to toggle cron job' });
   }
 });
@@ -438,7 +456,7 @@ router.post('/jobs/:id/run', async (req, res) => {
       }
     }
 
-    console.log(`[Cron] Manual run triggered for job ${id}: "${job.name}"`);
+    log.info(`Manual run triggered for job ${id}: "${job.name}"`);
 
     const startMs = Date.now();
     let result;
@@ -458,7 +476,7 @@ router.post('/jobs/:id/run', async (req, res) => {
       const jobToUpdate = findJobById(data.jobs, id);
 
       if (!jobToUpdate) {
-        console.warn(`[Cron] Job ${id} disappeared after execution`);
+        log.warn(`Job ${id} disappeared after execution`);
         return;
       }
 
@@ -503,7 +521,7 @@ router.post('/jobs/:id/run', async (req, res) => {
 
     // Step 4: Send response to client
     if (gatewayError) {
-      console.error(`[Cron] Manual run failed for job ${id}:`, gatewayError.message);
+      log.error(`Manual run failed for job ${id}: ${gatewayError.message}`);
       return res.status(502).json({
         error: 'Failed to execute cron job via gateway',
         detail: gatewayError.message,
@@ -515,7 +533,7 @@ router.post('/jobs/:id/run', async (req, res) => {
     }
 
     if (result.text) {
-      console.log(`[Cron] Manual run completed for job ${id}, ${result.text.length} chars`);
+      log.info(`Manual run completed for job ${id}, ${result.text.length} chars`);
       return res.json({
         success: true,
         job: {
@@ -537,7 +555,7 @@ router.post('/jobs/:id/run', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error(`Error in POST /api/cron/jobs/${req.params.id}/run:`, error);
+    log.error(`Error in POST /api/cron/jobs/${req.params.id}/run: ${error.message}`);
     res.status(500).json({ error: 'Failed to trigger cron job run' });
   } finally {
     _runningJobs.delete(id);
@@ -551,6 +569,12 @@ router.post('/jobs/:id/run', async (req, res) => {
  */
 router.post('/briefing/template', async (req, res) => {
   try {
+    // C5 Fix: Reject briefing template creation from AI agents (x-source-dept header)
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create cron jobs. Use the UI or ask a human operator.' });
+    }
+
     await withFileLock(CRON_FILE_PATH, async () => {
       // Read existing jobs
       const data = readCronJobs();
@@ -596,7 +620,7 @@ router.post('/briefing/template', async (req, res) => {
         return res.status(500).json({ error: 'Failed to save briefing template' });
       }
 
-      console.log(`[Cron] Created morning briefing template job ${briefingJob.id}`);
+      log.info(`Created morning briefing template job ${briefingJob.id}`);
       return res.status(201).json({
         success: true,
         message: 'Morning briefing template created',
@@ -604,7 +628,7 @@ router.post('/briefing/template', async (req, res) => {
       });
     });
   } catch (error) {
-    console.error('Error in POST /api/cron/briefing/template:', error);
+    log.error(`Error in POST /api/cron/briefing/template: ${error.message}`);
     res.status(500).json({ error: 'Failed to create briefing template' });
   }
 });

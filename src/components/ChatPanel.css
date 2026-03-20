@@ -93,7 +93,6 @@
   max-width: 100%;
   font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
   transition: none;
 }
 
@@ -138,7 +137,7 @@
   opacity: 0.5;
   cursor: pointer;
   margin-left: 2px;
-  transition: all var(--transition-fast);
+  transition: opacity var(--transition-fast), color var(--transition-fast);
 }
 
 .agent-chip-close:hover {
@@ -190,7 +189,7 @@
   font-weight: 500;
   cursor: pointer;
   border-radius: 0;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .new-sub-form button:hover:not(:disabled) {
@@ -331,13 +330,13 @@
   border-radius: 0;
   letter-spacing: 0.3px;
   background: rgba(0, 136, 204, 0.15);
-  color: #0088cc;
+  color: var(--accent-color);
 }
 
 .chat-msg-source.gateway,
 .chat-msg-source.telegram {
   background: rgba(0, 136, 204, 0.15);
-  color: #0088cc;
+  color: var(--accent-color);
 }
 
 .chat-msg-source.cron {
@@ -411,7 +410,7 @@
   height: 20px;
   padding: 0;
   background: var(--danger);
-  color: #fff;
+  color: var(--text-primary);
   border: none;
   border-radius: 0;
   cursor: pointer;
@@ -456,8 +455,8 @@
   width: 16px;
   height: 16px;
   border-radius: 0;
-  background: #ff4466;
-  color: #fff;
+  background: var(--danger);
+  color: var(--text-primary);
   font-size: 10px;
   line-height: 16px;
   text-align: center;
@@ -540,7 +539,7 @@
   cursor: pointer;
   padding: 0;
   border-radius: 0;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -595,7 +594,7 @@
 .chat-stream-text {
   white-space: pre-wrap;
   word-break: break-word;
-  color: #c0c0d0;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.5;
   padding: 6px 8px;
@@ -604,7 +603,7 @@
 .chat-stream-cursor {
   display: inline;
   animation: blink-cursor 0.8s step-end infinite;
-  color: #00d4aa;
+  color: var(--accent-color);
 }
 
 @keyframes blink-cursor {
@@ -653,7 +652,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 0;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .timer-form-close:hover {
@@ -742,7 +741,7 @@
   font-weight: 500;
   cursor: pointer;
   border-radius: 0;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .timer-schedule-toggle button:first-child {
@@ -777,7 +776,7 @@
   cursor: pointer;
   white-space: nowrap;
   border-radius: 0;
-  transition: all var(--transition-normal);
+  transition: background var(--transition-normal), color var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .timer-create-btn:hover:not(:disabled) {
@@ -1098,7 +1097,7 @@
   text-decoration: none;
   color: var(--text-primary);
   font-size: 12px;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .chat-attachment:hover {
@@ -1243,8 +1242,8 @@
 .mic-btn {
   transition: color 150ms;
 }
-.mic-btn.recording {
-  color: #ff4444 !important;
+.chat-btn.mic-btn.recording {
+  color: var(--danger);
   animation: mic-pulse 1s ease-in-out infinite;
 }
 @keyframes mic-pulse {
@@ -1410,7 +1409,7 @@
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -1460,7 +1459,7 @@
   background: rgba(255, 255, 255, 0.1);
   border: none;
   border-radius: 50%;
-  color: #fff;
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2239,7 +2238,7 @@
 
 /* ---- @Mention Highlighting ---- */
 .chat-mention {
-  color: #00d4aa;
+  color: var(--accent-color);
   font-weight: 600;
   background: rgba(0, 212, 170, 0.1);
   padding: 0 2px;

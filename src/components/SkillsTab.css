@@ -93,7 +93,7 @@
   gap: 6px;
 }
 
-.skill-card {
+.skills-tab .skill-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   padding: 10px;
@@ -103,41 +103,41 @@
   flex-direction: column;
   gap: 4px;
 }
-.skill-card:hover {
+.skills-tab .skill-card:hover {
   border-color: var(--accent-color);
 }
-.skill-card.selected {
+.skills-tab .skill-card.selected {
   border-color: var(--accent-color);
   background: rgba(0, 212, 170, 0.05);
 }
 
-.skill-card-name {
+.skills-tab .skill-card-name {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-primary);
   word-break: break-all;
 }
-.skill-card-summary {
+.skills-tab .skill-card-summary {
   font-size: 10px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.skill-card-meta {
+.skills-tab .skill-card-meta {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
   margin-top: 2px;
 }
-.skill-card-tag {
+.skills-tab .skill-card-tag {
   font-size: 9px;
   padding: 1px 5px;
   background: rgba(0, 212, 170, 0.1);
   color: var(--accent-color);
   border: 1px solid rgba(0, 212, 170, 0.2);
 }
-.skill-card-version {
+.skills-tab .skill-card-version {
   font-size: 9px;
   color: var(--text-muted);
   margin-left: auto;
@@ -398,7 +398,7 @@
     gap: 6px;
   }
 
-  .skill-card-name {
+  .skills-tab .skill-card-name {
     word-break: break-word;
     overflow-wrap: break-word;
   }

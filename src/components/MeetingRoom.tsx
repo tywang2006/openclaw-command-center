@@ -41,6 +41,25 @@ const MEETING_TEMPLATES = [
   { id: 'product-sync', nameKey: 'meeting.template.productSync' as const, topicZh: '产品需求与进度同步', topicEn: 'Product Requirements & Progress Sync', depts: ['product', 'engineering', 'research'] },
 ]
 
+// Pure helper functions - moved outside component to prevent recreations
+const getStanceColor = (stance: string): string => {
+  switch (stance) {
+    case 'agree': return '#10b981'
+    case 'disagree': return '#ef4444'
+    case 'modify': return '#f59e0b'
+    default: return 'var(--text-muted)'
+  }
+}
+
+const getStanceLabel = (stance: string, t: (key: string) => string): string => {
+  switch (stance) {
+    case 'agree': return t('meeting.negotiate.agree')
+    case 'disagree': return t('meeting.negotiate.disagree')
+    case 'modify': return t('meeting.negotiate.modify')
+    default: return t('meeting.negotiate.abstain')
+  }
+}
+
 interface MeetingMessage {
   role: 'user' | 'dept' | 'system'
   deptId: string
@@ -84,26 +103,35 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   const messagesRef = useRef<HTMLDivElement>(null)
   const currentRoundIdRef = useRef<string | null>(null)
   const sendingTimeoutRef = useRef<number | null>(null)
+  const mountedRef = useRef(true)
 
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (sendingTimeoutRef.current) clearTimeout(sendingTimeoutRef.current)
+      mountedRef.current = false
     }
   }, [])
 
   // Load meetings list — auto-enter first active meeting
   useEffect(() => {
+    let cancelled = false
     authedFetch('/api/meetings')
       .then(r => r.json())
       .then(d => {
+        if (cancelled) return
         const list = d.meetings || []
         setMeetings(list)
         if (list.length > 0) {
           loadMeeting(list[0].id)
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch meetings failed:', err);
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Load meeting details
@@ -111,13 +139,12 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     try {
       const res = await authedFetch(`/api/meetings/${id}`)
       const data = await res.json()
-      if (data.success) setActiveMeeting(data.meeting)
+      if (mountedRef.current && data.success) setActiveMeeting(data.meeting)
     } catch {}
   }
 
   // Create meeting
   const createMeeting = async () => {
-    console.log('[MeetingRoom] createMeeting called, topic:', newTopic, 'depts:', selectedDepts)
     if (!newTopic.trim() || selectedDepts.length < 2) return
     try {
       const res = await authedFetch('/api/meetings', {
@@ -126,7 +153,6 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
         body: JSON.stringify({ topic: newTopic.trim(), deptIds: selectedDepts }),
       })
       const data = await res.json()
-      console.log('[MeetingRoom] Create response:', data)
       if (data.success) {
         setActiveMeeting(data.meeting)
         setShowCreate(false)
@@ -274,25 +300,6 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     }
   }, [meetingEvents, activeMeeting?.id])
 
-  // Stance color helper
-  const getStanceColor = (stance: string): string => {
-    switch (stance) {
-      case 'agree': return '#10b981'
-      case 'disagree': return '#ef4444'
-      case 'modify': return '#f59e0b'
-      default: return 'var(--text-muted)'
-    }
-  }
-
-  const getStanceLabel = (stance: string): string => {
-    switch (stance) {
-      case 'agree': return t('meeting.negotiate.agree')
-      case 'disagree': return t('meeting.negotiate.disagree')
-      case 'modify': return t('meeting.negotiate.modify')
-      default: return t('meeting.negotiate.abstain')
-    }
-  }
-
   // Poll for real-time department responses
   useEffect(() => {
     if (!activeMeeting) return
@@ -375,7 +382,6 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
     if (deptIds.length < 2) return
 
-    console.log('[MeetingRoom] Template quick-create:', topic, deptIds)
     try {
       const res = await authedFetch('/api/meetings', {
         method: 'POST',
@@ -383,7 +389,6 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
         body: JSON.stringify({ topic, deptIds }),
       })
       const data = await res.json()
-      console.log('[MeetingRoom] Template create response:', data)
       if (data.success) {
         setActiveMeeting(data.meeting)
         setShowCreate(false)
@@ -587,7 +592,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                         <div className="negotiation-vote-header">
                           <DeptIcon deptId={msg.deptId} size={14} />
                           <span className="negotiation-vote-dept" style={{ color: getDeptColor(msg.deptId) }}>{getDeptName(msg.deptId)}</span>
-                          <span className="negotiation-vote-stance" style={{ color: getStanceColor(stance) }}>{getStanceLabel(stance)}</span>
+                          <span className="negotiation-vote-stance" style={{ color: getStanceColor(stance) }}>{getStanceLabel(stance, t)}</span>
                         </div>
                         <div className="negotiation-vote-reason">{reason}</div>
                         {suggestion && <div className="negotiation-vote-suggestion">{t('meeting.negotiate.suggestion')}{suggestion}</div>}

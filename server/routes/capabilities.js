@@ -2,7 +2,9 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, readTextFile, parseFrontmatter, getOpenClawConfig } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Capabilities');
 const router = express.Router();
 
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
@@ -164,7 +166,7 @@ router.get('/system/capabilities', (req, res) => {
 
     res.json({ channels, plugins, skills, models });
   } catch (err) {
-    console.error('[capabilities] Error:', err);
+    log.error('Error loading capabilities', { error: err.message });
     res.status(500).json({ error: 'Failed to load capabilities' });
   }
 });

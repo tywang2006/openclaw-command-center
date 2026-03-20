@@ -52,6 +52,7 @@ export default function ChatPanel({
 
   // Chat history from OpenClaw Gateway (loaded per department)
   const [historyByDept, setHistoryByDept] = useState<Record<string, Activity[]>>({})
+  const loadedDeptsRef = useRef<Set<string>>(new Set())
 
   // Modals and overlays
   const [modalImage, setModalImage] = useState<string | null>(null)
@@ -81,7 +82,8 @@ export default function ChatPanel({
 
   // Load chat history from OpenClaw Gateway when department changes
   useEffect(() => {
-    if (!selectedDeptId || selectedDeptId in historyByDept) return
+    if (!selectedDeptId || loadedDeptsRef.current.has(selectedDeptId)) return
+    loadedDeptsRef.current.add(selectedDeptId)
     setHistoryByDept(prev => ({ ...prev, [selectedDeptId]: [] }))
     authedFetch(`/api/departments/${selectedDeptId}/history?limit=50`)
       .then(res => res.json())
@@ -97,8 +99,10 @@ export default function ChatPanel({
           setHistoryByDept(prev => ({ ...prev, [selectedDeptId!]: msgs }))
         }
       })
-      .catch(() => {})
-  }, [selectedDeptId, historyByDept])
+      .catch(() => {
+        loadedDeptsRef.current.delete(selectedDeptId!)
+      })
+  }, [selectedDeptId])
 
   // Clean message text by stripping context tags
   const cleanMessageText = (text: string): string => {
@@ -302,7 +306,7 @@ export default function ChatPanel({
     setSending(true)
 
     // Upload documents first
-    const uploadedDocs: { name: string; extracted?: any }[] = []
+    const uploadedDocs: { name: string; extracted?: Record<string, unknown> }[] = []
     if (docs.length > 0) {
       for (const doc of docs) {
         try {

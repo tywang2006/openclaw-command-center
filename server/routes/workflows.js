@@ -5,7 +5,10 @@ import { randomUUID } from 'crypto';
 import { chat } from '../agent.js';
 import { OPENCLAW_HOME, safeWriteFileSync } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
+import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Workflows');
 const router = express.Router();
 
 const WORKFLOWS_FILE = path.join(OPENCLAW_HOME, 'cron', 'workflows.json');
@@ -28,7 +31,7 @@ function writeWorkflows(data) {
     safeWriteFileSync(WORKFLOWS_FILE, JSON.stringify(data, null, 2));
     return true;
   } catch (err) {
-    console.error('[Workflows] Write error:', err.message);
+    log.error(`Write error: ${err.message}`);
     return false;
   }
 }
@@ -73,7 +76,7 @@ router.get('/templates', (req, res) => {
     ];
     res.json({ success: true, templates });
   } catch (err) {
-    console.error('[Workflows] GET /templates error:', err.message);
+    log.error(`GET /templates error: ${err.message}`);
     res.status(500).json({ error: 'Failed to get templates' });
   }
 });
@@ -87,7 +90,7 @@ router.get('/', (req, res) => {
     const data = readWorkflows();
     res.json({ workflows: data.workflows, count: data.workflows.length });
   } catch (err) {
-    console.error('[Workflows] GET / error:', err.message);
+    log.error(`GET / error: ${err.message}`);
     res.status(500).json({ error: 'Failed to list workflows' });
   }
 });
@@ -103,7 +106,7 @@ router.get('/:id', (req, res) => {
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
     res.json({ workflow: wf });
   } catch (err) {
-    console.error('[Workflows] GET /:id error:', err.message);
+    log.error(`GET /:id error: ${err.message}`);
     res.status(500).json({ error: 'Failed to get workflow' });
   }
 });
@@ -115,6 +118,12 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
+    // C5 Fix: Reject workflow creation from AI agents
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create workflows. Use the UI or ask a human operator.' });
+    }
+
     await withFileLock(WORKFLOWS_FILE, async () => {
       const { name, steps } = req.body;
 
@@ -153,11 +162,12 @@ router.post('/', async (req, res) => {
         return res.status(500).json({ error: 'Failed to save workflow' });
       }
 
-      console.log(`[Workflows] Created "${workflow.name}" with ${workflow.steps.length} steps`);
+      log.info(`Created "${workflow.name}" with ${workflow.steps.length} steps`);
+      recordAudit({ action: 'workflow:create', target: workflow.id, details: { name: workflow.name, steps: workflow.steps.length }, ip: req.ip });
       return res.status(201).json({ success: true, workflow });
     });
   } catch (err) {
-    console.error('[Workflows] POST / error:', err.message);
+    log.error(`POST / error: ${err.message}`);
     res.status(500).json({ error: 'Failed to create workflow' });
   }
 });
@@ -196,10 +206,11 @@ router.put('/:id', async (req, res) => {
         return res.status(500).json({ error: 'Failed to update workflow' });
       }
 
+      recordAudit({ action: 'workflow:update', target: req.params.id, details: { fields: Object.keys(req.body) }, ip: req.ip });
       return res.json({ success: true, workflow: wf });
     });
   } catch (err) {
-    console.error('[Workflows] PUT /:id error:', err.message);
+    log.error(`PUT /:id error: ${err.message}`);
     res.status(500).json({ error: 'Failed to update workflow' });
   }
 });
@@ -210,6 +221,12 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
+    // C5 Fix: Reject workflow deletion from AI agents
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot delete workflows. Use the UI or ask a human operator.' });
+    }
+
     await withFileLock(WORKFLOWS_FILE, async () => {
       const data = readWorkflows();
       const idx = data.workflows.findIndex(w => w.id === req.params.id);
@@ -220,11 +237,12 @@ router.delete('/:id', async (req, res) => {
         return res.status(500).json({ error: 'Failed to delete workflow' });
       }
 
-      console.log(`[Workflows] Deleted "${removed.name}"`);
+      log.info(`Deleted "${removed.name}"`);
+      recordAudit({ action: 'workflow:delete', target: removed.id, details: { name: removed.name }, ip: req.ip });
       return res.json({ success: true, deleted: { id: removed.id, name: removed.name } });
     });
   } catch (err) {
-    console.error('[Workflows] DELETE /:id error:', err.message);
+    log.error(`DELETE /:id error: ${err.message}`);
     res.status(500).json({ error: 'Failed to delete workflow' });
   }
 });
@@ -247,7 +265,7 @@ router.post('/:id/run', async (req, res) => {
 
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
-    console.log(`[Workflows] Running "${wf.name}" (${wf.steps.length} steps)`);
+    log.info(`Running "${wf.name}" (${wf.steps.length} steps)`);
     const results = [];
     const stepStatus = wf.steps.map(() => 'pending');
     let currentStepIndex = 0;
@@ -256,7 +274,7 @@ router.post('/:id/run', async (req, res) => {
     // Execute steps WITHOUT holding the file lock
     while (currentStepIndex < wf.steps.length) {
       if (visitedSteps.has(currentStepIndex)) {
-        console.error(`[Workflows] Infinite loop detected at step ${currentStepIndex + 1}`);
+        log.error(`Infinite loop detected at step ${currentStepIndex + 1}`);
         break;
       }
       visitedSteps.add(currentStepIndex);
@@ -271,7 +289,7 @@ router.post('/:id/run', async (req, res) => {
       const startMs = Date.now();
       let result;
       try {
-        result = await chat(step.deptId, step.message);
+        result = await chat(step.deptId, step.message, null, { traceId: req.traceId });
       } catch (chatErr) {
         result = { success: false, error: chatErr.message };
       }
@@ -291,7 +309,7 @@ router.post('/:id/run', async (req, res) => {
       results.push(stepResult);
       stepStatus[currentStepIndex] = result.success ? 'done' : 'error';
 
-      console.log(`[Workflows] Step ${currentStepIndex + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
+      log.info(`Step ${currentStepIndex + 1}/${wf.steps.length}: ${step.deptId} -> ${result.success ? 'OK' : 'FAIL'} (${durationMs}ms)`);
 
       if (step.condition && result.success) {
         const { type, value, nextStepOnTrue, nextStepOnFalse } = step.condition;
@@ -308,7 +326,7 @@ router.post('/:id/run', async (req, res) => {
         }
 
         const nextStep = conditionMet ? nextStepOnTrue : nextStepOnFalse;
-        console.log(`[Workflows] Condition ${conditionMet ? 'MET' : 'NOT MET'}: jumping to step ${nextStep + 1}`);
+        log.info(`Condition ${conditionMet ? 'MET' : 'NOT MET'}: jumping to step ${nextStep + 1}`);
 
         if (nextStep >= 0 && nextStep < wf.steps.length && nextStep !== currentStepIndex + 1) {
           currentStepIndex = nextStep;
@@ -340,7 +358,7 @@ router.post('/:id/run', async (req, res) => {
       successCount: results.filter(r => r.success).length,
     });
   } catch (error) {
-    console.error('[Workflows] POST /:id/run error:', error);
+    log.error(`POST /:id/run error: ${error.message}`);
     res.status(500).json({ error: 'Workflow execution failed' });
   }
 });

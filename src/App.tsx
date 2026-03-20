@@ -11,6 +11,8 @@ import OfficePage from './pages/OfficePage'
 import OpsConsolePage from './pages/OpsConsolePage'
 import './App.css'
 
+const RELOAD_THROTTLE_MS = 10000
+
 interface ErrorBoundaryProps { children: ReactNode; resetKey?: string }
 interface ErrorBoundaryState { hasError: boolean; error?: Error }
 
@@ -32,7 +34,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     if (error?.message?.includes('dynamically imported module') || error?.message?.includes('Failed to fetch')) {
       const reloadKey = 'openclaw-chunk-reload'
       const last = sessionStorage.getItem(reloadKey)
-      if (!last || Date.now() - Number(last) > 10000) {
+      if (!last || Date.now() - Number(last) > RELOAD_THROTTLE_MS) {
         sessionStorage.setItem(reloadKey, String(Date.now()))
         window.location.reload()
       }
@@ -71,7 +73,10 @@ export default function App() {
     fetch(`${API_BASE}/api/setup/status`)
       .then(r => r.json())
       .then(data => setSetupReady(data.ready))
-      .catch(() => setSetupReady(true))
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch setup status failed:', err);
+        setSetupReady(true);
+      })
   }, [API_BASE])
 
   useEffect(() => {
@@ -83,7 +88,9 @@ export default function App() {
   }, [locale])
 
   const handleLogout = () => {
-    authedFetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    authedFetch('/api/auth/logout', { method: 'POST' }).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Logout request failed:', err);
+    })
     clearToken()
     setAuthToken(null)
   }

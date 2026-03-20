@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { parseJsonlLine, readFromOffset } from './parsers/jsonl.js';
 import { BASE_PATH, readJsonFile, readTextFile } from './utils.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('Watcher');
 
 // Track file offsets for JSONL files (tail-follow mode)
 const fileOffsets = new Map();
@@ -18,12 +21,12 @@ function broadcast(wss, event, data) {
       try {
         client.send(message);
       } catch (error) {
-        console.error('Error broadcasting to client:', error.message);
+        log.error('Error broadcasting to client', { error: error.message });
       }
     }
   });
 
-  console.log(`[Broadcast] ${event}:`, Object.keys(data).join(', '));
+  log.info('Broadcast', { event, dataKeys: Object.keys(data).join(', ') });
 }
 
 /**
@@ -149,11 +152,11 @@ function initializeOffsets() {
       const stats = fs.statSync(filePath);
       fileOffsets.set(filePath, stats.size); // Start at end of existing files
     } catch (error) {
-      console.error(`Error initializing offset for ${filePath}:`, error.message);
+      log.error('Error initializing offset for file', { filePath, error: error.message });
     }
   });
 
-  console.log(`Initialized offsets for ${files.length} session files`);
+  log.info('Initialized offsets for session files', { fileCount: files.length });
 }
 
 /**
@@ -217,7 +220,7 @@ function getInitialState() {
       });
     }
   } catch (error) {
-    console.error('Error building initial state:', error);
+    log.error('Error building initial state', { error });
   }
 
   return state;
@@ -269,7 +272,7 @@ function createWatcher(wss) {
 
   watcher
     .on('add', filePath => {
-      console.log(`[Watcher] File added: ${filePath}`);
+      log.info('File added', { filePath });
       if (filePath.includes('requests/') && filePath.endsWith('.md')) {
         handleRequestChange(wss, filePath);
       } else if (filePath.endsWith('.jsonl')) {
@@ -283,7 +286,7 @@ function createWatcher(wss) {
       }
     })
     .on('change', filePath => {
-      console.log(`[Watcher] File changed: ${filePath}`);
+      log.info('File changed', { filePath });
 
       if (filePath.endsWith('config.json') && filePath.includes('departments')) {
         broadcast(wss, 'departments:updated', {});
@@ -300,11 +303,11 @@ function createWatcher(wss) {
       }
     })
     .on('error', error => {
-      console.error('[Watcher] Error:', error);
+      log.error('Watcher error', { error });
     })
     .on('ready', () => {
-      console.log('[Watcher] Ready and watching for changes...');
-      console.log(`[Watcher] Watching ${watchPaths.length} paths`);
+      log.info('Ready and watching for changes');
+      log.info('Watching paths', { pathCount: watchPaths.length });
     });
 
   return watcher;

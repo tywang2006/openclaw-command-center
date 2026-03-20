@@ -67,7 +67,18 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
   const [deleteDeptId, setDeleteDeptId] = useState<string | null>(null)
   const [showPalette, setShowPalette] = useState(false)
 
-  const handleEditDept = useCallback((dept: any) => {
+  interface EditDeptParam {
+    id: string
+    name: string
+    agent?: string
+    icon?: string
+    color?: string
+    hue?: number
+    telegramTopicId?: number
+    order?: number
+  }
+
+  const handleEditDept = useCallback((dept: EditDeptParam) => {
     setEditDeptData({
       id: dept.id,
       name: dept.name,
@@ -142,7 +153,9 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
   // Gateway stats
   const [gatewayStats, setGatewayStats] = useState<{ connected?: boolean; latencyMs?: number; pendingRequests?: number; uptime?: number; streamBuffers?: number } | null>(null)
   const pollGateway = useCallback(() => {
-    authedFetch('/api/gateway/stats').then(r => r.json()).then(d => setGatewayStats(d.gateway || d)).catch(() => {})
+    authedFetch('/api/gateway/stats').then(r => r.json()).then(d => setGatewayStats(d.gateway || d)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch gateway stats failed:', err);
+    })
   }, [])
   useVisibilityInterval(pollGateway, 30000, [pollGateway])
 
@@ -158,8 +171,12 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
       navigator.serviceWorker.ready.then((reg) => {
         reg.pushManager.getSubscription().then((sub) => {
           setPushEnabled(!!sub)
-        }).catch(() => {})
-      }).catch(() => {})
+        }).catch((err) => {
+          if (import.meta.env.DEV) console.warn('Get push subscription failed:', err);
+        })
+      }).catch((err) => {
+        if (import.meta.env.DEV) console.warn('Service worker ready failed:', err);
+      })
     }
   }, [])
 
@@ -263,7 +280,10 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
           authedFetch(`/api/departments/${dept.id}/subagents`)
             .then(res => res.json())
             .then(data => ({ deptId: dept.id, agents: (data.agents || []) as SubAgent[] }))
-            .catch(() => ({ deptId: dept.id, agents: [] as SubAgent[] }))
+            .catch((err) => {
+              if (import.meta.env.DEV) console.warn(`Fetch subagents for ${dept.id} failed:`, err);
+              return { deptId: dept.id, agents: [] as SubAgent[] };
+            })
         )
       ).then(results => {
         const allSubs: Record<string, SubAgent[]> = {}

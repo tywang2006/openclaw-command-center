@@ -3,16 +3,21 @@ import crypto, { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getConfigValue, safeWriteFileSync } from './utils.js';
+import { createLogger } from './logger.js';
+
+const gLog = createLogger('Gateway');
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const HEARTBEAT_INTERVAL_MS = 25000;
 const RECONNECT_BASE_DELAY_MS = 1000;
-const RECONNECT_MAX_DELAY_MS = 30000;
+const RECONNECT_MAX_DELAY_MS = 60000; // Reduced from 30s to 60s max delay
 const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
 const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
 const MAX_STREAM_BUFFER_BYTES = 1048576; // 1MB per stream buffer
 const MAX_PENDING_REQUESTS = 100; // Maximum concurrent pending requests
 const MAX_TOTAL_STREAM_BUFFERS = 50; // Maximum total stream buffers
+const STUCK_REQUEST_THRESHOLD_MS = 90000; // 90s (3/4 of REQUEST_TIMEOUT_MS)
+const STUCK_REQUEST_SCAN_INTERVAL_MS = 30000; // Scan every 30 seconds
 
 // Fatal error codes — do not reconnect on these
 const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN', 'INVALID_REQUEST'];
@@ -49,7 +54,7 @@ function loadOrCreateDeviceIdentity() {
       }
     }
   } catch (err) {
-    console.warn('[Gateway] Failed to load device identity:', err.message);
+    gLog.warn('Failed to load device identity:', err.message);
   }
 
   // Generate new Ed25519 keypair
@@ -68,7 +73,7 @@ function loadOrCreateDeviceIdentity() {
   const stored = { version: 1, deviceId, publicKeyPem, privateKeyPem, createdAtMs: Date.now() };
   fs.mkdirSync(path.dirname(identityPath), { recursive: true });
   safeWriteFileSync(identityPath, JSON.stringify(stored, null, 2) + '\n', { mode: 0o600 });
-  console.log('[Gateway] Generated new device identity:', deviceId);
+  gLog.info('Generated new device identity:', deviceId);
   return stored;
 }
 
@@ -194,6 +199,9 @@ class GatewayClient {
         for (const [id] of toRemove) this._resolvedRequests.delete(id);
       }
     }, 60000);
+
+    // Start stuck request scanner
+    this.startStuckRequestScanner();
   }
 
   connect() {
@@ -215,6 +223,27 @@ class GatewayClient {
       this._connectResolve = resolve;
       this._connectReject = reject;
 
+      // Connection timeout - reject if neither resolve nor reject is called within 30s
+      const connectTimeout = setTimeout(() => {
+        if (this._connectReject) {
+          this._connectingPromise = null;
+          this._connectReject(new Error('Connection timeout (30s)'));
+          this._connectResolve = null;
+          this._connectReject = null;
+          // Close the potentially stuck socket
+          if (this.ws) {
+            try {
+              this.ws.terminate();
+            } catch (err) {
+              gLog.warn('[Gateway] Error terminating stuck socket:', err.message);
+            }
+          }
+        }
+      }, 30000);
+
+      // Store timeout ID so we can clear it on resolve/reject
+      this._connectTimeout = connectTimeout;
+
       // Cleanup old WebSocket if it exists and isn't closed
       if (this.ws) {
         this.ws.removeAllListeners();
@@ -222,7 +251,7 @@ class GatewayClient {
           try {
             this.ws.close(1000, 'Reconnecting');
           } catch (err) {
-            console.error('[Gateway] Error closing old WebSocket:', err.message);
+            gLog.error('Error closing old WebSocket:', err.message);
           }
         }
       }
@@ -234,6 +263,7 @@ class GatewayClient {
       try {
         this.ws = new WebSocket(GATEWAY_URL);
       } catch (err) {
+        clearTimeout(connectTimeout);
         this._connectingPromise = null;
         reject(err);
         this._scheduleReconnect();
@@ -258,9 +288,10 @@ class GatewayClient {
       this.reconnectTimer = null;
     }
     if (this._backgroundRetryTimer) {
-      clearInterval(this._backgroundRetryTimer);
+      clearTimeout(this._backgroundRetryTimer);
       this._backgroundRetryTimer = null;
     }
+    this._inBackgroundRetry = false;
     this._stopHeartbeat();
 
     if (this._challengeTimer) {
@@ -275,6 +306,10 @@ class GatewayClient {
       clearInterval(this._resolvedCleanupTimer);
       this._resolvedCleanupTimer = null;
     }
+    if (this._stuckRequestScannerTimer) {
+      clearInterval(this._stuckRequestScannerTimer);
+      this._stuckRequestScannerTimer = null;
+    }
     this._streamBuffers.clear();
     this._resolvedRequests.clear();
 
@@ -285,27 +320,33 @@ class GatewayClient {
     this.pendingRequests.clear();
 
     if (this.ws) {
-      try { this.ws.close(1000, 'Client shutdown'); } catch (err) { /* expected during shutdown */ }
+      try {
+        this.ws.close(1000, 'Client shutdown');
+      } catch (err) {
+        gLog.warn('[Gateway] Error closing socket during shutdown:', err.message);
+      }
       this.ws = null;
     }
 
     this.connected = false;
     this.authenticated = false;
-    console.log('[Gateway] Disconnected');
+    gLog.info('Disconnected');
   }
 
   // --- Internal ---
 
   _handleOpen() {
-    console.log('[Gateway] WebSocket connected, waiting for challenge...');
+    gLog.info('WebSocket connected, waiting for challenge...');
     this.connected = true;
-    this.reconnectAttempt = 0;
+    // Note: reconnectAttempt is reset only after successful authentication,
+    // not here. Resetting on TCP connect causes infinite loops when the
+    // gateway is reachable but auth fails repeatedly.
     this._challengeNonce = null;
 
     // If no challenge arrives within 2s, send handshake without nonce (fallback)
     this._challengeTimer = setTimeout(() => {
       if (!this._handshakeSent) {
-        console.log('[Gateway] No challenge received, sending handshake without nonce');
+        gLog.info('No challenge received, sending handshake without nonce');
         this._sendHandshake(null);
       }
     }, 2000);
@@ -344,7 +385,7 @@ class GatewayClient {
       device: buildDeviceAuthField(identity, nonce, token),
     };
 
-    console.log('[Gateway] Sending handshake with device auth (deviceId:', identity.deviceId.substring(0, 12) + '..., nonce:', nonce ? 'yes' : 'no', ')');
+    gLog.info('Sending handshake with device auth (deviceId:', identity.deviceId.substring(0, 12) + '..., nonce:', nonce ? 'yes' : 'no', ')');
     this._send({ type: 'req', id: 'connect', method: 'connect', params });
   }
 
@@ -360,14 +401,14 @@ class GatewayClient {
     try {
       frame = JSON.parse(str);
     } catch (err) {
-      console.warn('[Gateway] Failed to parse message:', err.message);
+      gLog.warn('Failed to parse message:', err.message);
       return;
     }
 
     // Intercept connect.challenge before authentication completes
     if (frame.type === 'event' && frame.event === 'connect.challenge') {
       const nonce = frame.payload?.nonce;
-      console.log('[Gateway] Received connect.challenge, nonce:', nonce ? nonce.substring(0, 8) + '...' : 'none');
+      gLog.info('Received connect.challenge, nonce:', nonce ? nonce.substring(0, 8) + '...' : 'none');
       if (nonce) {
         this._handleChallenge(nonce);
       }
@@ -382,19 +423,19 @@ class GatewayClient {
         const status = frame.payload?.status;
         if (status === 'started' || status === 'completed' || status === 'done' || status === 'finished') {
           const preview = JSON.stringify(frame).substring(0, 300);
-          console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+          gLog.info(`Event ${frame.event}: ${preview}`);
         } else if (process.env.GATEWAY_DEBUG) {
           const preview = JSON.stringify(frame).substring(0, 300);
-          console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+          gLog.info(`Event ${frame.event}: ${preview}`);
         }
       } else {
         const preview = JSON.stringify(frame).substring(0, 300);
-        console.log(`[Gateway Event] ${frame.event}: ${preview}`);
+        gLog.info(`Event ${frame.event}: ${preview}`);
       }
       this._handleEvent(frame);
     } else {
       // Log unknown frame types
-      console.log(`[Gateway Frame] type=${frame.type}: ${JSON.stringify(frame).substring(0, 200)}`);
+      gLog.info(`Frame type=${frame.type}: ${JSON.stringify(frame).substring(0, 200)}`);
     }
   }
 
@@ -404,12 +445,12 @@ class GatewayClient {
       if (frame.error) {
         const code = frame.error.code || '';
         const msg = frame.error.message || 'Handshake failed';
-        console.error(`[Gateway] Connect handshake failed: ${code} — ${msg}`);
+        gLog.error(`Connect handshake failed: ${code} — ${msg}`);
         this.authenticated = false;
 
         // Fatal errors — stop reconnecting entirely
         if (FATAL_ERROR_CODES.includes(code)) {
-          console.warn(`[Gateway] Fatal error (${code}), will NOT retry. Fix config and restart.`);
+          gLog.warn(`Fatal error (${code}), will NOT retry. Fix config and restart.`);
           this.shutdownRequested = true;
           if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
@@ -419,6 +460,10 @@ class GatewayClient {
         }
 
         if (this._connectReject) {
+          if (this._connectTimeout) {
+            clearTimeout(this._connectTimeout);
+            this._connectTimeout = null;
+          }
           this._connectingPromise = null;
           this._connectReject(new Error(msg));
           this._connectResolve = null;
@@ -429,16 +474,21 @@ class GatewayClient {
 
       this.authenticated = true;
       this._connectedAt = Date.now();
+      this.reconnectAttempt = 0; // Reset only after successful auth
       // Log granted scopes if present in hello-ok response
       const auth = frame.payload?.auth;
       if (auth?.scopes) {
-        console.log('[Gateway] Authenticated, granted scopes:', auth.scopes.join(', '));
+        gLog.info('Authenticated, granted scopes:', auth.scopes.join(', '));
       } else {
-        console.log('[Gateway] Authenticated successfully');
+        gLog.info('Authenticated successfully');
       }
       this._startHeartbeat();
 
       if (this._connectResolve) {
+        if (this._connectTimeout) {
+          clearTimeout(this._connectTimeout);
+          this._connectTimeout = null;
+        }
         this._connectingPromise = null;
         this._connectResolve();
         this._connectResolve = null;
@@ -449,6 +499,14 @@ class GatewayClient {
       this._notifyReadyCallbacks();
       const isReconnect = this._hasEverConnected;
       this._hasEverConnected = true;
+
+      // Record gateway reconnect in metrics (H14 fix)
+      if (isReconnect) {
+        import('./routes/metrics.js').then(({ recordGatewayReconnect }) => {
+          recordGatewayReconnect();
+        }).catch(() => {});
+      }
+
       this._emitStatus('connected', isReconnect ? 'reconnected' : 'initial');
       return;
     }
@@ -461,7 +519,7 @@ class GatewayClient {
       clearTimeout(req.timer);
       this.pendingRequests.delete(frame.id);
       this._markResolved(frame.id);
-      console.error(`[Gateway] Request ${frame.id} error:`, frame.error.message || frame.error.code);
+      gLog.error(`Request ${frame.id} error:`, frame.error.message || frame.error.code);
       req.reject(new Error(frame.error.message || `Gateway error: ${frame.error.code}`));
       return;
     }
@@ -478,7 +536,7 @@ class GatewayClient {
     // Skip the "accepted" acknowledgment — wait for the final "ok"/"completed" response
     const status = frame.payload?.status;
     if (status === 'accepted') {
-      console.log(`[Gateway] Request ${frame.id} accepted, waiting for completion...`);
+      gLog.info(`Request ${frame.id} accepted, waiting for completion...`);
       return;
     }
 
@@ -495,7 +553,7 @@ class GatewayClient {
 
     const usage = frame.payload?.result?.usage || null;
 
-    console.log(`[Gateway] Request ${frame.id} completed, ${text.length} chars`);
+    gLog.info(`Request ${frame.id} completed, ${text.length} chars`);
     req.resolve({ text, usage });
   }
 
@@ -510,7 +568,7 @@ class GatewayClient {
 
     // Forward all other events to listeners
     for (const listener of this._eventListeners) {
-      try { listener(frame); } catch (err) { console.warn('[Gateway] Event listener error:', err.message); }
+      try { listener(frame); } catch (err) { gLog.warn('Event listener error:', err.message); }
     }
   }
 
@@ -539,7 +597,7 @@ class GatewayClient {
             }
           }
           if (oldestId) {
-            console.warn(`[Gateway] Stream buffer limit (${MAX_TOTAL_STREAM_BUFFERS}) reached, evicting oldest buffer: ${oldestId}`);
+            gLog.warn(`Stream buffer limit (${MAX_TOTAL_STREAM_BUFFERS}) reached, evicting oldest buffer: ${oldestId}`);
             this._streamBuffers.delete(oldestId);
           }
         }
@@ -549,6 +607,7 @@ class GatewayClient {
           userMessage: payload.userMessage || '',
           assistantChunks: [],
           startedAt: Date.now(),
+          requestId: requestId || runId, // H9 fix: Store requestId for cleanup
         });
       }
     }
@@ -565,7 +624,7 @@ class GatewayClient {
     if (stream === 'assistant' && chunk?.type === 'text' && chunk.text) {
       buffer.totalBytes = (buffer.totalBytes || 0) + Buffer.byteLength(chunk.text, 'utf8');
       if (buffer.totalBytes > MAX_STREAM_BUFFER_BYTES) {
-        console.warn(`[Gateway] Stream buffer ${bufferId} exceeded ${MAX_STREAM_BUFFER_BYTES / 1024}KB, truncating`);
+        gLog.warn(`Stream buffer ${bufferId} exceeded ${MAX_STREAM_BUFFER_BYTES / 1024}KB, truncating`);
         this._streamBuffers.delete(bufferId);
         return;
       }
@@ -587,7 +646,7 @@ class GatewayClient {
           chunk: cleanChunk,
         };
         for (const listener of this._eventListeners) {
-          try { listener(streamChunkEvent); } catch (err) { console.warn('[Gateway] Stream listener error:', err.message); }
+          try { listener(streamChunkEvent); } catch (err) { gLog.warn('Stream listener error:', err.message); }
         }
       }
     }
@@ -606,7 +665,7 @@ class GatewayClient {
         done,
       };
       for (const listener of this._eventListeners) {
-        try { listener(toolEvent); } catch (err) { console.warn('[Gateway] Tool event listener error:', err.message); }
+        try { listener(toolEvent); } catch (err) { gLog.warn('Tool event listener error:', err.message); }
       }
 
       // Detect permission wait events (F15)
@@ -618,7 +677,7 @@ class GatewayClient {
           timestamp: Date.now(),
         };
         for (const listener of this._eventListeners) {
-          try { listener(permEvent); } catch (err) { console.warn('[Gateway] Permission event listener error:', err.message); }
+          try { listener(permEvent); } catch (err) { gLog.warn('Permission event listener error:', err.message); }
         }
       }
     }
@@ -650,10 +709,11 @@ class GatewayClient {
           userMessage: cleanUserMessage,
           assistantMessage: fullText,
           timestamp: Date.now(),
+          requestId: buffer.requestId, // H9 fix: Include requestId for async request cleanup
         };
 
         for (const listener of this._eventListeners) {
-          try { listener(event); } catch (err) { console.warn('[Gateway] Agent message listener error:', err.message); }
+          try { listener(event); } catch (err) { gLog.warn('Agent message listener error:', err.message); }
         }
       }
     }
@@ -695,13 +755,13 @@ class GatewayClient {
 
   _emitStatus(status, detail) {
     for (const listener of this._statusListeners) {
-      try { listener({ status, detail }); } catch (err) { console.warn('[Gateway] Status listener error:', err.message); }
+      try { listener({ status, detail }); } catch (err) { gLog.warn('Status listener error:', err.message); }
     }
   }
 
   _handleClose(code, reason) {
     const reasonStr = reason ? reason.toString() : '';
-    console.log(`[Gateway] Connection closed: code=${code} reason=${reasonStr}`);
+    gLog.info(`Connection closed: code=${code} reason=${reasonStr}`);
     this.connected = false;
     this.authenticated = false;
     this._stopHeartbeat();
@@ -711,6 +771,10 @@ class GatewayClient {
     }
 
     if (this._connectReject) {
+      if (this._connectTimeout) {
+        clearTimeout(this._connectTimeout);
+        this._connectTimeout = null;
+      }
       this._connectingPromise = null;
       this._connectReject(new Error(`Connection closed: ${code}`));
       this._connectResolve = null;
@@ -736,7 +800,7 @@ class GatewayClient {
   }
 
   _handleError(err) {
-    console.error('[Gateway] WebSocket error:', err.message);
+    gLog.error('WebSocket error:', err.message);
   }
 
   _scheduleReconnect() {
@@ -745,7 +809,9 @@ class GatewayClient {
     this.reconnectAttempt++;
 
     if (this.reconnectAttempt > RECONNECT_MAX_ATTEMPTS) {
-      console.warn(`[Gateway] Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Will retry every 5 minutes in background.`);
+      // If already in background retry mode, don't start another
+      if (this._inBackgroundRetry) return;
+      gLog.warn(`Max reconnect attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Will retry every 5 minutes in background.`);
       this._scheduleBackgroundRetry();
       return;
     }
@@ -755,15 +821,15 @@ class GatewayClient {
       RECONNECT_MAX_DELAY_MS
     );
 
-    // Add random jitter (0-30%) to prevent thundering herd
-    const jitter = Math.random() * 0.3;
-    const delay = Math.floor(baseDelay * (1 + jitter));
+    // Add jitter: delay * (0.5 + Math.random() * 0.5) to prevent thundering herd
+    const jitter = 0.5 + Math.random() * 0.5;
+    const delay = Math.floor(baseDelay * jitter);
 
-    console.log(`[Gateway] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt}/${RECONNECT_MAX_ATTEMPTS})...`);
+    gLog.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt}/${RECONNECT_MAX_ATTEMPTS})...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch(err => {
-        console.error('[Gateway] Reconnect failed:', err.message);
+        gLog.error('Reconnect failed:', err.message);
       });
     }, delay);
   }
@@ -772,12 +838,21 @@ class GatewayClient {
   _scheduleBackgroundRetry() {
     if (this.shutdownRequested || this._backgroundRetryTimer) return;
     let bgDelay = 30000; // Start at 30s
+    this._inBackgroundRetry = true;
     const retry = () => {
-      if (this.shutdownRequested || this.connected) return;
-      console.log(`[Gateway] Background retry attempt (next in ${bgDelay / 1000}s)...`);
-      this.reconnectAttempt = 0; // Reset so _scheduleReconnect works again if this fails
-      this.connect().catch(err => {
-        console.error('[Gateway] Background retry failed:', err.message);
+      this._backgroundRetryTimer = null;
+      if (this.shutdownRequested || this.connected) {
+        this._inBackgroundRetry = false;
+        return;
+      }
+      gLog.info(`Background retry attempt (next in ${bgDelay / 1000}s)...`);
+      // Keep reconnectAttempt high so _scheduleReconnect won't start a
+      // parallel normal-reconnect cycle — it will call _scheduleBackgroundRetry
+      // which will no-op due to _inBackgroundRetry guard.
+      this.connect().then(() => {
+        this._inBackgroundRetry = false;
+      }).catch(err => {
+        gLog.error('Background retry failed:', err.message);
         bgDelay = Math.min(bgDelay * 1.5, 60000);
         this._backgroundRetryTimer = setTimeout(retry, bgDelay);
       });
@@ -797,19 +872,19 @@ class GatewayClient {
       // Check if pong is stale (no response for 2 heartbeat intervals)
       const staleness = Date.now() - this._lastPong;
       if (staleness > HEARTBEAT_INTERVAL_MS * 2) {
-        console.warn(`[Gateway] Heartbeat stale (${staleness}ms since last pong), forcing reconnect`);
+        gLog.warn(`Heartbeat stale (${staleness}ms since last pong), forcing reconnect`);
         this._stopHeartbeat();
         if (this.ws) {
           try {
             this.ws.terminate();
           } catch (err) {
-            console.error('[Gateway] Error terminating stale connection:', err.message);
+            gLog.error('Error terminating stale connection:', err.message);
           }
         }
         return;
       }
 
-      try { this.ws.ping(); } catch (err) { console.warn('[Gateway] Ping error:', err.message); }
+      try { this.ws.ping(); } catch (err) { gLog.warn('Ping error:', err.message); }
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -818,6 +893,38 @@ class GatewayClient {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+  }
+
+  /**
+   * Start periodic scanner to detect stuck requests (requests pending > 90s).
+   * Logs warnings for requests approaching the 120s timeout threshold.
+   */
+  startStuckRequestScanner() {
+    // Clear existing scanner if any
+    if (this._stuckRequestScannerTimer) {
+      clearInterval(this._stuckRequestScannerTimer);
+    }
+
+    this._stuckRequestScannerTimer = setInterval(() => {
+      if (this.pendingRequests.size === 0) return;
+
+      const now = Date.now();
+      for (const [requestId, req] of this.pendingRequests) {
+        if (!req.startTime) continue; // Skip if startTime not set (shouldn't happen)
+
+        const elapsed = now - req.startTime;
+        if (elapsed > STUCK_REQUEST_THRESHOLD_MS) {
+          const sessionKey = req.sessionKey || 'unknown';
+          gLog.warn('Stuck request detected', {
+            requestId,
+            elapsed: Math.floor(elapsed / 1000) + 's',
+            sessionKey,
+            traceId: req.traceId || '',
+            raw: req.raw || false
+          });
+        }
+      }
+    }, STUCK_REQUEST_SCAN_INTERVAL_MS);
   }
 
   // --- Public API ---
@@ -843,7 +950,7 @@ class GatewayClient {
         reject(new Error(`Request ${method} timeout`));
       }, timeoutMs);
 
-      this.pendingRequests.set(requestId, { resolve, reject, timer, raw: true });
+      this.pendingRequests.set(requestId, { resolve, reject, timer, raw: true, startTime: Date.now() });
 
       try {
         this._send({ type: 'req', id: requestId, method, params });
@@ -875,7 +982,7 @@ class GatewayClient {
    * Send a message to an agent session and collect the full response.
    * Waits for the gateway "res" frame which contains the complete reply text.
    */
-  sendAgentMessage(sessionKey, message, attachments = []) {
+  sendAgentMessage(sessionKey, message, attachments = [], options = {}) {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.authenticated) {
         return reject(new Error('Gateway not connected'));
@@ -886,6 +993,7 @@ class GatewayClient {
         return reject(new Error(`Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`));
       }
 
+      const traceId = options.traceId || '';
       const reqUuid = randomUUID().replace(/-/g, '');
       const requestId = `req_${reqUuid}`;
       const idempotencyKey = `cmd_${sessionKey}_${Date.now()}_${reqUuid.substring(0, 8)}`;
@@ -897,7 +1005,14 @@ class GatewayClient {
         }
       }, REQUEST_TIMEOUT_MS);
 
-      this.pendingRequests.set(requestId, { resolve, reject, timer });
+      this.pendingRequests.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        traceId,
+        sessionKey,
+        startTime: Date.now()
+      });
 
       try {
         this._send({
@@ -913,7 +1028,7 @@ class GatewayClient {
             idempotencyKey,
           },
         });
-        console.log(`[Gateway] Sent request ${requestId} to session ${sessionKey}`);
+        gLog.info(`Sent request ${requestId} to session ${sessionKey}`, { traceId, requestId, sessionKey });
       } catch (err) {
         clearTimeout(timer);
         this.pendingRequests.delete(requestId);
@@ -927,11 +1042,12 @@ class GatewayClient {
    * Response events will flow through to WebSocket listeners since
    * the requestId isn't tracked in pendingRequests.
    */
-  sendAgentMessageAsync(sessionKey, message, attachments = []) {
+  sendAgentMessageAsync(sessionKey, message, attachments = [], options = {}) {
     if (!this.connected || !this.authenticated) {
       throw new Error('Gateway not connected');
     }
 
+    const traceId = options.traceId || '';
     const reqUuid = randomUUID().replace(/-/g, '');
     const requestId = `req_${reqUuid}`;
     const idempotencyKey = `cmd_${sessionKey}_${Date.now()}_${reqUuid.substring(0, 8)}`;
@@ -949,11 +1065,12 @@ class GatewayClient {
         idempotencyKey,
       },
     });
-    console.log(`[Gateway] Sent async request ${requestId} to session ${sessionKey}`);
+    gLog.info(`Sent async request ${requestId} to session ${sessionKey}`, { traceId, requestId, sessionKey });
     return requestId;
   }
 
-  waitForReady(timeoutMs = 10000) {
+  // H4 fix: Increase default timeout from 5s/10s to 15s for gateway reconnection
+  waitForReady(timeoutMs = 15000) {
     if (this.isReady) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -1000,11 +1117,22 @@ class GatewayClient {
 
   get stats() {
     const uptime = this._connectedAt ? Date.now() - this._connectedAt : 0;
+
+    // Count stuck requests (pending > 90s)
+    let stuckRequests = 0;
+    const now = Date.now();
+    for (const [, req] of this.pendingRequests) {
+      if (req.startTime && (now - req.startTime) > STUCK_REQUEST_THRESHOLD_MS) {
+        stuckRequests++;
+      }
+    }
+
     return {
       connected: this.connected,
       authenticated: this.authenticated,
       pendingRequests: this.pendingRequests.size,
       maxPendingRequests: MAX_PENDING_REQUESTS,
+      stuckRequests,
       reconnectAttempt: this.reconnectAttempt,
       uptime,
       streamBuffers: this._streamBuffers.size,

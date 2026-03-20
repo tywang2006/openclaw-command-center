@@ -46,6 +46,9 @@ import {
 
 // ── Render functions ────────────────────────────────────────────
 
+// Performance optimization: reuse module-level array for z-sorting to reduce GC pressure
+let drawables: Array<{zY: number, draw: (ctx: CanvasRenderingContext2D) => void}> = []
+
 export function renderTileGrid(
   ctx: CanvasRenderingContext2D,
   tileMap: TileTypeVal[][],
@@ -108,7 +111,8 @@ export function renderScene(
   selectedAgentId: number | null,
   hoveredAgentId: number | null,
 ): void {
-  const drawables: ZDrawable[] = []
+  // Performance optimization: reuse module-level array instead of allocating new one each frame
+  drawables.length = 0
 
   // Furniture
   for (const f of furniture) {

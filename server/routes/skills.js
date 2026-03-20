@@ -3,7 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter, safeWriteFileSync } from '../utils.js';
+import { recordAudit } from './audit.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Skills');
 const router = express.Router();
 
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
@@ -100,7 +103,7 @@ router.get('/skills', (req, res) => {
       lastUpdated: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error in GET /api/skills:', error);
+    log.error(`Error in GET /api/skills: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch skills' });
   }
 });
@@ -149,7 +152,7 @@ router.get('/skills/:slug', (req, res) => {
       }
     });
   } catch (error) {
-    console.error(`Error in GET /api/skills/${req.params.slug}:`, error);
+    log.error(`Error in GET /api/skills/${req.params.slug}: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch skill details' });
   }
 });
@@ -194,7 +197,7 @@ router.get('/skills/:slug/assets', (req, res) => {
       count: assets.length
     });
   } catch (error) {
-    console.error(`Error in GET /api/skills/${req.params.slug}/assets:`, error);
+    log.error(`Error in GET /api/skills/${req.params.slug}/assets: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch skill assets' });
   }
 });
@@ -245,7 +248,9 @@ router.post('/skills/:slug/execute', async (req, res) => {
 
     // Send through the Gateway via agent.js chat function
     const { chat } = await import('../agent.js');
-    const result = await chat(deptId, message);
+    const result = await chat(deptId, message, null, { traceId: req.traceId });
+
+    recordAudit({ action: 'skill:execute', target: slug, deptId, details: { success: result.success }, ip: req.ip });
 
     if (result.success) {
       res.json({
@@ -263,7 +268,7 @@ router.post('/skills/:slug/execute', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error(`Error in POST /api/skills/${req.params.slug}/execute:`, error);
+    log.error(`Error in POST /api/skills/${req.params.slug}/execute: ${error.message}`);
     res.status(500).json({ error: 'Failed to execute skill' });
   }
 });
@@ -274,6 +279,12 @@ router.post('/skills/:slug/execute', async (req, res) => {
  */
 router.post('/skills', (req, res) => {
   try {
+    // C15 Fix: Only human operators can create skills
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create or modify skills. Ask a human operator.' });
+    }
+
     const { slug, name, summary, description, tags, content } = req.body;
 
     // Validate slug
@@ -309,9 +320,10 @@ router.post('/skills', (req, res) => {
       version: '0.1.0'
     }, null, 2));
 
+    recordAudit({ action: 'skill:create', target: slug, details: { name }, ip: req.ip });
     res.json({ success: true, slug });
   } catch (error) {
-    console.error('Error in POST /api/skills:', error);
+    log.error(`Error in POST /api/skills: ${error.message}`);
     res.status(500).json({ error: 'Failed to create skill' });
   }
 });
@@ -360,9 +372,10 @@ router.put('/skills/:slug', (req, res) => {
     const newBody = content !== undefined ? content : oldBody;
     safeWriteFileSync(skillMdPath, fmLines.join('\n') + '\n\n' + (newBody || ''));
 
+    recordAudit({ action: 'skill:update', target: slug, details: { fields: Object.keys(req.body) }, ip: req.ip });
     res.json({ success: true, slug });
   } catch (error) {
-    console.error(`Error in PUT /api/skills/${req.params.slug}:`, error);
+    log.error(`Error in PUT /api/skills/${req.params.slug}: ${error.message}`);
     res.status(500).json({ error: 'Failed to update skill' });
   }
 });
@@ -373,6 +386,12 @@ router.put('/skills/:slug', (req, res) => {
  */
 router.delete('/skills/:slug', (req, res) => {
   try {
+    // C15 Fix: Only human operators can delete skills
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create or modify skills. Ask a human operator.' });
+    }
+
     const { slug } = req.params;
     if (!/^[a-z0-9_-]+$/i.test(slug)) {
       return res.status(400).json({ error: 'Invalid skill slug' });
@@ -389,9 +408,10 @@ router.delete('/skills/:slug', (req, res) => {
     }
 
     fs.rmSync(skillPath, { recursive: true, force: true });
+    recordAudit({ action: 'skill:delete', target: slug, ip: req.ip });
     res.json({ success: true });
   } catch (error) {
-    console.error(`Error in DELETE /api/skills/${req.params.slug}:`, error);
+    log.error(`Error in DELETE /api/skills/${req.params.slug}: ${error.message}`);
     res.status(500).json({ error: 'Failed to delete skill' });
   }
 });
@@ -402,6 +422,12 @@ router.delete('/skills/:slug', (req, res) => {
  */
 router.post('/skills/install', (req, res) => {
   try {
+    // C15 Fix: Only human operators can install skills from external sources
+    const sourceDept = req.headers['x-source-dept'];
+    if (sourceDept) {
+      return res.status(403).json({ error: 'AI agents cannot create or modify skills. Ask a human operator.' });
+    }
+
     const { url } = req.body;
     if (!url || typeof url !== 'string') {
       return res.status(400).json({ error: 'url is required' });
@@ -431,7 +457,7 @@ router.post('/skills/install', (req, res) => {
         stdio: 'pipe'
       });
     } catch (cloneErr) {
-      console.error('[Skills] Git clone failed:', cloneErr.message);
+      log.error(`Git clone failed: ${cloneErr.message}`);
       return res.status(400).json({ error: 'Failed to clone repository. Check the URL and try again.' });
     }
 
@@ -447,6 +473,12 @@ router.post('/skills/install', (req, res) => {
     const { frontmatter } = parseFrontmatter(skillContent);
     const slug = frontmatter.slug || path.basename(gitUrl, '.git');
     const skillName = frontmatter.name || slug;
+
+    // H-1 Fix: Validate slug to prevent path traversal from malicious frontmatter
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(slug)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return res.status(400).json({ error: `Invalid skill slug "${slug}": must be lowercase alphanumeric with hyphens/underscores` });
+    }
 
     // Check if already exists
     const targetPath = path.join(SKILLS_PATH, slug);
@@ -472,7 +504,7 @@ router.post('/skills/install', (req, res) => {
 
     res.json({ success: true, slug, name: skillName });
   } catch (error) {
-    console.error('Error in POST /api/skills/install:', error);
+    log.error(`Error in POST /api/skills/install: ${error.message}`);
     // Clean up temp dir if it exists
     const tmpPattern = path.join(SKILLS_PATH, '.tmp-install-*');
     try {
@@ -491,6 +523,7 @@ router.post('/skills/install', (req, res) => {
  * GET /api/memory/search
  * Search across all department memories.
  * Query: ?q=searchTerm
+ * H25 Fix: Returns only metadata (deptId, matchCount, preview) to prevent leaking detailed memory content.
  */
 router.get('/memory/search', (req, res) => {
   try {
@@ -519,23 +552,26 @@ router.get('/memory/search', (req, res) => {
         const content = fs.readFileSync(memPath, 'utf8');
         if (!content.toLowerCase().includes(query)) continue;
 
-        // Find matching lines with context
+        // H25 Fix: Count matches and get first match preview only
         const lines = content.split('\n');
-        const matches = [];
+        let matchCount = 0;
+        let firstMatchPreview = '';
+
         for (let i = 0; i < lines.length; i++) {
           if (lines[i].toLowerCase().includes(query)) {
-            matches.push({
-              line: i + 1,
-              text: lines[i].trim().substring(0, 200),
-            });
-            if (matches.length >= 5) break;
+            matchCount++;
+            if (!firstMatchPreview) {
+              // Only store first match preview (50 chars max)
+              firstMatchPreview = lines[i].trim().substring(0, 50);
+            }
           }
         }
 
+        // Only return metadata, not full matching text
         results.push({
           deptId: entry.name,
-          matches,
-          totalSize: content.length,
+          matchCount,
+          preview: firstMatchPreview,
         });
       } catch {
         // Skip unreadable files
@@ -548,7 +584,7 @@ router.get('/memory/search', (req, res) => {
       count: results.length,
     });
   } catch (error) {
-    console.error('Error in GET /api/memory/search:', error);
+    log.error(`Error in GET /api/memory/search: ${error.message}`);
     res.status(500).json({ error: 'Failed to search memories' });
   }
 });

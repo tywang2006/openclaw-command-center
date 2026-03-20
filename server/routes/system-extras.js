@@ -3,13 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { OPENCLAW_HOME, BASE_PATH, safeWriteFileSync } from '../utils.js';
+import { OPENCLAW_HOME, BASE_PATH, safeWriteFileSync, validateDepartmentId } from '../utils.js';
+import { recordAudit } from './audit.js';
+import { verifyPassword, getStoredPassword } from '../auth.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('SystemExtras');
 const router = express.Router();
 const execFileAsync = promisify(execFile);
-
-// Valid department ID pattern (must match api.js)
-const VALID_DEPT_ID = /^[a-z][a-z0-9_-]{0,30}$/;
 
 /**
  * Helper: Mask sensitive tokens (first 8 chars + "...")
@@ -26,7 +27,7 @@ function maskToken(token) {
  */
 router.post('/system/observer', async (req, res) => {
   try {
-    console.log('[SystemExtras] POST /system/observer - triggering observer/reflector');
+    log.info('POST /system/observer - triggering observer/reflector');
 
     const results = { success: true, output: [] };
     const observerPath = path.join(OPENCLAW_HOME, 'cron', 'observer.sh');
@@ -35,7 +36,7 @@ router.post('/system/observer', async (req, res) => {
     // Run observer.sh if it exists
     if (fs.existsSync(observerPath)) {
       try {
-        console.log(`[SystemExtras] Running observer: ${observerPath}`);
+        log.info(`Running observer: ${observerPath}`);
         const { stdout, stderr } = await execFileAsync('bash', [observerPath], {
           timeout: 30000,
           cwd: path.dirname(observerPath),
@@ -46,7 +47,7 @@ router.post('/system/observer', async (req, res) => {
           lines: stdout.trim().split('\n').length,
         });
       } catch (error) {
-        console.error('[SystemExtras] observer.sh failed:', error.message);
+        log.error('observer.sh failed: ' + error.message);
         results.output.push({
           script: 'observer.sh',
           success: false,
@@ -65,7 +66,7 @@ router.post('/system/observer', async (req, res) => {
     // Run reflector.sh if it exists
     if (fs.existsSync(reflectorPath)) {
       try {
-        console.log(`[SystemExtras] Running reflector: ${reflectorPath}`);
+        log.info(`Running reflector: ${reflectorPath}`);
         const { stdout, stderr } = await execFileAsync('bash', [reflectorPath], {
           timeout: 30000,
           cwd: path.dirname(reflectorPath),
@@ -76,7 +77,7 @@ router.post('/system/observer', async (req, res) => {
           lines: stdout.trim().split('\n').length,
         });
       } catch (error) {
-        console.error('[SystemExtras] reflector.sh failed:', error.message);
+        log.error('reflector.sh failed: ' + error.message);
         results.output.push({
           script: 'reflector.sh',
           success: false,
@@ -94,7 +95,7 @@ router.post('/system/observer', async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error('[SystemExtras] POST /system/observer error:', error);
+    log.error('POST /system/observer error: ' + error.message);
     res.status(500).json({ success: false, error: 'Observer execution failed' });
   }
 });
@@ -105,13 +106,13 @@ router.post('/system/observer', async (req, res) => {
  */
 router.get('/system/sessions', (req, res) => {
   try {
-    console.log('[SystemExtras] GET /system/sessions');
+    log.info('GET /system/sessions');
 
     const sessionsDir = path.join(OPENCLAW_HOME, 'agents', 'main', 'sessions');
     const sessions = [];
 
     if (!fs.existsSync(sessionsDir)) {
-      console.log('[SystemExtras] Sessions directory does not exist:', sessionsDir);
+      log.warn('Sessions directory does not exist: ' + sessionsDir);
       return res.json({ sessions: [] });
     }
 
@@ -139,7 +140,7 @@ router.get('/system/sessions', (req, res) => {
             metadata = { ...metadata, ...content };
             if (content.name) name = content.name;
           } catch (err) {
-            console.error(`[SystemExtras] Error reading ${file}:`, err.message);
+            log.error(`Error reading ${file}: ` + err.message);
           }
         } else if (file.endsWith('.md')) {
           try {
@@ -151,7 +152,7 @@ router.get('/system/sessions', (req, res) => {
               name = titleMatch[1];
             }
           } catch (err) {
-            console.error(`[SystemExtras] Error reading ${file}:`, err.message);
+            log.error(`Error reading ${file}: ` + err.message);
           }
         }
       }
@@ -168,10 +169,10 @@ router.get('/system/sessions', (req, res) => {
     // Sort by lastModified descending
     sessions.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
 
-    console.log(`[SystemExtras] Found ${sessions.length} sessions`);
+    log.info(`Found ${sessions.length} sessions`);
     res.json({ sessions });
   } catch (error) {
-    console.error('[SystemExtras] GET /system/sessions error:', error);
+    log.error('GET /system/sessions error: ' + error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -182,12 +183,12 @@ router.get('/system/sessions', (req, res) => {
  */
 router.get('/system/devices', (req, res) => {
   try {
-    console.log('[SystemExtras] GET /system/devices');
+    log.info('GET /system/devices');
 
     const devicesPath = path.join(OPENCLAW_HOME, 'devices', 'paired.json');
 
     if (!fs.existsSync(devicesPath)) {
-      console.log('[SystemExtras] Devices file does not exist:', devicesPath);
+      log.warn('Devices file does not exist: ' + devicesPath);
       return res.json({ devices: [] });
     }
 
@@ -214,10 +215,10 @@ router.get('/system/devices', (req, res) => {
       tokenPreview: device.token ? maskToken(device.token) : undefined,
     }));
 
-    console.log(`[SystemExtras] Found ${maskedDevices.length} devices`);
+    log.info(`Found ${maskedDevices.length} devices`);
     res.json({ devices: maskedDevices });
   } catch (error) {
-    console.error('[SystemExtras] GET /system/devices error:', error);
+    log.error('GET /system/devices error: ' + error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -229,10 +230,11 @@ router.get('/system/devices', (req, res) => {
 router.get('/departments/:id/persona', (req, res) => {
   try {
     const { id } = req.params;
-    if (!VALID_DEPT_ID.test(id)) {
+    // H17 Fix: Use shared validation
+    if (!validateDepartmentId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
-    console.log(`[SystemExtras] GET /departments/${id}/persona`);
+    log.info(`GET /departments/${id}/persona`);
 
     // Try canonical path first (what agent.js reads from)
     let personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
@@ -243,16 +245,16 @@ router.get('/departments/:id/persona', (req, res) => {
     }
 
     if (!fs.existsSync(personaPath)) {
-      console.log('[SystemExtras] Persona not found:', personaPath);
+      log.warn('Persona not found: ' + personaPath);
       return res.status(404).json({ error: 'Persona not found' });
     }
 
     const content = fs.readFileSync(personaPath, 'utf8');
-    console.log(`[SystemExtras] Read persona from ${personaPath} (${content.length} chars)`);
+    log.info(`Read persona from ${personaPath} (${content.length} chars)`);
 
     res.json({ content });
   } catch (error) {
-    console.error('[SystemExtras] GET /departments/:id/persona error:', error);
+    log.error('GET /departments/:id/persona error: ' + error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -264,7 +266,8 @@ router.get('/departments/:id/persona', (req, res) => {
 router.put('/departments/:id/persona', (req, res) => {
   try {
     const { id } = req.params;
-    if (!VALID_DEPT_ID.test(id)) {
+    // H17 Fix: Use shared validation
+    if (!validateDepartmentId(id)) {
       return res.status(400).json({ error: 'Invalid department ID' });
     }
     const { content } = req.body;
@@ -272,11 +275,14 @@ router.put('/departments/:id/persona', (req, res) => {
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'content must be a string' });
     }
-    if (Buffer.byteLength(content, 'utf8') > 10240) {
-      return res.status(400).json({ error: 'Persona content exceeds 10KB limit' });
+    const size = Buffer.byteLength(content, 'utf8');
+    if (size > 10240) {
+      return res.status(413).json({
+        error: `Persona content too large: ${(size / 1024).toFixed(2)} KB exceeds 10 KB limit`
+      });
     }
 
-    console.log(`[SystemExtras] PUT /departments/${id}/persona (${content.length} chars)`);
+    log.info(`PUT /departments/${id}/persona (${content.length} chars)`);
 
     // Always write to the canonical path that agent.js reads from
     const personaPath = path.join(BASE_PATH, 'departments', 'personas', `${id}.md`);
@@ -286,11 +292,12 @@ router.put('/departments/:id/persona', (req, res) => {
     }
 
     safeWriteFileSync(personaPath, content);
-    console.log(`[SystemExtras] Wrote persona to ${personaPath}`);
+    log.info(`Wrote persona to ${personaPath}`);
 
+    recordAudit({ action: 'persona:update', target: id, deptId: id, ip: req.ip });
     res.json({ success: true });
   } catch (error) {
-    console.error('[SystemExtras] PUT /departments/:id/persona error:', error);
+    log.error('PUT /departments/:id/persona error: ' + error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -307,18 +314,22 @@ router.get('/system/openclaw/version', async (req, res) => {
       // Parse "OpenClaw 2026.3.11 (29dc654)" → "2026.3.11"
       const match = stdout.trim().match(/(\d+\.\d+\.\d+)/);
       current = match ? match[1] : stdout.trim();
-    } catch {}
+    } catch {
+      // Version check failed — non-critical
+    }
 
     let latest = null;
     try {
       const { stdout } = await execFileAsync('npm', ['view', 'openclaw', 'version'], { timeout: 10000 });
       latest = stdout.trim();
-    } catch {}
+    } catch {
+      // npm registry check failed — non-critical
+    }
 
     const updateAvailable = !!(current && latest && current !== latest);
     res.json({ current, latest, updateAvailable });
   } catch (error) {
-    console.error('[SystemExtras] GET /system/openclaw/version error:', error);
+    log.error('GET /system/openclaw/version error: ' + error.message);
     res.status(500).json({ error: 'Failed to check version' });
   }
 });
@@ -337,7 +348,9 @@ router.post('/system/openclaw/update', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
     wss?.clients?.forEach(c => {
-      if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {}
+      if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {
+        // client disconnected — expected
+      }
     });
   };
 
@@ -377,7 +390,9 @@ router.post('/system/openclaw/update', async (req, res) => {
     try {
       const { stdout } = await execFileAsync('openclaw', ['--version'], { timeout: 5000 });
       newVersion = stdout.trim();
-    } catch {}
+    } catch {
+      // Version check failed — non-critical
+    }
 
     // Restart gateway separately (we used --no-restart to avoid killing PM2)
     broadcast('Restarting gateway...');
@@ -397,12 +412,14 @@ router.post('/system/openclaw/update', async (req, res) => {
       await new Promise(r => setTimeout(r, 2000));
       await gw.connect();
       broadcast('Gateway client reconnected.');
-    } catch {}
+    } catch (gwErr) {
+      log.warn('Gateway reconnect failed: ' + gwErr.message);
+    }
 
     broadcast(`Update complete! Version: ${newVersion || 'unknown'}`, true);
     res.json({ success: true, version: newVersion, output: result });
   } catch (error) {
-    console.error('[SystemExtras] POST /system/openclaw/update error:', error);
+    log.error('POST /system/openclaw/update error: ' + error.message);
     broadcast(`Update failed: ${error.message}`, true, true);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -413,18 +430,28 @@ router.post('/system/openclaw/update', async (req, res) => {
  * Gracefully shut down the Command Center server.
  * Sends a response first, then exits after a short delay.
  */
-router.post('/system/shutdown', (req, res) => {
-  const { confirm } = req.body || {};
+router.post('/system/shutdown', async (req, res) => {
+  const { confirm, password } = req.body || {};
   if (confirm !== 'SHUTDOWN') {
     return res.status(400).json({ error: 'Must send { "confirm": "SHUTDOWN" } to confirm' });
   }
 
-  console.log('[SystemExtras] POST /system/shutdown — shutting down server');
+  // H26 Fix: Require password re-confirmation for shutdown
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password required for shutdown confirmation' });
+  }
+  const storedPassword = getStoredPassword();
+  if (!storedPassword || !verifyPassword(password, storedPassword)) {
+    return res.status(403).json({ error: 'Invalid password' });
+  }
+
+  log.info('POST /system/shutdown — shutting down server');
+  recordAudit({ action: 'system:shutdown', target: 'server', ip: req.ip });
   res.json({ success: true, message: 'Server shutting down' });
 
   // Give time for the response to flush, then exit
   setTimeout(() => {
-    console.log('[Server] Shutdown requested via API, exiting...');
+    log.info('Shutdown requested via API, exiting...');
     process.exit(0);
   }, 500);
 });

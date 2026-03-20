@@ -240,8 +240,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
     const newSteps = [...formSteps];
     if (field === 'delayMs') {
       newSteps[index][field] = typeof value === 'number' ? value * 1000 : parseInt(value as string) * 1000;
-    } else {
-      newSteps[index][field] = value as any;
+    } else if (field === 'deptId' || field === 'message') {
+      newSteps[index][field] = value as string;
     }
     setFormSteps(newSteps);
   };
@@ -276,7 +276,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
   const handleConditionChange = (
     stepIndex: number,
     field: 'type' | 'value' | 'nextStepOnTrue' | 'nextStepOnFalse' | 'enabled',
-    value: any
+    value: string | number | boolean
   ) => {
     const newSteps = [...formSteps];
     if (field === 'enabled') {
@@ -291,7 +291,13 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
         delete newSteps[stepIndex].condition;
       }
     } else if (newSteps[stepIndex].condition) {
-      (newSteps[stepIndex].condition as any)[field] = value;
+      const condition = newSteps[stepIndex].condition;
+      if (condition) {
+        if (field === 'type') condition.type = value as 'contains' | 'not_contains' | 'equals';
+        else if (field === 'value') condition.value = value as string;
+        else if (field === 'nextStepOnTrue') condition.nextStepOnTrue = value as number;
+        else if (field === 'nextStepOnFalse') condition.nextStepOnFalse = value as number;
+      }
     }
     setFormSteps(newSteps);
   };

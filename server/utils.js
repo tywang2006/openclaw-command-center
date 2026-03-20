@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from './logger.js';
+
+const log = createLogger('Utils');
 
 /**
  * Base workspace path - derived from environment or default OpenClaw home
@@ -64,7 +67,7 @@ export function readJsonFile(filePath) {
     }
     return null;
   } catch (error) {
-    console.error(`Error reading JSON file ${filePath}:`, error.message);
+    log.error('Error reading JSON file', { filePath, error: error.message });
     return null;
   }
 }
@@ -91,7 +94,7 @@ export function readTextFile(filePath) {
     }
     return '';
   } catch (error) {
-    console.error(`Error reading text file ${filePath}:`, error.message);
+    log.error('Error reading text file', { filePath, error: error.message });
     return '';
   }
 }
@@ -138,4 +141,13 @@ export function parseFrontmatter(content) {
   if (currentKey) frontmatter[currentKey] = parseValue(currentValue.join('\n').trim());
 
   return { frontmatter, body };
+}
+
+/**
+ * H17 Fix: Shared department ID validation
+ * Lowercase, starts with letter, max 50 chars, allows hyphens and underscores
+ */
+export function validateDepartmentId(id) {
+  if (typeof id !== 'string') return false;
+  return /^[a-z][a-z0-9_-]{0,49}$/.test(id);
 }

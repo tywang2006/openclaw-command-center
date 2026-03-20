@@ -3,7 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'node:crypto';
 import { DATA_DIR, safeWriteFileSync } from '../utils.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Notifications');
 const router = express.Router();
 
 const STORE_PATH = path.join(DATA_DIR, 'notifications.json');
@@ -15,10 +17,10 @@ try {
   if (fs.existsSync(STORE_PATH)) {
     const data = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     notifications = (data.notifications || []).slice(-MAX_NOTIFICATIONS);
-    console.log(`[Notifications] Loaded ${notifications.length} notifications`);
+    log.info(`Loaded ${notifications.length} notifications`);
   }
 } catch (err) {
-  console.error('[Notifications] Failed to load:', err.message);
+  log.error(`Failed to load: ${err.message}`);
 }
 
 let _dirty = false;
@@ -30,7 +32,7 @@ function persistSync() {
   try {
     safeWriteFileSync(STORE_PATH, JSON.stringify({ notifications }, null, 2));
   } catch (err) {
-    console.error('[Notifications] Persist failed:', err.message);
+    log.error(`Persist failed: ${err.message}`);
   }
 }
 
@@ -96,7 +98,7 @@ router.get('/notifications', (req, res) => {
 
     res.json({ notifications: sorted, unreadCount, total: filtered.length });
   } catch (error) {
-    console.error('[Notifications] GET error:', error);
+    log.error(`GET error: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch notifications' });
   }
 });
@@ -108,7 +110,7 @@ router.get('/notifications/summary', (req, res) => {
     const latest = notifications.length > 0 ? notifications[notifications.length - 1].timestamp : null;
     res.json({ unreadCount, criticalCount, latestTimestamp: latest });
   } catch (error) {
-    console.error('[Notifications] Summary error:', error);
+    log.error(`Summary error: ${error.message}`);
     res.status(500).json({ error: 'Failed' });
   }
 });

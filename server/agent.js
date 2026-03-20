@@ -4,6 +4,9 @@ import { getGateway } from './gateway.js';
 import { recordChat, recordTokens } from './routes/metrics.js';
 import { BASE_PATH, safeWriteFileSync } from './utils.js';
 import { withFileLock } from './file-lock.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('Agent');
 
 // ---- Config / mappings ----
 
@@ -20,7 +23,8 @@ function loadConfig() {
     _configCache = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     _configMtime = stat.mtimeMs;
     return _configCache;
-  } catch {
+  } catch (err) {
+    log.warn('Failed to load config', { error: err.message });
     return { departments: {} };
   }
 }
@@ -38,7 +42,8 @@ function loadIntegrations() {
     _integCache = JSON.parse(fs.readFileSync(INTEGRATIONS_PATH, 'utf8'));
     _integMtime = stat.mtimeMs;
     return _integCache;
-  } catch {
+  } catch (err) {
+    log.warn('[Config] Failed to load integrations:', err.message);
     return {};
   }
 }
@@ -47,7 +52,12 @@ function loadIntegrations() {
 
 function loadPersona(deptId) {
   const p = path.join(BASE_PATH, 'departments', 'personas', `${deptId}.md`);
-  try { return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''; } catch { return ''; }
+  try {
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+  } catch (err) {
+    log.warn('Failed to load persona', { deptId, error: err.message });
+    return '';
+  }
 }
 
 // ---- API group definitions ----
@@ -192,7 +202,8 @@ function buildApiGroup(groupId, CMD, integ) {
  */
 function buildToolsSection(deptId) {
   const integ = loadIntegrations();
-  const CMD = 'bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh';
+  // Prefix with OPENCLAW_DEPT_ID so cmd-api.sh sends x-source-dept header
+  const CMD = `OPENCLAW_DEPT_ID=${deptId} bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh`;
   const lines = [];
 
   // ---- Universal API wrapper ----
@@ -422,7 +433,7 @@ function loadSubAgents(deptId) {
       return JSON.parse(fs.readFileSync(p, 'utf8'));
     }
   } catch (err) {
-    console.error(`[SubAgent] Failed to load ${p}:`, err.message);
+    log.error('Failed to load subagents file', { path: p, error: err.message });
   }
   return { count: 0, agents: {} };
 }
@@ -436,7 +447,7 @@ function saveSubAgents(deptId, data) {
     }
     safeWriteFileSync(p, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error(`[SubAgent] Failed to save ${p}:`, err.message);
+    log.error('Failed to save subagents file', { path: p, error: err.message });
   }
 }
 
@@ -455,12 +466,16 @@ function loadAllSubAgents(config) {
 
 // ---- Chat via OpenClaw Gateway ----
 
+// H7 Fix: AI response size limit (500KB)
+const MAX_RESPONSE_SIZE = 512000;
+
 /**
  * Chat with a department agent via OpenClaw Gateway.
  * Prepends dynamic department context (persona + enabled tools) to each message.
  * Tools section is built from integrations.json at runtime — new configs auto-sync.
  */
-async function chat(deptId, userMessage, images) {
+async function chat(deptId, userMessage, images, options = {}) {
+  const traceId = options.traceId || '';
   const gateway = getGateway();
 
   if (!gateway.isReady) {
@@ -487,39 +502,75 @@ async function chat(deptId, userMessage, images) {
     }
   }
 
-  // Retry logic: 1 retry for transient errors (timeout, connection lost)
-  const MAX_RETRIES = 1;
+  // H1 fix: Retry logic with exponential backoff for transient errors (max 2 retries)
+  const MAX_RETRIES = 2;
+  const RETRY_DELAYS = [1000, 3000]; // 1s, 3s
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const startMs = Date.now();
-      const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, attachments);
+      const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, attachments, { traceId });
       const durationMs = Date.now() - startMs;
 
-      // Record metrics
-      if (result.text) {
+      // H24 fix: Accept empty text if tool results were generated
+      const hasToolResults = result.toolResults && Array.isArray(result.toolResults) && result.toolResults.length > 0;
+      const hasText = result.text && result.text.trim().length > 0;
+
+      if (hasText || hasToolResults) {
+        // H7 Fix: Truncate AI response to MAX_RESPONSE_SIZE (500KB)
+        let replyText = result.text || '';
+        if (Buffer.byteLength(replyText, 'utf8') > MAX_RESPONSE_SIZE) {
+          log.warn(`Chat ${deptId} response truncated from ${Buffer.byteLength(replyText, 'utf8')} to ${MAX_RESPONSE_SIZE} bytes`, { traceId, deptId });
+          replyText = replyText.substring(0, MAX_RESPONSE_SIZE);
+        }
+
         recordChat(deptId, durationMs, false);
         if (result.usage) {
           recordTokens(deptId, result.usage);
         }
-        return { success: true, reply: result.text };
+        log.info(`Chat ${deptId} completed in ${durationMs}ms (text=${hasText}, tools=${hasToolResults})`, { traceId, deptId, durationMs });
+        return { success: true, reply: replyText };
       }
 
       recordChat(deptId, durationMs, true);
+      log.warn(`Chat ${deptId} empty response (no text or tool results)`, { traceId, deptId, durationMs });
       return { success: false, error: 'Gateway returned empty response' };
     } catch (err) {
+      // Check for transient errors (network, timeout, 5xx)
       const isTransient = err.message.includes('timeout') ||
         err.message.includes('connection lost') ||
-        err.message.includes('WebSocket not open');
-      if (isTransient && attempt < MAX_RETRIES) {
-        console.warn(`[Agent] Chat ${deptId} transient error (attempt ${attempt + 1}), retrying: ${err.message}`);
-        // Wait briefly before retry, re-check gateway readiness
-        await new Promise(r => setTimeout(r, 2000));
+        err.message.includes('Gateway connection lost') ||
+        err.message.includes('WebSocket not open') ||
+        err.message.includes('ECONNREFUSED') ||
+        err.message.includes('ETIMEDOUT') ||
+        /5\d{2}/.test(err.message); // Match 5xx status codes
+
+      const isClientError = /4\d{2}/.test(err.message) ||
+        err.message.includes('Invalid request') ||
+        err.message.includes('Bad request');
+
+      // Only retry on transient errors, not on client/business logic errors
+      if (isTransient && !isClientError && attempt < MAX_RETRIES) {
+        const delay = RETRY_DELAYS[attempt];
+        log.warn(`Chat ${deptId} transient error (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delay}ms: ${err.message}`, { traceId, deptId, attempt: attempt + 1, delay });
+
+        // Wait with exponential backoff before retry
+        await new Promise(r => setTimeout(r, delay));
+
+        // Re-check gateway readiness before retry
         if (!gateway.isReady) {
-          try { await gateway.waitForReady(10000); } catch { /* fall through to final error */ }
+          try {
+            await gateway.waitForReady(15000);
+          } catch (waitErr) {
+            log.warn(`Gateway not ready after retry wait: ${waitErr.message}`, { traceId, deptId });
+            // Continue to retry anyway - the sendAgentMessage call will fail if truly not ready
+          }
         }
         continue;
       }
-      console.error(`[Agent] Chat ${deptId} error:`, err.message);
+
+      // Non-transient error or retries exhausted
+      log.error(`Chat ${deptId} error (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err.message}`, { traceId, deptId, isTransient, isClientError });
       recordChat(deptId, 0, true);
       return { success: false, error: err.message };
     }
@@ -528,11 +579,17 @@ async function chat(deptId, userMessage, images) {
   return { success: false, error: 'Exhausted all retry attempts' };
 }
 
+// H9 fix: Track pending async requests for timeout and disconnect handling
+const ASYNC_REQUEST_TIMEOUT_MS = 120000; // 120 seconds
+const asyncRequestTracking = new Map(); // Map<requestId, { deptId, traceId, timer, timestamp }>
+
 /**
  * Fire-and-forget chat: send message to department agent, return immediately.
  * The response will arrive via WebSocket streaming events.
+ * H9 fix: Now tracks requests with timeout and handles gateway disconnect events.
  */
-function chatAsync(deptId, userMessage) {
+function chatAsync(deptId, userMessage, options = {}) {
+  const traceId = options.traceId || '';
   const gateway = getGateway();
   if (!gateway.isReady) {
     return { success: false, error: 'Gateway not connected' };
@@ -542,26 +599,81 @@ function chatAsync(deptId, userMessage) {
   const wrappedMessage = wrapWithContext(deptId, userMessage);
 
   try {
-    const requestId = gateway.sendAgentMessageAsync(sessionKey, wrappedMessage);
-    console.log(`[Agent] Async chat sent to ${deptId}, requestId=${requestId}`);
+    const requestId = gateway.sendAgentMessageAsync(sessionKey, wrappedMessage, [], { traceId });
+
+    // H9 fix: Set up timeout for async request
+    const timer = setTimeout(() => {
+      if (asyncRequestTracking.has(requestId)) {
+        asyncRequestTracking.delete(requestId);
+        log.error(`Async chat ${deptId} timeout after ${ASYNC_REQUEST_TIMEOUT_MS}ms (requestId=${requestId})`, { traceId, deptId, requestId });
+        // Note: Cannot directly notify caller since this is fire-and-forget
+        // Error will be logged and tracked in metrics
+        recordChat(deptId, ASYNC_REQUEST_TIMEOUT_MS, true);
+      }
+    }, ASYNC_REQUEST_TIMEOUT_MS);
+
+    // Track this async request
+    asyncRequestTracking.set(requestId, {
+      deptId,
+      traceId,
+      timer,
+      timestamp: Date.now(),
+      sessionKey
+    });
+
+    log.info(`Async chat sent to ${deptId}, requestId=${requestId}`, { traceId, deptId, requestId });
     return { success: true, status: 'sent', requestId };
   } catch (err) {
-    console.error(`[Agent] Async chat ${deptId} error:`, err.message);
+    log.error(`Async chat ${deptId} error: ${err.message}`, { traceId, deptId });
     return { success: false, error: err.message };
   }
 }
 
 /**
+ * H9 fix: Clean up completed async request tracking
+ */
+function cleanupAsyncRequest(requestId) {
+  const tracked = asyncRequestTracking.get(requestId);
+  if (tracked) {
+    clearTimeout(tracked.timer);
+    asyncRequestTracking.delete(requestId);
+  }
+}
+
+/**
+ * H9 fix: Handle gateway disconnect - fail all pending async requests
+ */
+function handleGatewayDisconnect() {
+  const pendingCount = asyncRequestTracking.size;
+  if (pendingCount > 0) {
+    log.warn(`Gateway disconnected with ${pendingCount} pending async requests`, { pendingCount });
+    for (const [requestId, tracked] of asyncRequestTracking) {
+      clearTimeout(tracked.timer);
+      recordChat(tracked.deptId, Date.now() - tracked.timestamp, true);
+      log.error(`Async chat ${tracked.deptId} failed: gateway disconnected (requestId=${requestId})`, {
+        traceId: tracked.traceId,
+        deptId: tracked.deptId,
+        requestId
+      });
+    }
+    asyncRequestTracking.clear();
+  }
+}
+
+/**
  * Get chat history for a department from OpenClaw Gateway.
+ * Returns: { success: boolean, messages: array, error?: string }
  */
 async function getChatHistory(deptId, limit = 30) {
   const gateway = getGateway();
-  if (!gateway.isReady) return [];
+  if (!gateway.isReady) {
+    return { success: false, messages: [], error: 'Gateway not ready' };
+  }
 
   const sessionKey = getSessionKey(deptId);
   try {
     const messages = await gateway.getChatHistory(sessionKey, limit);
-    return messages.map(m => {
+    const cleaned = messages.map(m => {
       let text = '';
       if (typeof m.content === 'string') {
         text = m.content;
@@ -579,9 +691,11 @@ async function getChatHistory(deptId, limit = 30) {
         timestamp: m.timestamp || null,
       };
     }).filter(m => m.text && m.role !== 'toolResult' && m.role !== 'toolCall');
+
+    return { success: true, messages: cleaned };
   } catch (err) {
-    console.error(`[Agent] History ${deptId} error:`, err.message);
-    return [];
+    log.error('History fetch error', { deptId, error: err.message });
+    return { success: false, messages: [], error: err.message };
   }
 }
 
@@ -589,19 +703,35 @@ async function getChatHistory(deptId, limit = 30) {
 
 function loadBulletin() {
   const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
-  try { return fs.existsSync(bPath) ? fs.readFileSync(bPath, 'utf8') : ''; } catch { return ''; }
+  try {
+    return fs.existsSync(bPath) ? fs.readFileSync(bPath, 'utf8') : '';
+  } catch (err) {
+    log.warn('Failed to load bulletin', { error: err.message });
+    return '';
+  }
 }
 
 function saveBulletin(content) {
   const bPath = path.join(BASE_PATH, 'departments', 'bulletin', 'board.md');
-  try { safeWriteFileSync(bPath, content); return true; } catch { return false; }
+  try {
+    safeWriteFileSync(bPath, content);
+    return true;
+  } catch (err) {
+    log.warn('Failed to save bulletin', { error: err.message });
+    return false;
+  }
 }
 
 // ---- Memory ----
 
 function loadMemory(deptId) {
   const memPath = path.join(BASE_PATH, 'departments', deptId, 'memory', 'MEMORY.md');
-  try { return fs.existsSync(memPath) ? fs.readFileSync(memPath, 'utf8') : ''; } catch { return ''; }
+  try {
+    return fs.existsSync(memPath) ? fs.readFileSync(memPath, 'utf8') : '';
+  } catch (err) {
+    log.warn('Failed to load memory', { deptId, error: err.message });
+    return '';
+  }
 }
 
 function saveMemory(deptId, content) {
@@ -631,20 +761,24 @@ function saveMemory(deptId, content) {
         }
       }
     } catch (err) {
-      console.warn('[Agent] Failed to rotate memory backups:', err.message);
+      log.warn('Failed to rotate memory backups', { deptId, error: err.message });
     }
 
     return true;
-  } catch { return false; }
+  } catch (err) {
+    log.warn('Failed to save memory', { deptId, error: err.message });
+    return false;
+  }
 }
 
 function clearHistory(deptId) {
-  console.log(`[Agent] History clear requested for ${deptId} (managed by gateway)`);
+  log.info('History clear requested (managed by gateway)', { deptId });
 }
 
 // ---- Broadcast ----
 
-async function broadcastCommand(command) {
+async function broadcastCommand(command, options = {}) {
+  const traceId = options.traceId || '';
   const config = loadConfig();
   const gateway = getGateway();
   if (!gateway.isReady) {
@@ -652,6 +786,7 @@ async function broadcastCommand(command) {
   }
 
   const departments = Object.entries(config.departments || {}).map(([id, dept]) => ({ ...dept, id }));
+  log.info(`Broadcast started: ${command.substring(0, 60)}`, { traceId, deptCount: departments.length });
 
   // Overall timeout: 3 minutes for the entire broadcast operation
   const BROADCAST_TIMEOUT_MS = 180000;
@@ -670,7 +805,7 @@ async function broadcastCommand(command) {
         try {
           const startMs = Date.now();
           const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
-          const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd);
+          const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd, [], { traceId });
           const durationMs = Date.now() - startMs;
 
           recordChat(dept.id, durationMs, !result.text);
@@ -696,7 +831,7 @@ async function broadcastCommand(command) {
     return await Promise.race([broadcastPromise, timeoutPromise]);
   } catch (err) {
     // Timeout occurred - return partial results with timeout flag
-    console.warn(`[Broadcast] Timeout after ${BROADCAST_TIMEOUT_MS}ms, returning partial results`);
+    log.warn(`Broadcast timeout after ${BROADCAST_TIMEOUT_MS}ms, returning partial results`, { traceId });
     const partialResults = departments.map(dept => ({
       deptId: dept.id,
       name: dept.name,
@@ -737,7 +872,12 @@ async function createSubAgent(deptId, task, name, skills) {
     }
     data.agents[subId] = entry;
     saveSubAgents(deptId, data);
-    console.log(`[SubAgent] Created ${subId} "${agentName}" for "${task.substring(0, 50)}"${skills ? ' skills=' + skills.join(',') : ''}`);
+    log.info('Created sub-agent', {
+      subId,
+      name: agentName,
+      task: task.substring(0, 50),
+      skills: skills ? skills.join(',') : undefined
+    });
     return { subId, name: agentName };
   });
 }
@@ -755,7 +895,8 @@ function buildSubAgentContext(deptId, subAgent) {
     ? skills
     : (dept?.skills || ['*']);
 
-  const CMD = 'bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh';
+  // Prefix with OPENCLAW_DEPT_ID so cmd-api.sh sends x-source-dept header
+  const CMD = `OPENCLAW_DEPT_ID=${deptId} bash /root/.openclaw/workspace/skills/cmd-center/cmd-api.sh`;
   const parts = [];
   parts.push(`你是子代理「${subAgent.name}」，隶属于 ${dept?.name || deptId} 部门。`);
   parts.push(`任务: ${subAgent.task}`);
@@ -792,7 +933,8 @@ function buildSubAgentContext(deptId, subAgent) {
   return parts.join('\n');
 }
 
-async function chatSubAgent(deptId, subId, userMessage) {
+async function chatSubAgent(deptId, subId, userMessage, options = {}) {
+  const traceId = options.traceId || '';
   const data = loadSubAgents(deptId);
   const agent = data.agents[subId];
   if (!agent) return { success: false, error: `Sub-agent ${subId} not found` };
@@ -808,7 +950,7 @@ async function chatSubAgent(deptId, subId, userMessage) {
   const sessionKey = `agent:main:${deptId}:sub:${subId}`;
   try {
     const startMs = Date.now();
-    const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage);
+    const result = await gateway.sendAgentMessage(sessionKey, wrappedMessage, [], { traceId });
     const durationMs = Date.now() - startMs;
 
     if (result.text) {
@@ -816,6 +958,7 @@ async function chatSubAgent(deptId, subId, userMessage) {
       if (result.usage) {
         recordTokens(deptId, result.usage);
       }
+      log.info(`SubAgent chat ${deptId}/${subId} completed in ${durationMs}ms`, { traceId, deptId, subId, durationMs });
       return { success: true, reply: result.text };
     }
 
@@ -823,6 +966,7 @@ async function chatSubAgent(deptId, subId, userMessage) {
     return { success: false, error: 'Empty response' };
   } catch (err) {
     recordChat(deptId, 0, true);
+    log.error(`SubAgent chat ${deptId}/${subId} error: ${err.message}`, { traceId, deptId, subId });
     return { success: false, error: err.message };
   }
 }
@@ -841,12 +985,12 @@ async function removeSubAgent(deptId, subId) {
     if (!agent) return false;
     const archivePath = path.join(BASE_PATH, 'departments', deptId, 'subagent-archives.json');
     let archives = [];
-    try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch (err) { console.warn('[SubAgent] Failed to load archives:', err.message); }
+    try { if (fs.existsSync(archivePath)) archives = JSON.parse(fs.readFileSync(archivePath, 'utf8')); } catch (err) { log.warn('Failed to load archives', { error: err.message }); }
     archives.push({ id: subId, ...agent, archived: new Date().toISOString() });
-    try { safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2)); } catch (err) { console.warn('[SubAgent] Failed to save archive:', err.message); }
+    try { safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2)); } catch (err) { log.warn('Failed to save archive', { error: err.message }); }
     delete data.agents[subId];
     saveSubAgents(deptId, data);
-    console.log(`[SubAgent] Archived and removed ${subId} "${agent.name}"`);
+    log.info('Archived and removed sub-agent', { subId, name: agent.name });
     return true;
   });
 }
@@ -863,7 +1007,7 @@ function archiveSubAgent(deptId, subId, agent, reason) {
         archives = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
       }
     } catch (err) {
-      console.warn('[SubAgent] Failed to load archives for archiving:', err.message);
+      log.warn('Failed to load archives for archiving', { error: err.message });
     }
     archives.push({
       id: subId,
@@ -873,7 +1017,7 @@ function archiveSubAgent(deptId, subId, agent, reason) {
     });
     safeWriteFileSync(archivePath, JSON.stringify(archives, null, 2));
   } catch (err) {
-    console.error(`[SubAgent] Failed to archive ${subId}:`, err.message);
+    log.error('Failed to archive sub-agent', { subId, error: err.message });
   }
 }
 
@@ -900,7 +1044,7 @@ function cleanupSubAgents() {
       }
     }
   } catch (err) {
-    console.error('[SubAgent] Cleanup failed to scan departments:', err.message);
+    log.error('SubAgent cleanup failed to scan departments', { error: err.message });
     return;
   }
 
@@ -939,18 +1083,18 @@ function cleanupSubAgents() {
           for (const { subId, agent, reason } of toRemove) {
             archiveSubAgent(deptId, subId, agent, reason);
             delete data.agents[subId];
-            console.log(`[SubAgent] Cleanup: ${reason} ${subId} "${agent.name}" in ${deptId}`);
+            log.info('SubAgent cleanup', { reason, subId, name: agent.name, deptId });
           }
           saveSubAgents(deptId, data);
         }
       });
     } catch (err) {
-      console.error(`[SubAgent] Cleanup error for ${deptId}:`, err.message);
+      log.error('SubAgent cleanup error', { deptId, error: err.message });
     }
   }
 
   if (expiredCount > 0 || orphanCount > 0) {
-    console.log(`[SubAgent] Cleanup completed: ${expiredCount} expired, ${orphanCount} orphaned`);
+    log.info('SubAgent cleanup completed', { expiredCount, orphanCount });
   }
 }
 
@@ -961,7 +1105,7 @@ function startSubAgentCleanup() {
   // Run initial cleanup after 5 minutes
   const initialDelay = 5 * 60 * 1000;
   setTimeout(() => {
-    console.log('[SubAgent] Running initial cleanup');
+    log.info('Running initial SubAgent cleanup');
     cleanupSubAgents();
   }, initialDelay);
 
@@ -970,7 +1114,7 @@ function startSubAgentCleanup() {
     cleanupSubAgents();
   }, 60 * 60 * 1000);
 
-  console.log('[SubAgent] Cleanup scheduler started (runs hourly)');
+  log.info('SubAgent cleanup scheduler started (runs hourly)');
   return interval;
 }
 
@@ -984,4 +1128,6 @@ export {
   sanitizeContextTags,
   wrapWithContext,
   startSubAgentCleanup,
+  cleanupAsyncRequest,
+  handleGatewayDisconnect,
 };

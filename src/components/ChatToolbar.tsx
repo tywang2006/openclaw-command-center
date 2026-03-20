@@ -55,8 +55,12 @@ export default function ChatToolbar({
 
   // Check email and drive status
   useEffect(() => {
-    authedFetch('/api/email/status').then(r => r.json()).then(d => setEmailConfigured(d.configured && d.enabled)).catch(() => {})
-    authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch(() => {})
+    authedFetch('/api/email/status').then(r => r.json()).then(d => setEmailConfigured(d.configured && d.enabled)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch email status failed:', err);
+    })
+    authedFetch('/api/drive/status').then(r => r.json()).then(d => setDriveConfigured(d.configured && d.enabled)).catch((err) => {
+      if (import.meta.env.DEV) console.warn('Fetch drive status failed:', err);
+    })
   }, [])
 
   // Reset persona and daily log states when department changes
@@ -238,7 +242,10 @@ export default function ChatToolbar({
                 authedFetch(`/api/departments/${selectedDeptId}/daily/${e.target.value}`)
                   .then(r => r.json())
                   .then(d => setDailyContent(d.content || ''))
-                  .catch(() => setDailyContent(''))
+                  .catch((err) => {
+                    if (import.meta.env.DEV) console.warn('Fetch daily log failed:', err);
+                    setDailyContent('');
+                  })
                   .finally(() => setDailyLoading(false))
               }}
               className="daily-date-input"
@@ -301,7 +308,9 @@ export default function ChatToolbar({
                     setDailyDates(d.dates || [])
                     if (d.dates?.[0]) setSelectedDate(d.dates[0])
                   })
-                  .catch(() => {})
+                  .catch((err) => {
+                    if (import.meta.env.DEV) console.warn('Fetch daily dates failed:', err);
+                  })
               }
             }}
           >

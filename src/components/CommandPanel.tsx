@@ -172,7 +172,7 @@ export default function CommandPanel({ selectedDeptId, departments, addActivity 
             <ImageIcon size={14} />
           </button>
           <button
-            className="action-btn send-btn"
+            className="action-btn command-send-btn"
             onClick={preview ? sendPhoto : sendText}
             disabled={sending || (!text.trim() && !preview)}
             title={t('command.send')}

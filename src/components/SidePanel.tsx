@@ -31,11 +31,11 @@ export default function SidePanel({ agentState }: SidePanelProps) {
 
   return (
     <div className="side-panel panel">
-      <div className="tab-header">
+      <div className="side-tab-header">
         {TABS.map(tab => (
           <button
             key={tab.id}
-            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+            className={`side-tab ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
             <tab.Icon size={14} color={activeTab === tab.id ? '#00d4aa' : '#a0a0b0'} />
@@ -43,7 +43,7 @@ export default function SidePanel({ agentState }: SidePanelProps) {
           </button>
         ))}
       </div>
-      <div className="tab-content">
+      <div className="side-tab-content">
         {activeTab === 'bulletin' && <BulletinTab bulletin={agentState.bulletin} />}
         {activeTab === 'memory' && (
           <MemoryTab

@@ -4,7 +4,9 @@ import path from 'path';
 import multer from 'multer';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, getConfigValue } from '../utils.js';
 import { getEncryptionKey, decryptSensitiveFields, migratePlaintextFields } from '../crypto.js';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('Voice');
 const router = express.Router();
 
 const CONFIG_PATH = path.join(BASE_PATH, '..', 'command-center', 'integrations.json');
@@ -93,7 +95,7 @@ router.get('/voice/status', (req, res) => {
     const apiKey = getApiKey();
     res.json({ configured: !!apiKey });
   } catch (error) {
-    console.error('[Voice] Error in GET /voice/status:', error);
+    log.error('Error in GET /voice/status: ' + error.message);
     res.status(500).json({ error: 'Failed to check voice status' });
   }
 });
@@ -114,7 +116,7 @@ router.post('/voice/transcribe', upload.single('audio'), async (req, res) => {
     uploadedFilePath = req.file.path;
     const language = req.body.language || 'zh'; // Default to Chinese
 
-    console.log(`[Voice] Transcribing audio file: ${req.file.originalname} (${req.file.size} bytes)`);
+    log.info(`Transcribing audio file: ${req.file.originalname} (${req.file.size} bytes)`);
 
     // Get API key
     const apiKey = getApiKey();
@@ -151,29 +153,29 @@ router.post('/voice/transcribe', upload.single('audio'), async (req, res) => {
 
       const result = await response.json();
 
-      console.log(`[Voice] Transcription successful: ${result.text.substring(0, 100)}...`);
+      log.info(`Transcription successful: ${result.text.substring(0, 100)}...`);
 
       res.json({
         success: true,
         text: result.text
       });
     } catch (error) {
-      console.error('[Voice] Transcription failed:', error);
+      log.error('Transcription failed: ' + error.message);
       res.status(502).json({
         error: 'Failed to transcribe audio'
       });
     }
   } catch (error) {
-    console.error('[Voice] Error in POST /voice/transcribe:', error);
+    log.error('Error in POST /voice/transcribe: ' + error.message);
     res.status(500).json({ error: 'Transcription request failed' });
   } finally {
     // Clean up uploaded file
     if (uploadedFilePath && fs.existsSync(uploadedFilePath)) {
       try {
         fs.unlinkSync(uploadedFilePath);
-        console.log(`[Voice] Cleaned up temp file: ${uploadedFilePath}`);
+        log.info(`Cleaned up temp file: ${uploadedFilePath}`);
       } catch (error) {
-        console.error(`[Voice] Failed to delete temp file: ${error.message}`);
+        log.error('Failed to delete temp file: ' + error.message);
       }
     }
   }
