@@ -2,10 +2,7 @@ import express from 'express';
 import webpush from 'web-push';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { safeWriteFileSync } from '../utils.js';
 
 const CONFIG_PATH = path.join(process.env.HOME || '/root', '.openclaw/command-center/push-config.json');
 const MAX_SUBSCRIPTIONS = 50;
@@ -30,7 +27,7 @@ function loadConfig() {
 function saveConfig() {
   const dir = path.dirname(CONFIG_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ vapidKeys, subscriptions }, null, 2));
+  safeWriteFileSync(CONFIG_PATH, JSON.stringify({ vapidKeys, subscriptions }, null, 2));
 }
 
 loadConfig();

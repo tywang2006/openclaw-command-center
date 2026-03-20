@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { DATA_DIR } from './utils.js';
+import { DATA_DIR, safeWriteFileSync } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -210,7 +210,7 @@ authRouter.post('/setup', (req, res) => {
 
   try {
     const hashed = hashPassword(password);
-    fs.writeFileSync(PASSWORD_FILE, hashed, { encoding: 'utf8', mode: 0o600 });
+    safeWriteFileSync(PASSWORD_FILE, hashed, { mode: 0o600 });
     console.log('[Auth] Initial password set by user via setup wizard');
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to save password' });
@@ -350,7 +350,7 @@ authRouter.put('/password', (req, res) => {
   try {
     // Hash the new password before storing
     const hashedPassword = hashPassword(newPassword);
-    fs.writeFileSync(PASSWORD_FILE, hashedPassword, { encoding: 'utf8', mode: 0o600 });
+    safeWriteFileSync(PASSWORD_FILE, hashedPassword, { mode: 0o600 });
   } catch (error) {
     console.error('[Auth] Error writing password file:', error.message);
     return res.status(500).json({

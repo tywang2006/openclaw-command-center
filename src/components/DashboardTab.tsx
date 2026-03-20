@@ -4,6 +4,7 @@ import { DeptIcon } from './Icons'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
 import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
+import type { OpsModule } from '../types'
 import './DashboardTab.css'
 
 interface DailyData {
@@ -14,11 +15,10 @@ interface DailyData {
   avgResponseMs: number
 }
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'meeting' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
-
 interface DashboardTabProps {
   departments: Department[]
-  onSwitchTab?: (tab: RightTab) => void
+  onSwitchTab?: (tab: string) => void
+  onNavigateModule?: (module: OpsModule) => void
 }
 
 interface MetricsData {
@@ -31,18 +31,7 @@ interface MetricsData {
     messages: number
     errors: number
     avgResponseTime: number
-    responseTimes: number[]
   }[]
-  tokens?: {
-    total: {
-      input: number
-      output: number
-    }
-    byDepartment: Record<string, {
-      input: number
-      output: number
-    }>
-  }
 }
 
 interface GatewayStats {
@@ -51,6 +40,7 @@ interface GatewayStats {
   pending: number
   uptime: number
   buffers: number
+  reconnects: number
 }
 
 interface PermissionEvent {
@@ -59,47 +49,29 @@ interface PermissionEvent {
   timestamp: number
 }
 
-interface IntegrationConfig {
+interface AuditEntry {
   id: string
-  name: string
-  enabled: boolean
+  action: string
+  deptId?: string
+  target?: string
+  timestamp: number
 }
 
-interface DepartmentHealth {
+interface SessionInfo {
   id: string
-  lastActiveMs?: number
-  estimatedResponseTimeMs: number
-  errorCount: number
-  todayMessages: number
-}
-
-interface TrustScoreData {
-  rank: number
   deptId: string
-  score: number
-  breakdown: {
-    reliability: number
-    speed: number
-    activity: number
-    consistency: number
-  }
-  stats: {
-    totalMessages: number
-    totalErrors: number
-    errorRate: number
-    avgResponseMs: number
-  }
+  type: string
+  createdAt: number
 }
 
-export default function DashboardTab({ departments, onSwitchTab }: DashboardTabProps) {
+export default function DashboardTab({ departments, onSwitchTab, onNavigateModule }: DashboardTabProps) {
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [gatewayStats, setGatewayStats] = useState<GatewayStats | null>(null)
   const [permissions, setPermissions] = useState<PermissionEvent[]>([])
-  const [integrations, setIntegrations] = useState<IntegrationConfig[]>([])
-  const [loading, setLoading] = useState(true)
+  const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([])
+  const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [dailyData, setDailyData] = useState<DailyData[]>([])
-  const [healthStatus, setHealthStatus] = useState<Record<string, { consecutiveErrors: number; status: string }>>({})
-  const [trustScores, setTrustScores] = useState<TrustScoreData[]>([])
+  const [loading, setLoading] = useState(true)
   const [showBroadcastModal, setShowBroadcastModal] = useState(false)
   const [broadcastInput, setBroadcastInput] = useState('')
   const [broadcastSending, setBroadcastSending] = useState(false)
@@ -111,22 +83,12 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
       const res = await authedFetch('/api/metrics')
       const raw = await res.json()
       if (!raw.success) return
-      // Transform API response to component format
       const depts = Object.entries(raw.departments || {}).map(([id, d]: [string, any]) => ({
         id,
         messages: d.messageCount || 0,
         errors: d.errorCount || 0,
         avgResponseTime: d.avgResponseMs || 0,
-        responseTimes: d.recentResponseTimes || [],
       }))
-      const totalInput = Object.values(raw.departments || {}).reduce((s: number, d: any) => s + (d.tokens?.input || 0), 0)
-      const totalOutput = Object.values(raw.departments || {}).reduce((s: number, d: any) => s + (d.tokens?.output || 0), 0)
-      const byDept: Record<string, { input: number; output: number }> = {}
-      for (const [id, d] of Object.entries(raw.departments || {}) as [string, any][]) {
-        if (d.tokens && (d.tokens.input > 0 || d.tokens.output > 0)) {
-          byDept[id] = { input: d.tokens.input, output: d.tokens.output }
-        }
-      }
       const g = raw.global || {}
       const totalMsgs = g.totalMessages || 0
       const totalErrors = g.totalErrors || 0
@@ -136,10 +98,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
         errorRate: totalMsgs > 0 ? totalErrors / totalMsgs : 0,
         uptime: (raw.uptime || 0) / 1000,
         departments: depts,
-        tokens: (totalInput > 0 || totalOutput > 0) ? { total: { input: totalInput, output: totalOutput }, byDepartment: byDept } : undefined,
       })
-
-      // Parse daily data (last 14 days)
       const daily = Object.entries(raw.daily || {})
         .map(([date, d]: [string, any]) => ({
           date,
@@ -151,9 +110,6 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(-14)
       setDailyData(daily)
-
-      // Store health status
-      setHealthStatus(raw.healthStatus || {})
     } catch (err) {
       console.error('Failed to fetch metrics:', err)
     }
@@ -171,6 +127,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
         pending: gw.pendingRequests ?? 0,
         uptime: (gw.uptime ?? 0) / 1000,
         buffers: gw.streamBuffers ?? 0,
+        reconnects: gw.reconnectCount ?? 0,
       })
     } catch (err) {
       console.error('Failed to fetch gateway stats:', err)
@@ -181,53 +138,61 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
     try {
       const res = await authedFetch('/api/metrics/permissions')
       const raw = await res.json()
-      if (!raw.success || !raw.data?.permissions) return
-      setPermissions(raw.data.permissions)
+      if (!raw.success || !raw.permissions) return
+      setPermissions(raw.permissions)
     } catch (err) {
       console.error('Failed to fetch permissions:', err)
     }
   }, [])
 
-  const fetchIntegrations = useCallback(async () => {
+  const fetchRecentAudit = useCallback(async () => {
     try {
-      const res = await authedFetch('/api/integrations/config')
+      const res = await authedFetch('/api/audit?limit=5')
       const raw = await res.json()
-      if (!raw.success || !raw.integrations) return
-      setIntegrations(raw.integrations || [])
+      if (raw.entries) {
+        setRecentAudit(raw.entries)
+      }
     } catch (err) {
-      console.error('Failed to fetch integrations:', err)
+      console.error('Failed to fetch audit:', err)
     }
   }, [])
 
-  const fetchTrustScores = useCallback(async () => {
+  const fetchSessions = useCallback(async () => {
     try {
-      const res = await authedFetch('/api/metrics/trust-scores')
+      const res = await authedFetch('/api/system/sessions')
       const raw = await res.json()
-      if (raw.leaderboard) {
-        setTrustScores(raw.leaderboard)
+      if (raw.sessions) {
+        setSessions(raw.sessions.slice(0, 5))
       }
     } catch (err) {
-      console.error('Failed to fetch trust scores:', err)
+      // sessions endpoint may not exist, ignore
     }
   }, [])
 
   useEffect(() => {
-    fetchMetrics().then(() => setLoading(false))
-  }, [fetchMetrics])
+    Promise.all([fetchMetrics(), fetchGatewayStats(), fetchPermissions(), fetchRecentAudit(), fetchSessions()])
+      .then(() => setLoading(false))
+  }, [fetchMetrics, fetchGatewayStats, fetchPermissions, fetchRecentAudit, fetchSessions])
 
   useVisibilityInterval(fetchMetrics, 10000, [fetchMetrics])
   useVisibilityInterval(fetchGatewayStats, 10000, [fetchGatewayStats])
   useVisibilityInterval(fetchPermissions, 30000, [fetchPermissions])
-  useVisibilityInterval(fetchIntegrations, 60000, [fetchIntegrations])
-  useVisibilityInterval(fetchTrustScores, 15000, [fetchTrustScores])
+  useVisibilityInterval(fetchRecentAudit, 15000, [fetchRecentAudit])
 
-  // Auto-dismiss status message after 3 seconds
   useEffect(() => {
     if (statusMessage) {
       const timer = setTimeout(() => setStatusMessage(null), 3000)
       return () => clearTimeout(timer)
     }
   }, [statusMessage])
+
+  const onlineAgents = useMemo(() =>
+    departments.filter(d => d.status === 'active').length
+  , [departments])
+
+  const activeTasks = useMemo(() =>
+    metrics?.departments.reduce((s, d) => s + d.messages, 0) || 0
+  , [metrics])
 
   const formatUptime = (seconds: number): string => {
     if (seconds < 60) return `${Math.floor(seconds)}s`
@@ -237,24 +202,24 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
     return `${hours}h${minutes}m`
   }
 
-  const formatPercent = (value: number): string => {
-    return `${(value * 100).toFixed(1)}%`
+  const formatPercent = (value: number): string => `${(value * 100).toFixed(1)}%`
+
+  const getTimeSince = (ts: number): string => {
+    const seconds = Math.floor((Date.now() - ts) / 1000)
+    if (seconds < 60) return t('cron.time.now')
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+    return `${Math.floor(seconds / 86400)}d`
   }
 
-  const getTimeSince = (timestampMs: number): string => {
-    const seconds = Math.floor((Date.now() - timestampMs) / 1000)
-    if (seconds < 60) return 'just now'
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-    return `${Math.floor(seconds / 86400)}d ago`
-  }
-
-  const getTodayMessages = (deptId: string): number => {
-    const deptMetrics = metrics?.departments.find(d => d.id === deptId)
-    if (!deptMetrics) return 0
-    // For simplicity, we'll use total messages as approximation
-    // In production, you'd filter by timestamp
-    return deptMetrics.messages
+  const actionColor = (action: string): string => {
+    switch (action) {
+      case 'chat': return '#00d4aa'
+      case 'broadcast': return '#00a8ff'
+      case 'config': return '#ffbb00'
+      case 'error': return '#ff4466'
+      default: return '#888'
+    }
   }
 
   const handleBroadcast = () => {
@@ -264,7 +229,6 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
 
   const handleBroadcastSubmit = async () => {
     if (!broadcastInput.trim()) return
-
     setBroadcastSending(true)
     try {
       await authedFetch('/api/broadcast', {
@@ -275,7 +239,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
       setStatusMessage({ text: t('dashboard.action.broadcast.sent'), type: 'success' })
       setShowBroadcastModal(false)
       setBroadcastInput('')
-    } catch (err) {
+    } catch {
       setStatusMessage({ text: t('dashboard.action.broadcast.failed'), type: 'error' })
     } finally {
       setBroadcastSending(false)
@@ -287,374 +251,180 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
     setBroadcastInput('')
   }
 
-  const handleStartMeeting = () => {
-    onSwitchTab?.('meeting')
-  }
-
-  const handleCreateWorkflow = () => {
-    setStatusMessage({ text: t('dashboard.action.workflow.hint'), type: 'info' })
-  }
-
-  // Chart components
-  const SVGBarChart = ({ data }: { data: DailyData[] }) => {
-    if (!data.length) return null
-    const maxMessages = Math.max(...data.map(d => d.messages), 1)
+  // Mini charts
+  const WorkloadChart = () => {
+    if (!metrics?.departments.length) return null
+    const maxMsgs = Math.max(...metrics.departments.map(d => d.messages), 1)
     return (
-      <svg viewBox="0 0 300 100" style={{ width: '100%', height: '100px' }}>
-        {data.map((d, i) => {
-          const x = (i / data.length) * 300
-          const w = 300 / data.length - 4
-          const h1 = (d.messages / maxMessages) * 80
-          const h2 = (d.errors / maxMessages) * 80
+      <div className="ops-dash-workload-bars">
+        {metrics.departments.map(d => {
+          const dept = departments.find(dp => dp.id === d.id)
+          if (!dept) return null
+          const pct = (d.messages / maxMsgs) * 100
           return (
-            <g key={d.date}>
-              <rect x={x} y={100 - h1} width={w} height={h1} fill="#00d4aa" />
-              <rect x={x} y={100 - h2} width={w} height={h2} fill="#ff4466" />
-              <title>{d.date}: {d.messages} messages, {d.errors} errors</title>
-            </g>
+            <div key={d.id} className="ops-dash-workload-row">
+              <span className="ops-dash-workload-label">{dept.name}</span>
+              <div className="ops-dash-workload-track">
+                <div className="ops-dash-workload-fill" style={{ width: `${pct}%`, backgroundColor: `var(--dept-${d.id})` }} />
+              </div>
+              <span className="ops-dash-workload-count">{d.messages}</span>
+            </div>
           )
         })}
-      </svg>
+      </div>
     )
   }
 
-  const SVGLineChart = ({ data }: { data: DailyData[] }) => {
-    if (!data.length) return null
-    const maxTime = Math.max(...data.map(d => d.avgResponseMs), 1)
-    const denom = Math.max(data.length - 1, 1)
-    const points = data.map((d, i) => {
+  const ThroughputChart = () => {
+    if (!dailyData.length) return null
+    const maxMsg = Math.max(...dailyData.map(d => d.messages), 1)
+    const denom = Math.max(dailyData.length - 1, 1)
+    const points = dailyData.map((d, i) => {
       const x = (i / denom) * 280 + 10
-      const y = 90 - (d.avgResponseMs / maxTime) * 70
+      const y = 80 - (d.messages / maxMsg) * 60
       return `${x},${y}`
     }).join(' ')
     return (
-      <svg viewBox="0 0 300 100" style={{ width: '100%', height: '100px' }}>
-        <polyline points={points} fill="none" stroke="#ffbb00" strokeWidth="2" />
-        {data.map((d, i) => {
+      <svg viewBox="0 0 300 90" style={{ width: '100%', height: '80px' }}>
+        <polyline points={points} fill="none" stroke="#00d4aa" strokeWidth="2" />
+        {dailyData.map((d, i) => {
           const x = (i / denom) * 280 + 10
-          const y = 90 - (d.avgResponseMs / maxTime) * 70
-          return <circle key={d.date} cx={x} cy={y} r="3" fill="#ffbb00"><title>{d.date}: {Math.round(d.avgResponseMs)}ms</title></circle>
+          const y = 80 - (d.messages / maxMsg) * 60
+          return <circle key={d.date} cx={x} cy={y} r="2.5" fill="#00d4aa"><title>{d.date}: {d.messages}</title></circle>
         })}
-      </svg>
-    )
-  }
-
-  const SVGStackedArea = ({ data }: { data: DailyData[] }) => {
-    if (!data.length) return null
-    const maxTokens = Math.max(...data.map(d => d.tokens.input + d.tokens.output), 1)
-    const denom = Math.max(data.length - 1, 1)
-    const inputPath = data.map((d, i) => {
-      const x = (i / denom) * 280 + 10
-      const y = 90 - (d.tokens.input / maxTokens) * 70
-      return i === 0 ? `M${x},${y}` : `L${x},${y}`
-    }).join(' ') + ` L290,90 L10,90 Z`
-    const totalPath = data.map((d, i) => {
-      const x = (i / denom) * 280 + 10
-      const y = 90 - ((d.tokens.input + d.tokens.output) / maxTokens) * 70
-      return i === 0 ? `M${x},${y}` : `L${x},${y}`
-    }).join(' ') + ` L290,90 L10,90 Z`
-    return (
-      <svg viewBox="0 0 300 100" style={{ width: '100%', height: '100px' }}>
-        <path d={totalPath} fill="#00a8ff" opacity="0.6" />
-        <path d={inputPath} fill="#00e5ff" opacity="0.6" />
       </svg>
     )
   }
 
   if (loading) {
-    return (
-      <div className="dashboard">
-        <div className="dashboard-loading">{t('common.loading')}</div>
-      </div>
-    )
-  }
-
-  if (!metrics || metrics.totalMessages === 0) {
-    return (
-      <div className="dashboard">
-        <div className="dashboard-empty">
-          <p>{t('dashboard.noData')}</p>
-        </div>
-      </div>
-    )
+    return <div className="ops-dash-container"><div className="ops-dash-loading">{t('common.loading')}</div></div>
   }
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <h2>{t('dashboard.title')}</h2>
-      </div>
-
-      {/* Quick Action Buttons */}
-      <div className="dashboard-quick-actions">
-        <button className="quick-action-btn broadcast" onClick={handleBroadcast}>
-          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M13 3L6 6H3v4h3l7 3V3z" stroke="#00d4aa" strokeWidth="1.5" fill="none"/><path d="M13 6c1 1 1 3 0 4" stroke="#00d4aa" strokeWidth="1.5" strokeLinecap="round"/></svg></span>
-          <span className="action-label">{t('dashboard.action.broadcast')}</span>
+    <div className="ops-dash-container">
+      {/* Quick Actions */}
+      <div className="ops-dash-actions">
+        <button className="ops-dash-action-btn" onClick={handleBroadcast}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13 3L6 6H3v4h3l7 3V3z" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M13 6c1 1 1 3 0 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          <span>{t('dashboard.action.broadcast')}</span>
         </button>
-        <button className="quick-action-btn meeting" onClick={handleStartMeeting}>
-          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="#ffbb00" strokeWidth="1.5"/><path d="M2 13c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="#ffbb00" strokeWidth="1.5" strokeLinecap="round"/><circle cx="11" cy="5.5" r="2" stroke="#ffbb00" strokeWidth="1.2"/><path d="M11 9c1.7 0 3 1.3 3 3" stroke="#ffbb00" strokeWidth="1.2" strokeLinecap="round"/></svg></span>
-          <span className="action-label">{t('dashboard.action.meeting')}</span>
-        </button>
-        <button className="quick-action-btn workflow" onClick={handleCreateWorkflow}>
-          <span className="action-icon"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><rect x="6" y="6.5" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><rect x="11" y="11" width="4" height="3" rx="0.5" stroke="#00a8ff" strokeWidth="1.3"/><path d="M5 3.5h3.5v4.5M10 8h3.5v4" stroke="#00a8ff" strokeWidth="1.2"/></svg></span>
-          <span className="action-label">{t('dashboard.action.workflow')}</span>
+        <button className="ops-dash-action-btn" onClick={() => onSwitchTab?.('meeting')}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M2 13c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          <span>{t('dashboard.action.meeting')}</span>
         </button>
       </div>
 
-      {/* Global Stats Row */}
-      <div className="dashboard-stats-row">
-        <div className="dashboard-stat-card">
-          <div className="dashboard-stat-value">{metrics.totalMessages}</div>
-          <div className="dashboard-stat-label">{t('dashboard.stat.messages')}</div>
+      {/* Row 1: Stat Cards */}
+      <div className="ops-dash-stat-row">
+        <div className="ops-dash-stat-card">
+          <div className="ops-dash-stat-value">{onlineAgents}/{departments.length}</div>
+          <div className="ops-dash-stat-label">{t('ops.dash.stat.onlineAgents')}</div>
         </div>
-        <div className="dashboard-stat-card">
-          <div className="dashboard-stat-value">{Math.round(metrics.avgResponseTime)}ms</div>
-          <div className="dashboard-stat-label">{t('dashboard.stat.avgResponse')}</div>
+        <div className="ops-dash-stat-card">
+          <div className="ops-dash-stat-value">{activeTasks}</div>
+          <div className="ops-dash-stat-label">{t('ops.dash.stat.activeTasks')}</div>
         </div>
-        <div className="dashboard-stat-card">
-          <div className="dashboard-stat-value">{formatPercent(metrics.errorRate)}</div>
-          <div className="dashboard-stat-label">{t('dashboard.stat.errorRate')}</div>
+        <div className="ops-dash-stat-card">
+          <div className="ops-dash-stat-value">{formatPercent(metrics?.errorRate || 0)}</div>
+          <div className="ops-dash-stat-label">{t('dashboard.stat.errorRate')}</div>
         </div>
-        <div className="dashboard-stat-card">
-          <div className="dashboard-stat-value">{formatUptime(metrics.uptime)}</div>
-          <div className="dashboard-stat-label">{t('dashboard.stat.uptime')}</div>
-        </div>
-      </div>
-
-      {/* System Status Panel */}
-      <div className="dashboard-system-status">
-        <h3>{t('dashboard.system.title')}</h3>
-        <div className="system-status-grid">
-          <div className="status-item">
-            <span className="status-label">{t('dashboard.system.gateway')}:</span>
-            <span className={`status-value ${gatewayStats?.connected ? 'healthy' : 'error'}`}>
-              {gatewayStats?.connected ? t('dashboard.gateway.connected') : t('dashboard.gateway.disconnected')}
-            </span>
-          </div>
-          <div className="status-item">
-            <span className="status-label">{t('dashboard.system.integrations')}:</span>
-            <span className="status-value healthy">
-              {integrations.filter(i => i.enabled).length}/{integrations.length} {t('dashboard.system.active')}
-            </span>
-          </div>
-          <div className="status-item">
-            <span className="status-label">{t('dashboard.stat.uptime')}:</span>
-            <span className="status-value">{formatUptime(metrics.uptime)}</span>
-          </div>
+        <div className="ops-dash-stat-card">
+          <div className="ops-dash-stat-value">{Math.round(metrics?.avgResponseTime || 0)}ms</div>
+          <div className="ops-dash-stat-label">{t('dashboard.stat.avgResponse')}</div>
         </div>
       </div>
 
-      {/* Gateway Stats */}
-      {gatewayStats && (
-        <div className="dashboard-gateway">
-          <h3>{t('dashboard.gateway.title')}</h3>
-          <div className="dashboard-gateway-grid">
-            <div className="gateway-stat">
-              <span className={`dash-gw-status ${gatewayStats.connected ? 'connected' : 'disconnected'}`}>
-                {gatewayStats.connected ? t('dashboard.gateway.connected') : t('dashboard.gateway.disconnected')}
+      {/* Row 2: Panels */}
+      <div className="ops-dash-panel-row">
+        <div className="ops-dash-panel">
+          <h3>{t('ops.dash.panel.workload')}</h3>
+          <WorkloadChart />
+        </div>
+        <div className="ops-dash-panel">
+          <h3>{t('ops.dash.panel.throughput')}</h3>
+          <ThroughputChart />
+        </div>
+        <div className="ops-dash-panel ops-dash-panel-gw">
+          <h3>{t('ops.dash.panel.gateway')}</h3>
+          <div className="ops-dash-gw-summary">
+            <div className="ops-dash-gw-status-row">
+              <span className={`ops-dash-gw-dot ${gatewayStats?.connected ? 'connected' : 'disconnected'}`} />
+              <span className="ops-dash-gw-label">
+                {gatewayStats?.connected ? t('dashboard.gateway.connected') : t('dashboard.gateway.disconnected')}
               </span>
             </div>
-            <div className="gateway-stat">
-              <span className="gateway-label">{t('dashboard.gateway.latency')}:</span>
-              <span className="gateway-value">{gatewayStats.latency}ms</span>
-            </div>
-            <div className="gateway-stat">
-              <span className="gateway-label">{t('dashboard.gateway.pending')}:</span>
-              <span className="gateway-value">{gatewayStats.pending}</span>
-            </div>
-            <div className="gateway-stat">
-              <span className="gateway-label">{t('dashboard.gateway.uptime')}:</span>
-              <span className="gateway-value">{formatUptime(gatewayStats.uptime)}</span>
-            </div>
-            <div className="gateway-stat">
-              <span className="gateway-label">{t('dashboard.gateway.buffers')}:</span>
-              <span className="gateway-value">{gatewayStats.buffers}</span>
+            <div className="ops-dash-gw-stats">
+              <span>{t('dashboard.gateway.latency')}: {gatewayStats?.latency ?? 0}ms</span>
+              <span>{t('dashboard.stat.uptime')}: {formatUptime(gatewayStats?.uptime ?? 0)}</span>
+              <span>{t('dashboard.gateway.pending')}: {gatewayStats?.pending ?? 0}</span>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Dashboard Trend Charts */}
-      {dailyData.length > 0 && (
-        <div className="dashboard-trends">
-          <h3>趋势分析</h3>
-          <div className="dashboard-trends-grid">
-            <div className="trend-chart-card">
-              <h4>消息量</h4>
-              <SVGBarChart data={dailyData} />
-            </div>
-            <div className="trend-chart-card">
-              <h4>响应时间</h4>
-              <SVGLineChart data={dailyData} />
-            </div>
-            <div className="trend-chart-card">
-              <h4>Token 用量</h4>
-              <SVGStackedArea data={dailyData} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Department Health Cards */}
-      <div className="dashboard-dept-section">
-        <h3>{t('dashboard.health.title')}</h3>
-        <div className="dashboard-dept-grid">
-          {metrics.departments.map((deptMetrics) => {
-            const dept = departments.find(d => d.id === deptMetrics.id)
-            if (!dept) return null
-
-            const maxResponseTime = Math.max(...deptMetrics.responseTimes, 1)
-            const health = healthStatus[deptMetrics.id]?.status || 'healthy'
-
-            return (
-              <div key={dept.id} className={`dashboard-dept-card ${health}`}>
-                <div className="dashboard-dept-header">
-                  <DeptIcon deptId={dept.id} size={16} />
-                  <span className="dept-card-name" style={{ color: `var(--dept-${dept.id})` }}>
-                    {dept.name}
-                  </span>
-                  <span className={`dept-health-badge ${health}`}>
-                    {health === 'healthy' ? '✓' : health === 'warning' ? '⚠' : '✗'}
-                  </span>
-                </div>
-                <div className="dept-card-stats">
-                  <div className="dept-stat">
-                    <span className="stat-icon">💬</span>
-                    <span>{t('dashboard.health.today')}: {getTodayMessages(dept.id)} {t('dashboard.stat.messages').toLowerCase()}</span>
-                  </div>
-                  <div className="dept-stat">
-                    <span className="stat-icon">⏱</span>
-                    <span>{t('dashboard.health.response')}: ~{Math.round(deptMetrics.avgResponseTime)}ms</span>
-                  </div>
-                  {deptMetrics.errors > 0 && (
-                    <div className="dept-stat error">
-                      <span className="stat-icon">⚠</span>
-                      <span>{deptMetrics.errors} {t('dashboard.health.errors')}</span>
-                    </div>
-                  )}
-                </div>
-                {deptMetrics.responseTimes.length > 0 && (
-                  <div className="dashboard-bar-chart">
-                    {deptMetrics.responseTimes.slice(-50).map((time, i) => {
-                      const height = Math.max((time / maxResponseTime) * 100, 5)
-                      const isError = time > metrics.avgResponseTime * 2
-                      return (
-                        <div
-                          key={`${deptMetrics.id}-bar-${i}`}
-                          className={`dashboard-bar ${isError ? 'error' : ''}`}
-                          style={{ height: `${height}%` }}
-                          title={`${Math.round(time)}ms`}
-                        />
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
         </div>
       </div>
 
-      {/* Token Usage Section */}
-      {metrics.tokens && (
-        <div className="dashboard-tokens">
-          <h3>{t('dashboard.tokens.title')} {!metrics.tokens && <span className="token-estimated">{t('dashboard.tokens.estimated')}</span>}</h3>
-          <div className="token-totals">
-            <div className="token-stat">
-              <span className="token-label">{t('dashboard.tokens.input')}:</span>
-              <span className="token-value">{metrics.tokens.total.input.toLocaleString()}</span>
-            </div>
-            <div className="token-stat">
-              <span className="token-label">{t('dashboard.tokens.output')}:</span>
-              <span className="token-value">{metrics.tokens.total.output.toLocaleString()}</span>
-            </div>
-            <div className="token-stat">
-              <span className="token-label">{t('dashboard.tokens.total')}:</span>
-              <span className="token-value total">{(metrics.tokens.total.input + metrics.tokens.total.output).toLocaleString()}</span>
-            </div>
+      {/* Row 3: Preview Panels */}
+      <div className="ops-dash-preview-row">
+        {/* Pending Approvals */}
+        <div className="ops-dash-preview-panel">
+          <div className="ops-dash-preview-header">
+            <h4>{t('ops.dash.preview.approvals')}</h4>
+            <button className="ops-dash-view-all" onClick={() => onNavigateModule?.('approvals')}>
+              {t('ops.dash.viewAll')} →
+            </button>
           </div>
-          <div className="token-bars">
-            {Object.entries(metrics.tokens.byDepartment).map(([deptId, tokens]) => {
-              const dept = departments.find(d => d.id === deptId)
-              if (!dept) return null
-
-              const totalTokens = tokens.input + tokens.output
-              const grandTotal = metrics.tokens!.total.input + metrics.tokens!.total.output
-              const percentage = (totalTokens / grandTotal) * 100
-
-              return (
-                <div key={deptId} className="dashboard-token-bar-row">
-                  <div className="token-bar-label">{dept.name}</div>
-                  <div className="token-bar-container">
-                    <div
-                      className="dashboard-token-bar"
-                      style={{
-                        width: `${percentage}%`,
-                        backgroundColor: `var(--dept-${deptId})`
-                      }}
-                    />
-                  </div>
-                  <div className="token-bar-value">{totalTokens.toLocaleString()}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Trust Leaderboard Section */}
-      {trustScores.length > 0 && (
-        <div className="trust-leaderboard">
-          <h3>{t('dashboard.trust.title')}</h3>
-          <div className="trust-list">
-            {trustScores.map((entry) => {
-              const dept = departments.find(d => d.id === entry.deptId)
-              if (!dept) return null
-
-              const rankClass = entry.rank === 1 ? 'gold' : entry.rank === 2 ? 'silver' : entry.rank === 3 ? 'bronze' : ''
-
-              return (
-                <div key={entry.deptId} className="trust-entry">
-                  <div className={`trust-rank ${rankClass}`}>#{entry.rank}</div>
-                  <div className="trust-dept-info">
-                    <DeptIcon deptId={entry.deptId} size={16} />
-                    <span className="trust-dept-name" style={{ color: `var(--dept-${entry.deptId})` }}>
-                      {dept.name}
-                    </span>
-                  </div>
-                  <div className="trust-bar-container">
-                    <div
-                      className="trust-bar-fill"
-                      style={{
-                        width: `${entry.score}%`,
-                        backgroundColor: `var(--dept-${entry.deptId})`
-                      }}
-                      title={`${t('dashboard.trust.reliability')}: ${entry.breakdown.reliability}, ${t('dashboard.trust.speed')}: ${entry.breakdown.speed}, ${t('dashboard.trust.activity')}: ${entry.breakdown.activity}, ${t('dashboard.trust.consistency')}: ${entry.breakdown.consistency}`}
-                    />
-                  </div>
-                  <div className="trust-score-label">{entry.score}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Permissions Section */}
-      {permissions.length > 0 && (
-        <div className="dashboard-permissions">
-          <h3>{t('dashboard.permissions.title')}</h3>
-          <div className="permissions-list">
-            {permissions.slice(-20).reverse().map((p, i) => (
-              <div key={`${p.deptId}-${p.toolName}-${p.timestamp}-${i}`} className="permission-item">
-                <span className="permission-tool">{p.toolName}</span>
-                <span className="permission-dept">{departments.find(d => d.id === p.deptId)?.name || p.deptId}</span>
-                <span className="permission-time">{new Date(p.timestamp).toLocaleTimeString()}</span>
+          <div className="ops-dash-preview-list">
+            {permissions.length === 0 && <span className="ops-dash-preview-empty">{t('dashboard.permissions.empty')}</span>}
+            {permissions.slice(-5).reverse().map((p, i) => (
+              <div key={`perm-${i}`} className="ops-dash-preview-item">
+                <span className="ops-dash-preview-tool">{p.toolName}</span>
+                <span className="ops-dash-preview-dept">{departments.find(d => d.id === p.deptId)?.name || p.deptId}</span>
+                <span className="ops-dash-preview-time">{getTimeSince(p.timestamp)}</span>
               </div>
             ))}
           </div>
         </div>
-      )}
+
+        {/* Active Sessions */}
+        <div className="ops-dash-preview-panel">
+          <div className="ops-dash-preview-header">
+            <h4>{t('ops.dash.preview.sessions')}</h4>
+            <button className="ops-dash-view-all" onClick={() => onNavigateModule?.('agents')}>
+              {t('ops.dash.viewAll')} →
+            </button>
+          </div>
+          <div className="ops-dash-preview-list">
+            {sessions.length === 0 && <span className="ops-dash-preview-empty">{t('system.sessions.empty')}</span>}
+            {sessions.map((s, i) => (
+              <div key={`sess-${i}`} className="ops-dash-preview-item">
+                <DeptIcon deptId={s.deptId} size={12} />
+                <span className="ops-dash-preview-dept">{departments.find(d => d.id === s.deptId)?.name || s.deptId}</span>
+                <span className="ops-dash-preview-type">{s.type}</span>
+                <span className="ops-dash-preview-time">{getTimeSince(s.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="ops-dash-preview-panel">
+          <div className="ops-dash-preview-header">
+            <h4>{t('ops.dash.preview.activity')}</h4>
+            <button className="ops-dash-view-all" onClick={() => onNavigateModule?.('activity')}>
+              {t('ops.dash.viewAll')} →
+            </button>
+          </div>
+          <div className="ops-dash-preview-list">
+            {recentAudit.length === 0 && <span className="ops-dash-preview-empty">{t('activity.empty.title')}</span>}
+            {recentAudit.map((entry, i) => (
+              <div key={`audit-${i}`} className="ops-dash-preview-item">
+                <span className="ops-dash-preview-badge" style={{ color: actionColor(entry.action) }}>{entry.action}</span>
+                <span className="ops-dash-preview-target">{entry.target || '-'}</span>
+                <span className="ops-dash-preview-time">{getTimeSince(entry.timestamp)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Broadcast Modal */}
       {showBroadcastModal && (
@@ -676,9 +446,7 @@ export default function DashboardTab({ departments, onSwitchTab }: DashboardTabP
               />
             </div>
             <div className="dashboard-modal-footer">
-              <button className="dashboard-btn-cancel" onClick={handleBroadcastCancel}>
-                {t('common.cancel')}
-              </button>
+              <button className="dashboard-btn-cancel" onClick={handleBroadcastCancel}>{t('common.cancel')}</button>
               <button
                 className="dashboard-btn-submit"
                 onClick={handleBroadcastSubmit}

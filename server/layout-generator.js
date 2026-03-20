@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { safeWriteFileSync } from './utils.js';
 
 // Configuration
 const OFFICES_PER_ROW = 4;
@@ -361,7 +362,7 @@ export function generateAndSave() {
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
-    fs.writeFileSync(outputPath, jsonData);
+    safeWriteFileSync(outputPath, jsonData);
     console.log(`[LayoutGen] Layout saved to ${outputPath}`);
   }
 

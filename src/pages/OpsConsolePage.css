@@ -1,0 +1,140 @@
+.ops-console {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* ---- Ops Header ---- */
+.ops-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--border-color);
+  flex-shrink: 0;
+  z-index: 10;
+  box-shadow: 0 1px 8px rgba(0, 212, 170, 0.06);
+}
+
+.ops-header-title {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--accent-color);
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.ops-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Ops Body (menu + content) ---- */
+.ops-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---- Left module menu ---- */
+.ops-menu {
+  width: 180px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  background: var(--bg-panel);
+  border-right: 2px solid var(--border-color);
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.ops-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ops-menu-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.ops-menu-item.active {
+  background: var(--accent-muted);
+  color: var(--accent-color);
+}
+
+/* ---- Content area ---- */
+.ops-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle 1.5px at center, rgba(0, 212, 170, 0.06) 0%, transparent 100%),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    var(--bg-primary);
+  background-size: 48px 48px, 24px 24px, 24px 24px, 100% 100%;
+}
+
+/* ---- Light theme ---- */
+[data-theme="light"] .ops-header {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .ops-header-title {
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .ops-menu-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .ops-content {
+  background:
+    radial-gradient(circle 1.5px at center, rgba(0, 153, 128, 0.04) 0%, transparent 100%),
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    var(--bg-primary);
+  background-size: 48px 48px, 24px 24px, 24px 24px, 100% 100%;
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .ops-menu {
+    width: 56px;
+    min-width: 56px;
+    padding: 8px 4px;
+  }
+
+  .ops-menu-item span {
+    display: none;
+  }
+
+  .ops-menu-item {
+    justify-content: center;
+    padding: 10px 8px;
+  }
+}

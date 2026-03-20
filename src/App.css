@@ -3,12 +3,29 @@
    Pixel-art themed retro dashboard
    ============================================ */
 
-.app {
+/* ---- Sidebar + Main wrapper ---- */
+.app-with-sidebar {
   display: flex;
-  flex-direction: column;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
+  overflow: hidden;
+}
+
+.app-main-area {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+
   background: var(--bg-primary);
   position: relative;
 }
@@ -295,7 +312,7 @@
 /* ---- Right panel tabs ---- */
 .right-tab-header {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border-bottom: 2px solid var(--border-color);
   background: var(--bg-card);
   flex-shrink: 0;
@@ -319,8 +336,8 @@
   overflow: hidden;
 }
 
-/* Visual separator between tab row 1 and row 2 */
-.right-tab:nth-child(n+7) {
+/* Visual separator between tab rows */
+.right-tab:nth-child(n+4) {
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -473,9 +490,8 @@
 .app.mobile {
   display: flex;
   flex-direction: column;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   position: relative;
 }
@@ -605,7 +621,7 @@
   }
 
   .right-tab-header {
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .right-tab {

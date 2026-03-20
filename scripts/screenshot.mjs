@@ -31,13 +31,13 @@ async function takeScreenshots() {
   const page = await ctx.newPage();
 
   // 1. Login screen
-  console.log('1. Login screen...');
+  console.log('01. Login screen...');
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '01-login.png') });
 
   // 2. Login
-  console.log('2. Logging in...');
+  console.log('02. Logging in...');
   const pwInput = page.locator('input[type="password"]');
   if (await pwInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await pwInput.fill(PASSWORD);
@@ -47,11 +47,11 @@ async function takeScreenshots() {
   }
 
   // 3. Pixel office (dark theme, default view)
-  console.log('3. Pixel office (dark)...');
+  console.log('03. Pixel office (dark)...');
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '02-office-dark.png') });
 
   // 4. Select first department to show chat
-  console.log('4. Selecting department...');
+  console.log('04. Chat...');
   const firstDeptCard = page.locator('.dept-card').first();
   if (await firstDeptCard.isVisible({ timeout: 2000 }).catch(() => false)) {
     await firstDeptCard.click();
@@ -59,58 +59,85 @@ async function takeScreenshots() {
   }
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '03-chat.png') });
 
-  // 5. Dashboard tab
-  console.log('5. Dashboard...');
-  await clickTab(page, '面板');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '04-dashboard.png') });
-
-  // 6. Meeting tab
-  console.log('6. Meeting...');
+  // 5. Meeting tab
+  console.log('05. Meeting...');
   await clickTab(page, '会议');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '05-meeting.png') });
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '04-meeting.png') });
 
-  // 7. Cron tab
-  console.log('7. Cron...');
-  await clickTab(page, '定时');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '06-cron.png') });
+  // 6. Activity tab
+  console.log('06. Activity...');
+  await clickTab(page, '动态');
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '05-activity.png') });
 
-  // 8. Workflows tab
-  console.log('8. Workflows...');
-  await clickTab(page, '流程');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '07-workflows.png') });
+  // 7. Memory tab
+  console.log('07. Memory...');
+  await clickTab(page, '记忆');
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '06-memory.png') });
 
-  // 9. Skills tab
-  console.log('9. Skills...');
+  // 8. Skills tab
+  console.log('08. Skills...');
   await clickTab(page, '技能');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '08-skills.png') });
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '07-skills.png') });
 
-  // 10. System tab
-  console.log('10. System...');
-  await clickTab(page, '系统');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '09-system.png') });
-
-  // 11. Integrations tab
-  console.log('11. Integrations...');
+  // 9. Integrations tab
+  console.log('09. Integrations...');
   await clickTab(page, '集成');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '10-integrations.png') });
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '08-integrations.png') });
 
-  // 12. Guide tab
-  console.log('12. Guide...');
+  // 10. Guide tab
+  console.log('10. Guide...');
   await clickTab(page, '指南');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '11-guide.png') });
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '09-guide.png') });
 
-  // 13. Light theme + office view
-  console.log('13. Light theme...');
+  // --- Ops Console screenshots ---
+  console.log('11. Ops Console - Dashboard...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/dashboard'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '10-ops-dashboard.png') });
+
+  console.log('12. Ops Console - System...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/system'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '11-ops-system.png') });
+
+  console.log('13. Ops Console - Cron...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/cron'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '12-ops-cron.png') });
+
+  console.log('14. Ops Console - Agents...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/agents'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '13-ops-agents.png') });
+
+  console.log('15. Ops Console - Gateways...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/gateways'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '14-ops-gateways.png') });
+
+  console.log('16. Ops Console - Activity...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/activity'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '15-ops-activity.png') });
+
+  console.log('17. Ops Console - Approvals...');
+  await page.goto(BASE_URL.replace('/cmd/', '/cmd/ops/approvals'), { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '16-ops-approvals.png') });
+
+  // Light theme + office view
+  console.log('18. Light theme...');
+  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
   const themeBtn = page.locator('.theme-toggle');
   if (await themeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
     await themeBtn.click();
     await page.waitForTimeout(500);
   }
-  // Switch to chat tab to show office + chat
   await clickTab(page, '对话');
-  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '12-office-light.png') });
+  await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '17-office-light.png') });
 
-  // Switch theme back for remaining shots
+  // Switch theme back
   if (await themeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
     await themeBtn.click();
     await page.waitForTimeout(300);
@@ -119,7 +146,7 @@ async function takeScreenshots() {
   await ctx.close();
 
   // --- Mobile (390x844, iPhone-like) ---
-  console.log('14. Mobile screenshots...');
+  console.log('19. Mobile screenshots...');
   const mobileCtx = await browser.newContext({
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,
@@ -141,20 +168,20 @@ async function takeScreenshots() {
   }
 
   // Mobile main view
-  await mp.screenshot({ path: path.join(SCREENSHOTS_DIR, '13-mobile.png') });
+  await mp.screenshot({ path: path.join(SCREENSHOTS_DIR, '18-mobile.png') });
 
   // Mobile: open hamburger menu if exists
   const hamburger = mp.locator('.mobile-menu-btn, .hamburger, [class*="menu-toggle"]').first();
   if (await hamburger.isVisible({ timeout: 2000 }).catch(() => false)) {
     await hamburger.click();
     await mp.waitForTimeout(1000);
-    await mp.screenshot({ path: path.join(SCREENSHOTS_DIR, '14-mobile-menu.png') });
+    await mp.screenshot({ path: path.join(SCREENSHOTS_DIR, '19-mobile-menu.png') });
   }
 
   await mobileCtx.close();
   await browser.close();
 
-  console.log('\nDone! Screenshots saved to docs/screenshots/');
+  console.log('\nDone! 19 screenshots saved to docs/screenshots/');
 }
 
 takeScreenshots().catch(err => {

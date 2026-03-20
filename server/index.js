@@ -211,7 +211,7 @@ app.get('/cmd/{*splat}', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(indexPath);
+    res.sendFile('index.html', { root: distPath });
   } else {
     res.status(404).json({
       error: 'Frontend not built yet',

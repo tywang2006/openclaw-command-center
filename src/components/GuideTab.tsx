@@ -23,6 +23,7 @@ export default function GuideTab() {
     { id: 'guide-workflow', key: 's12' },
     { id: 'guide-dashboard', key: 's13' },
     { id: 'guide-skills', key: 's14' },
+    { id: 'guide-ops', key: 's16' },
     { id: 'guide-tips', key: 's15' },
   ]
 
@@ -332,6 +333,41 @@ export default function GuideTab() {
         </div>
         <div className="guide-tip">
           <strong>{t('guide.tip')}</strong> {t('guide.s14.tip')}
+        </div>
+      </div>
+
+      {/* 16. Ops Console */}
+      <div className="guide-section guide-section-highlight" id="guide-ops">
+        <h3><span className="guide-icon">16</span> {t('guide.s16.title')}</h3>
+        <p>{t('guide.s16.p1')}</p>
+        <div className="guide-feature-grid">
+          <div className="guide-feature-card">
+            <h4>{t('guide.s16.f1.title')}</h4>
+            <p>{t('guide.s16.f1.desc')}</p>
+          </div>
+          <div className="guide-feature-card">
+            <h4>{t('guide.s16.f2.title')}</h4>
+            <p>{t('guide.s16.f2.desc')}</p>
+          </div>
+          <div className="guide-feature-card">
+            <h4>{t('guide.s16.f3.title')}</h4>
+            <p>{t('guide.s16.f3.desc')}</p>
+          </div>
+          <div className="guide-feature-card">
+            <h4>{t('guide.s16.f4.title')}</h4>
+            <p>{t('guide.s16.f4.desc')}</p>
+          </div>
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">1</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s16.step1') }} />
+        </div>
+        <div className="guide-step">
+          <span className="guide-step-num">2</span>
+          <span className="guide-step-text" dangerouslySetInnerHTML={{ __html: t('guide.s16.step2') }} />
+        </div>
+        <div className="guide-tip">
+          <strong>{t('guide.tip')}</strong> {t('guide.s16.tip')}
         </div>
       </div>
 

@@ -1,25 +1,43 @@
+/* ============================================
+   SystemTab - Card Grid Layout
+   ============================================ */
+
 .system-tab {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
   width: 100%;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px;
-  gap: 8px;
+  gap: 6px;
 }
 
 .system-loading {
+  grid-column: 1 / -1;
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
   font-size: 11px;
 }
 
-/* ---- Sections ---- */
+/* ---- Card (section) ---- */
 .system-section {
-  border: 2px solid var(--border-color);
-  background: var(--bg-card);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-color);
+  transition: border-color 0.15s;
+}
+
+.system-section:hover {
+  border-color: var(--accent-color);
+  border-left-color: var(--accent-color);
+}
+
+/* Wide cards span both columns */
+.system-section-wide {
+  grid-column: 1 / -1;
 }
 
 .system-section-header {
@@ -27,7 +45,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: none;
   border: none;
   color: var(--accent-color);
@@ -39,16 +57,17 @@
 }
 
 .system-section-header:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(0, 212, 170, 0.04);
 }
 
 .system-chevron {
   font-size: 10px;
   color: var(--text-muted);
+  transition: transform 0.15s;
 }
 
 .system-section-body {
-  padding: 6px 10px 10px;
+  padding: 6px 10px 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -57,7 +76,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 3px 0;
   font-size: 11px;
 }
 
@@ -125,8 +144,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 6px;
-  margin-bottom: 2px;
+  padding: 3px 6px;
+  margin-bottom: 1px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   font-family: var(--font-ui);
@@ -234,22 +253,8 @@
   color: var(--text-primary);
 }
 
-.system-btn-xs.del {
-  color: #f44;
-}
-
-.system-btn-xs.del:hover {
-  border-color: #f44;
-}
-
-/* ---- Light Theme Overrides ---- */
-[data-theme="light"] .system-btn-xs.del {
-  color: #dd3355;
-}
-
-[data-theme="light"] .system-btn-xs.del:hover {
-  border-color: #dd3355;
-}
+.system-btn-xs.del { color: #f44; }
+.system-btn-xs.del:hover { border-color: #f44; }
 
 .system-add-form {
   display: flex;
@@ -363,7 +368,7 @@
 
 /* ---- Config section ---- */
 .system-config-item {
-  padding: 8px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -422,26 +427,27 @@
   font-weight: 500;
 }
 
-.system-config-status.ok {
-  color: var(--success);
-}
-
-.system-config-status.err {
-  color: var(--danger);
-}
-
-.system-config-status.saving {
-  color: var(--accent-color);
-}
+.system-config-status.ok { color: var(--success); }
+.system-config-status.err { color: var(--danger); }
+.system-config-status.saving { color: var(--accent-color); }
 
 /* ---- Shutdown section ---- */
 .system-shutdown-section {
-  margin-top: auto;
+  grid-column: 1 / -1;
+  border-color: var(--danger);
+  border-left-color: var(--danger);
+}
+
+.system-shutdown-section:hover {
   border-color: var(--danger);
 }
 
 .system-shutdown-section .system-section-header {
   color: var(--danger);
+}
+
+.system-shutdown-section .system-section-header:hover {
+  background: rgba(255, 68, 102, 0.04);
 }
 
 .system-shutdown-btn {
@@ -481,13 +487,8 @@
   gap: 8px;
 }
 
-.system-shutdown-actions .system-action-btn {
-  flex: 1;
-}
-
-.system-shutdown-actions .system-shutdown-btn {
-  flex: 1;
-}
+.system-shutdown-actions .system-action-btn { flex: 1; }
+.system-shutdown-actions .system-shutdown-btn { flex: 1; }
 
 /* ---- Shutdown overlay ---- */
 .system-shutdown-overlay {
@@ -518,31 +519,44 @@
   margin: 0;
 }
 
-/* ── Mobile Responsive ─────────────────── */
+/* ---- Light Theme ---- */
+[data-theme="light"] .system-section {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .system-section:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .system-section-header:hover {
+  background: rgba(0, 153, 128, 0.04);
+}
+
+[data-theme="light"] .system-btn-xs.del { color: #dd3355; }
+[data-theme="light"] .system-btn-xs.del:hover { border-color: #dd3355; }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .system-tab {
+    grid-template-columns: 1fr;
+  }
+  .system-section-wide {
+    grid-column: 1;
+  }
+}
+
 @media (max-width: 640px) {
-  .system-tab { padding: 12px; gap: 12px; }
-
+  .system-tab { padding: 12px; gap: 12px; grid-template-columns: 1fr; }
   .system-row { flex-direction: column; align-items: flex-start; gap: 2px; }
-
   .system-value { font-size: 12px; word-break: break-all; overflow-wrap: break-word; }
-
   .system-config-input-row { flex-direction: column; align-items: stretch; }
-
   .system-btn-xs { padding: 8px 12px; line-height: 20px; min-height: 36px; }
-
   .system-action-btn { padding: 10px 12px; }
-
   .system-provider-header { white-space: normal; flex-wrap: wrap; }
-
   .system-model-name-text { white-space: normal; }
-
   .system-config-preview code { word-break: break-all; }
-
   .system-shutdown-actions { flex-direction: column; gap: 6px; }
-
   .system-input { font-size: 16px; padding: 8px 10px; min-height: 44px; }
-
   .system-inline-edit { flex-wrap: wrap; gap: 4px; }
-
   .system-btn-sm { padding: 8px 12px; min-height: 36px; }
 }

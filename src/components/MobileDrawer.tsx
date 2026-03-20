@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import './MobileDrawer.css'
 
 interface NotifyPrefs {
@@ -35,6 +36,10 @@ export default function MobileDrawer({
   onToggleNotifyPref,
   t,
 }: MobileDrawerProps) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const isOps = location.pathname.startsWith('/ops')
+
   // Lock body scroll when open
   useEffect(() => {
     if (open) {
@@ -62,6 +67,24 @@ export default function MobileDrawer({
         </div>
 
         <nav className="mobile-drawer-menu">
+          {/* Page navigation */}
+          <button className={`mobile-drawer-item ${!isOps ? 'active' : ''}`} onClick={() => { navigate('/'); onClose() }}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <path d="M2 7l6-5 6 5v7H2V7z" stroke="currentColor" strokeWidth="1.3" fill="none" />
+              <rect x="6" y="10" width="4" height="4" stroke="currentColor" strokeWidth="1.3" fill="none" />
+            </svg>
+            <span>{t('sidebar.office') || '办公室'}</span>
+          </button>
+          <button className={`mobile-drawer-item ${isOps ? 'active' : ''}`} onClick={() => { navigate('/ops'); onClose() }}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="1" width="14" height="14" rx="1" stroke="currentColor" strokeWidth="1.3" fill="none" />
+              <path d="M1 5h14M5 5v10" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+            <span>{t('sidebar.ops') || '控制台'}</span>
+          </button>
+
+          <div className="mobile-drawer-divider" />
+
           {/* Language toggle */}
           <button className="mobile-drawer-item" onClick={() => { onToggleLocale(); onClose() }}>
             <svg width="18" height="18" viewBox="0 0 16 16" fill="none">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Department } from '../hooks/useAgentState'
 import { authedFetch } from '../utils/api'
 import './CommandPalette.css'
@@ -30,6 +31,7 @@ interface CommandPaletteProps {
 }
 
 export default function CommandPalette({ open, onClose, departments, onSelectDept, onSwitchTab, onOpenMeeting }: CommandPaletteProps) {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -53,19 +55,16 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
       })
     }
 
-    // Tab navigation
+    // Tab navigation (office tabs)
     const tabs = [
       { id: 'chat', label: '对话', desc: '打开对话面板' },
       { id: 'bulletin', label: '公告板', desc: '查看公告' },
       { id: 'memory', label: '记忆', desc: '查看部门记忆' },
       { id: 'activity', label: '活动', desc: '查看活动日志' },
       { id: 'requests', label: '请求', desc: '查看请求列表' },
-      { id: 'cron', label: '定时任务', desc: '管理定时任务' },
       { id: 'meeting', label: '会议', desc: '跨部门会议室' },
-      { id: 'dashboard', label: '仪表盘', desc: '查看系统指标' },
       { id: 'integrations', label: '能力', desc: '系统能力面板' },
       { id: 'skills', label: '技能', desc: '查看技能列表' },
-      { id: 'system', label: '系统', desc: '系统设置' },
       { id: 'guide', label: '指南', desc: '查看使用指南' },
     ]
     for (const tab of tabs) {
@@ -75,6 +74,26 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
         label: tab.label,
         description: tab.desc,
         action: () => { onSwitchTab(tab.id); onClose() },
+      })
+    }
+
+    // Ops console navigation
+    const opsModules = [
+      { id: 'dashboard', label: '仪表盘', desc: '运维控制台 - 仪表盘' },
+      { id: 'system', label: '系统设置', desc: '运维控制台 - 系统' },
+      { id: 'cron', label: '定时任务', desc: '运维控制台 - 定时' },
+      { id: 'agents', label: '代理管理', desc: '运维控制台 - 代理' },
+      { id: 'gateways', label: '网关监控', desc: '运维控制台 - 网关' },
+      { id: 'activity', label: '活动日志', desc: '运维控制台 - 活动' },
+      { id: 'approvals', label: '权限审计', desc: '运维控制台 - 审计' },
+    ]
+    for (const mod of opsModules) {
+      cmds.push({
+        id: `ops:${mod.id}`,
+        category: '控制台',
+        label: mod.label,
+        description: mod.desc,
+        action: () => { navigate(`/ops/${mod.id}`); onClose() },
       })
     }
 

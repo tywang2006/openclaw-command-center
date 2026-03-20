@@ -1,9 +1,10 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Department } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import './MobileNav.css'
 
-type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'cron' | 'meeting' | 'dashboard' | 'integrations' | 'skills' | 'system' | 'guide'
+type RightTab = 'chat' | 'bulletin' | 'memory' | 'activity' | 'requests' | 'meeting' | 'integrations' | 'skills' | 'guide'
 
 interface MobileNavProps {
   activeTab: RightTab
@@ -33,25 +34,34 @@ const NAV_ITEMS: { id: RightTab; icon: (active: boolean) => React.JSX.Element }[
     ),
   },
   {
-    id: 'dashboard',
+    id: 'meeting',
     icon: (active) => (
       <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="8" width="3" height="7" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" fill="none" />
-        <rect x="6" y="4" width="3" height="11" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" fill="none" />
-        <rect x="11" y="1" width="3" height="14" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" fill="none" />
-      </svg>
-    ),
-  },
-  {
-    id: 'cron',
-    icon: (active) => (
-      <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6.5" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" />
-        <path d="M8 4v4l3 2" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.5" strokeLinecap="round" />
+        <rect x="1" y="4" width="14" height="10" rx="1" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" />
+        <circle cx="5" cy="9" r="1.5" fill={active ? '#00d4aa' : '#a0a0b0'} />
+        <circle cx="8" cy="9" r="1.5" fill={active ? '#00d4aa' : '#a0a0b0'} />
+        <circle cx="11" cy="9" r="1.5" fill={active ? '#00d4aa' : '#a0a0b0'} />
+        <path d="M3 4v-2h10v2" stroke={active ? '#00d4aa' : '#a0a0b0'} strokeWidth="1.3" />
       </svg>
     ),
   },
 ]
+
+// Ops console button is a special nav item — navigates to /ops route
+function OpsNavButton() {
+  const navigate = useNavigate()
+  return (
+    <button
+      className="mobile-nav-item"
+      onClick={() => navigate('/ops')}
+    >
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="14" height="14" rx="1" stroke="#a0a0b0" strokeWidth="1.3" fill="none" />
+        <path d="M1 5h14M5 5v10" stroke="#a0a0b0" strokeWidth="1.3" />
+      </svg>
+    </button>
+  )
+}
 
 export default function MobileNav({
   activeTab,
@@ -117,6 +127,9 @@ export default function MobileNav({
             {item.icon(activeTab === item.id)}
           </button>
         ))}
+
+        {/* Ops console */}
+        <OpsNavButton />
       </nav>
     </>
   )

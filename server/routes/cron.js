@@ -71,6 +71,9 @@ function validateSchedule(schedule) {
     if (typeof schedule.everyMs !== 'number' || schedule.everyMs <= 0) {
       return { valid: false, error: 'everyMs must be a positive number for kind=every' };
     }
+    if (schedule.everyMs < 10000) {
+      return { valid: false, error: 'everyMs minimum is 10000 (10 seconds)' };
+    }
   }
 
   if (schedule.kind === 'cron') {

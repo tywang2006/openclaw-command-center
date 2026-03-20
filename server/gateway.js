@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import crypto, { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getConfigValue } from './utils.js';
+import { getConfigValue, safeWriteFileSync } from './utils.js';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const HEARTBEAT_INTERVAL_MS = 25000;
@@ -67,7 +67,7 @@ function loadOrCreateDeviceIdentity() {
 
   const stored = { version: 1, deviceId, publicKeyPem, privateKeyPem, createdAtMs: Date.now() };
   fs.mkdirSync(path.dirname(identityPath), { recursive: true });
-  fs.writeFileSync(identityPath, JSON.stringify(stored, null, 2) + '\n', { mode: 0o600 });
+  safeWriteFileSync(identityPath, JSON.stringify(stored, null, 2) + '\n', { mode: 0o600 });
   console.log('[Gateway] Generated new device identity:', deviceId);
   return stored;
 }

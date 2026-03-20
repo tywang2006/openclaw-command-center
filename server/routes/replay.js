@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 
@@ -80,7 +81,7 @@ router.post('/stop', (req, res) => {
 
   const filePath = path.join(REPLAYS_DIR, `${replay.id}.json`);
   try {
-    fs.writeFileSync(filePath, JSON.stringify(replay, null, 2), 'utf8');
+    safeWriteFileSync(filePath, JSON.stringify(replay, null, 2));
   } catch (err) {
     console.error('[Replay] Failed to save:', err.message);
     recording = null;

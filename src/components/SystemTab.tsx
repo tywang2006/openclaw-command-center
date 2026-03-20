@@ -623,8 +623,35 @@ export default function SystemTab() {
         )}
       </div>
 
-      {/* Gateway Status */}
+      {/* Memory Observer */}
       <div className="system-section">
+        <button className="system-section-header" onClick={() => toggle('observer')}>
+          <span className="system-section-title">{t('system.observer.title')}</span>
+          <span className="system-chevron">{collapsed.observer ? '▸' : '▾'}</span>
+        </button>
+        {!collapsed.observer && (
+          <div className="system-section-body">
+            <div className="system-row">
+              <span className="system-label">{t('system.observer.desc')}</span>
+              <button
+                className="system-action-btn"
+                onClick={handleRunObserver}
+                disabled={observerRunning}
+              >
+                {observerRunning ? '...' : t('system.observer.run')}
+              </button>
+            </div>
+            {observerMsg && (
+              <div className="system-row">
+                <span className="system-value" style={{ color: 'var(--accent-color)' }}>{observerMsg}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Gateway Status */}
+      <div className="system-section system-section-wide">
         <button className="system-section-header" onClick={() => toggle('gateway')}>
           <span className="system-section-title">{t('system.gateway.title')}</span>
           <span className="system-chevron">{collapsed.gateway ? '▸' : '▾'}</span>
@@ -747,7 +774,7 @@ export default function SystemTab() {
       </div>
 
       {/* Model Management */}
-      <div className="system-section">
+      <div className="system-section system-section-wide">
         <button className="system-section-header" onClick={() => toggle('models')}>
           <span className="system-section-title">{t('system.models.title')}</span>
           <span className="system-chevron">{collapsed.models ? '▸' : '▾'}</span>
@@ -925,33 +952,6 @@ export default function SystemTab() {
           )}
         </div>
       )}
-      {/* Memory Observer */}
-      <div className="system-section">
-        <button className="system-section-header" onClick={() => toggle('observer')}>
-          <span className="system-section-title">{t('system.observer.title')}</span>
-          <span className="system-chevron">{collapsed.observer ? '▸' : '▾'}</span>
-        </button>
-        {!collapsed.observer && (
-          <div className="system-section-body">
-            <div className="system-row">
-              <span className="system-label">{t('system.observer.desc')}</span>
-              <button
-                className="system-action-btn"
-                onClick={handleRunObserver}
-                disabled={observerRunning}
-              >
-                {observerRunning ? '...' : t('system.observer.run')}
-              </button>
-            </div>
-            {observerMsg && (
-              <div className="system-row">
-                <span className="system-value" style={{ color: 'var(--accent-color)' }}>{observerMsg}</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Sessions */}
       <div className="system-section">
         <button className="system-section-header" onClick={() => toggle('sessions')}>
@@ -1000,7 +1000,7 @@ export default function SystemTab() {
       </div>
 
       {/* OpenClaw Config */}
-      <div className="system-section">
+      <div className="system-section system-section-wide">
         <button className="system-section-header" onClick={() => toggle('config')}>
           <span className="system-section-title">{t('system.config.title')}</span>
           <span className="system-chevron">{collapsed.config ? '▸' : '▾'}</span>

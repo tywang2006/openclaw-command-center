@@ -1,0 +1,54 @@
+.app-sidebar {
+  width: 48px;
+  min-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--bg-panel);
+  border-right: 2px solid var(--border-color);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.app-sidebar-btn {
+  width: 36px;
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.app-sidebar-btn:hover {
+  color: var(--text-primary);
+}
+
+.app-sidebar-btn.active {
+  color: var(--accent-color);
+  border-left-color: var(--accent-color);
+}
+
+.app-sidebar-label {
+  font-size: 8px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* Hide sidebar on mobile */
+@media (max-width: 768px) {
+  .app-sidebar {
+    display: none;
+  }
+}

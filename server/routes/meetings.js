@@ -61,8 +61,14 @@ function persistMeeting(meeting) {
  */
 router.post('/', async (req, res) => {
   const { topic, deptIds, initiatorDeptId } = req.body;
-  if (!topic || !Array.isArray(deptIds) || deptIds.length < 2) {
+  if (!topic || typeof topic !== 'string' || !Array.isArray(deptIds) || deptIds.length < 2) {
     return res.status(400).json({ error: 'topic and at least 2 deptIds required' });
+  }
+  if (topic.length > 500) {
+    return res.status(400).json({ error: 'topic must be 500 characters or less' });
+  }
+  if (deptIds.length > 20 || !deptIds.every(id => typeof id === 'string' && id.length <= 50)) {
+    return res.status(400).json({ error: 'invalid deptIds' });
   }
 
   // P0 Fix #1: Unbounded meeting creation - enforce limit

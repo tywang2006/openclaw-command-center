@@ -1,0 +1,266 @@
+.ops-gw-container {
+  height: 100%;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ops-gw-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+/* Hero Card */
+.ops-gw-hero {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.ops-gw-status-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ops-gw-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: var(--transition-normal);
+}
+
+.ops-gw-indicator-connected {
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.ops-gw-indicator-disconnected {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
+.ops-gw-status-text {
+  font-family: var(--font-pixel);
+  font-size: 18px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.ops-gw-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.ops-gw-hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ops-gw-hero-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.ops-gw-hero-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.ops-gw-hero-divider {
+  width: 1px;
+  height: 30px;
+  background: var(--border-subtle);
+}
+
+/* Sections */
+.ops-gw-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ops-gw-section-title {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  padding: 0 4px;
+}
+
+/* Stats Grid */
+.ops-gw-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.ops-gw-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: var(--transition-normal);
+}
+
+.ops-gw-stat-card:hover {
+  border-color: var(--accent-color);
+}
+
+.ops-gw-stat-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.ops-gw-stat-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* Devices */
+.ops-gw-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ops-gw-device-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: var(--transition-normal);
+}
+
+.ops-gw-device-row:hover {
+  border-color: var(--accent-color);
+}
+
+.ops-gw-device-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-gw-device-name {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.ops-gw-device-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-gw-device-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-gw-mode-badge {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--text-primary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 0;
+  padding: 3px 6px;
+  text-transform: uppercase;
+}
+
+.ops-gw-device-protocol {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.ops-gw-device-token {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ops-gw-empty {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* Note */
+.ops-gw-note {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+/* Light Theme Overrides */
+:root[data-theme='light'] .ops-gw-indicator-connected {
+  box-shadow: 0 0 6px var(--success);
+}
+
+:root[data-theme='light'] .ops-gw-indicator-disconnected {
+  box-shadow: 0 0 6px var(--danger);
+}
+
+:root[data-theme='light'] .ops-gw-stat-card,
+:root[data-theme='light'] .ops-gw-device-row {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme='light'] .ops-gw-hero {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}

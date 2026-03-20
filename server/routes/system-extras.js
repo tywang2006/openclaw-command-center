@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { OPENCLAW_HOME, BASE_PATH } from '../utils.js';
+import { OPENCLAW_HOME, BASE_PATH, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 const execFileAsync = promisify(execFile);
@@ -285,7 +285,7 @@ router.put('/departments/:id/persona', (req, res) => {
       fs.mkdirSync(personaDir, { recursive: true });
     }
 
-    fs.writeFileSync(personaPath, content, 'utf8');
+    safeWriteFileSync(personaPath, content);
     console.log(`[SystemExtras] Wrote persona to ${personaPath}`);
 
     res.json({ success: true });

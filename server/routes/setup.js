@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { execFile, execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { OPENCLAW_HOME, BASE_PATH, CONFIG_PATH, getConfigValue } from '../utils.js';
+import { OPENCLAW_HOME, BASE_PATH, CONFIG_PATH, getConfigValue, safeWriteFileSync } from '../utils.js';
 import { getGateway } from '../gateway.js';
 import { isPasswordConfigured } from '../auth.js';
 
@@ -251,18 +251,18 @@ function bootstrapDepartments() {
       },
       defaultDepartment: 'coo',
     };
-    fs.writeFileSync(DEPT_CONFIG, JSON.stringify(defaultConfig, null, 2));
+    safeWriteFileSync(DEPT_CONFIG, JSON.stringify(defaultConfig, null, 2));
   }
 
   // Default status
   if (!fs.existsSync(DEPT_STATUS)) {
     const defaultStatus = { lastUpdated: new Date().toISOString(), agents: {} };
-    fs.writeFileSync(DEPT_STATUS, JSON.stringify(defaultStatus, null, 2));
+    safeWriteFileSync(DEPT_STATUS, JSON.stringify(defaultStatus, null, 2));
   }
 
   // Default bulletin
   if (!fs.existsSync(BULLETIN)) {
-    fs.writeFileSync(BULLETIN, '# Bulletin Board\n\nWelcome to Command Center.\n');
+    safeWriteFileSync(BULLETIN, '# Bulletin Board\n\nWelcome to Command Center.\n');
   }
 }
 

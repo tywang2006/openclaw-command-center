@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter } from '../utils.js';
+import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter, safeWriteFileSync } from '../utils.js';
 
 const router = express.Router();
 
@@ -302,12 +302,12 @@ router.post('/skills', (req, res) => {
 
     // Create directory and files
     fs.mkdirSync(skillPath, { recursive: true });
-    fs.writeFileSync(path.join(skillPath, 'SKILL.md'), skillMd, 'utf8');
-    fs.writeFileSync(path.join(skillPath, '_meta.json'), JSON.stringify({
+    safeWriteFileSync(path.join(skillPath, 'SKILL.md'), skillMd);
+    safeWriteFileSync(path.join(skillPath, '_meta.json'), JSON.stringify({
       ownerId: 'local',
       publishedAt: new Date().toISOString(),
       version: '0.1.0'
-    }, null, 2), 'utf8');
+    }, null, 2));
 
     res.json({ success: true, slug });
   } catch (error) {
@@ -358,7 +358,7 @@ router.put('/skills/:slug', (req, res) => {
     }
     fmLines.push(`---`);
     const newBody = content !== undefined ? content : oldBody;
-    fs.writeFileSync(skillMdPath, fmLines.join('\n') + '\n\n' + (newBody || ''), 'utf8');
+    safeWriteFileSync(skillMdPath, fmLines.join('\n') + '\n\n' + (newBody || ''));
 
     res.json({ success: true, slug });
   } catch (error) {
@@ -468,7 +468,7 @@ router.post('/skills/install', (req, res) => {
     existingMeta.installedFrom = url;
     existingMeta.installedAt = new Date().toISOString();
     if (!existingMeta.ownerId) existingMeta.ownerId = 'community';
-    fs.writeFileSync(metaPath, JSON.stringify(existingMeta, null, 2), 'utf8');
+    safeWriteFileSync(metaPath, JSON.stringify(existingMeta, null, 2));
 
     res.json({ success: true, slug, name: skillName });
   } catch (error) {
