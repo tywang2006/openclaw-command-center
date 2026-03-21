@@ -257,7 +257,14 @@ function createWatcher(wss) {
       stabilityThreshold: 500,
       pollInterval: 100
     },
-    ignored: /(\.deleted\.|\.bak)/
+    ignored: [
+      /node_modules/,
+      /\.git/,
+      /dist/,
+      /\.log$/,
+      /(\.deleted\.|\.bak)/,
+      /\.tmp\./,
+    ]
   });
 
   watcher
@@ -291,6 +298,9 @@ function createWatcher(wss) {
       } else if (filePath.endsWith('.jsonl')) {
         handleSessionChange(wss, filePath);
       }
+    })
+    .on('unlink', filePath => {
+      fileOffsets.delete(filePath);
     })
     .on('error', error => {
       log.error('Watcher error', { error });
