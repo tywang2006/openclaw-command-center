@@ -601,7 +601,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     <div className="cap-tab">
       {/* Header */}
       <div className="cap-header">
-        <span className="cap-title">{t('cap.title')}</span>
+        <h2 className="cap-title">{t('cap.title')}</h2>
       </div>
 
       {/* Sections */}
@@ -609,7 +609,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- System Settings (NEW) ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('system')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('system')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('system') } }}
+          >
             <span className="cap-section-arrow">{collapsed.system ? '>' : 'v'}</span>
             <span>{t('sys.section.title')}</span>
             <span className="cap-section-count">4</span>
@@ -671,7 +677,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- Services ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('services')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('services')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('services') } }}
+          >
             <span className="cap-section-arrow">{collapsed.services ? '>' : 'v'}</span>
             <span>{t('integ.section.title')}</span>
             <span className="cap-section-count">{5 + 1 + (driveConfigured ? 1 : 0)}</span>
@@ -739,7 +751,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- Channels ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('channels')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('channels')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('channels') } }}
+          >
             <span className="cap-section-arrow">{collapsed.channels ? '>' : 'v'}</span>
             <span>{t('cap.section.channels')}</span>
             <span className="cap-section-count">{cap.channels.length}</span>
@@ -764,7 +782,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- Plugins ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('plugins')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('plugins')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('plugins') } }}
+          >
             <span className="cap-section-arrow">{collapsed.plugins ? '>' : 'v'}</span>
             <span>{t('cap.section.plugins')}</span>
             <span className="cap-section-count">{cap.plugins.length}</span>
@@ -786,7 +810,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- Skills ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('skills')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('skills')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('skills') } }}
+          >
             <span className="cap-section-arrow">{collapsed.skills ? '>' : 'v'}</span>
             <span>{t('cap.section.skills')}</span>
             <span className="cap-section-count">{cap.skills.length}</span>
@@ -801,7 +831,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   onChange={e => setSearchQuery(e.target.value)}
                 />
                 {searchQuery && (
-                  <button className="cap-search-clear" onClick={() => setSearchQuery('')}>x</button>
+                  <button className="cap-search-clear" onClick={() => setSearchQuery('')} aria-label="清除搜索">x</button>
                 )}
               </div>
               <div className="cap-skills-count">
@@ -811,7 +841,14 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                 <div className="cap-skills-empty">{t('cap.skills.empty')}</div>
               ) : (
                 filteredSkills.map(sk => (
-                  <div key={sk.slug} className="cap-card skill-card" onClick={() => handleSkillClick(sk.slug)}>
+                  <div
+                    key={sk.slug}
+                    className="cap-card skill-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleSkillClick(sk.slug)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSkillClick(sk.slug) } }}
+                  >
                     <div className="cap-card-header">
                       <span className={`cap-dot ${sk.hasApiKey ? 'green' : 'blue'}`} />
                       <span className="cap-card-name">{sk.name}</span>
@@ -837,7 +874,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
         {/* ---- Models ---- */}
         <div className="cap-section">
-          <div className="cap-section-title" onClick={() => toggle('models')}>
+          <div
+            className="cap-section-title"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggle('models')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle('models') } }}
+          >
             <span className="cap-section-arrow">{collapsed.models ? '>' : 'v'}</span>
             <span>{t('cap.section.models')}</span>
             <span className="cap-section-count">{cap.models.length}</span>
@@ -874,14 +917,20 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
       {/* ---- Skill Detail Modal ---- */}
       {selectedSkill && (
-        <div className="cap-modal-overlay" onClick={() => setSelectedSkill(null)}>
+        <div
+          className="cap-modal-overlay"
+          role="button"
+          tabIndex={0}
+          onClick={() => setSelectedSkill(null)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedSkill(null) } }}
+        >
           <div className="cap-modal" onClick={e => e.stopPropagation()}>
             <div className="cap-modal-header">
               <div className="cap-modal-title">
                 <h2>{selectedSkill.name}</h2>
                 {selectedSkill.version && <span className="cap-card-version">{t('cap.skills.version', { version: selectedSkill.version })}</span>}
               </div>
-              <button className="cap-modal-close" onClick={() => setSelectedSkill(null)}>x</button>
+              <button className="cap-modal-close" onClick={() => setSelectedSkill(null)} aria-label="关闭">x</button>
             </div>
             {detailLoading ? (
               <div className="cap-modal-loading">{t('cap.skills.detail.loading')}</div>
@@ -927,13 +976,19 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
       {/* ---- Config Modal (gmail/drive/voice/webhook) ---- */}
       {configModal && (
-        <div className="cap-modal-overlay" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}>
+        <div
+          className="cap-modal-overlay"
+          role="button"
+          tabIndex={0}
+          onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) } }}
+        >
           <div className="cap-modal" onClick={e => e.stopPropagation()}>
             <div className="cap-modal-header">
               <div className="cap-modal-title">
                 <h2>{t(`integ.${configModal}.title`)}</h2>
               </div>
-              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }}>x</button>
+              <button className="cap-modal-close" onClick={() => { setConfigModal(null); setConfigForm({}); setTestResult(null); setOauthUrl(null); setOauthCode(''); setOauthRedirectUri(null); setOauthFlowType('redirect'); setOauthSubmitting(false) }} aria-label="关闭">x</button>
             </div>
             <div className="cap-modal-body">
               <div className="cap-config-form">
@@ -958,6 +1013,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                         value={configForm.email || ''}
                         onChange={e => setConfigForm({ ...configForm, email: e.target.value })}
                         placeholder="your-email@gmail.com"
+                        aria-label="Gmail邮箱地址"
                       />
                     </div>
                     <div className="cap-config-field">
@@ -968,6 +1024,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                         value={configForm.appPassword || ''}
                         onChange={e => setConfigForm({ ...configForm, appPassword: e.target.value })}
                         placeholder="16-character app password"
+                        aria-label="Gmail应用专用密码"
                       />
                       <span className="cap-config-hint">{t('integ.gmail.hint')}</span>
                     </div>
@@ -1004,6 +1061,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                       value={configForm.apiKeyOverride || ''}
                       onChange={e => setConfigForm({ ...configForm, apiKeyOverride: e.target.value })}
                       placeholder="sk-..."
+                      aria-label="OpenAI API密钥"
                     />
                     <span className="cap-config-hint">{t('integ.voice.fromOpenclaw')}</span>
                   </div>
@@ -1019,6 +1077,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                         value={configForm.url || ''}
                         onChange={e => setConfigForm({ ...configForm, url: e.target.value })}
                         placeholder="https://discord.com/api/webhooks/..."
+                        aria-label="Webhook URL地址"
                       />
                     </div>
                     <div className="cap-config-field">
@@ -1270,7 +1329,13 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
 
       {/* ---- System Settings Modals ---- */}
       {sysModal && (
-        <div className="cap-modal-overlay" onClick={() => { setSysModal(null); setSysForm({}); setSysTestResult(null) }}>
+        <div
+          className="cap-modal-overlay"
+          role="button"
+          tabIndex={0}
+          onClick={() => { setSysModal(null); setSysForm({}); setSysTestResult(null) }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSysModal(null); setSysForm({}); setSysTestResult(null) } }}
+        >
           <div className="cap-modal" onClick={e => e.stopPropagation()}>
             <div className="cap-modal-header">
               <div className="cap-modal-title">
@@ -1283,7 +1348,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   ''
                 }</h2>
               </div>
-              <button className="cap-modal-close" onClick={() => { setSysModal(null); setSysForm({}); setSysTestResult(null) }}>x</button>
+              <button className="cap-modal-close" onClick={() => { setSysModal(null); setSysForm({}); setSysTestResult(null) }} aria-label="关闭">x</button>
             </div>
             <div className="cap-modal-body">
 

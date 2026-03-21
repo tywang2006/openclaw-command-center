@@ -134,7 +134,6 @@
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.6;
-  outline: none;
 }
 
 .memory-editor:focus {
@@ -283,7 +282,6 @@
   color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-ui);
-  outline: none;
 }
 
 .memory-search-input:focus {

@@ -660,6 +660,7 @@ export default function SystemTab() {
 
   return (
     <div className="system-tab">
+      <h2 className="sr-only">{t('ops.module.system')}</h2>
       {/* OpenClaw Version / Install */}
       <div className="system-section">
         <button className="system-section-header" onClick={() => toggle('openclaw')}>
@@ -891,12 +892,14 @@ export default function SystemTab() {
                         placeholder={t('system.models.model.id') + ' (e.g. gpt-4o)'}
                         value={newModel.id}
                         onChange={e => setNewModel(prev => ({ ...prev, id: e.target.value }))}
+                        aria-label="模型ID"
                       />
                       <input
                         className="system-config-input"
                         placeholder={t('system.models.model.name') + ' (e.g. GPT-4o)'}
                         value={newModel.name}
                         onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
+                        aria-label="模型名称"
                       />
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="system-action-btn" onClick={() => handleAddModel(prov.id)} disabled={!newModel.id}>
@@ -925,12 +928,14 @@ export default function SystemTab() {
                   placeholder={t('system.models.provider.id') + ' (e.g. openai)'}
                   value={newProvider.id}
                   onChange={e => setNewProvider(prev => ({ ...prev, id: e.target.value }))}
+                  aria-label="提供商ID"
                 />
                 <input
                   className="system-config-input"
                   placeholder={t('system.models.provider.baseurl') + ' (e.g. https://api.openai.com/v1)'}
                   value={newProvider.baseUrl}
                   onChange={e => setNewProvider(prev => ({ ...prev, baseUrl: e.target.value }))}
+                  aria-label="API基础URL"
                 />
                 <input
                   type="password"
@@ -938,6 +943,7 @@ export default function SystemTab() {
                   placeholder={t('system.models.provider.apikey')}
                   value={newProvider.apiKey}
                   onChange={e => setNewProvider(prev => ({ ...prev, apiKey: e.target.value }))}
+                  aria-label="API密钥"
                 />
                 <select
                   className="system-config-input"
@@ -956,12 +962,14 @@ export default function SystemTab() {
                   placeholder={t('system.models.model.id') + ' (e.g. gpt-4o)'}
                   value={newProvider.modelId}
                   onChange={e => setNewProvider(prev => ({ ...prev, modelId: e.target.value }))}
+                  aria-label="首个模型ID"
                 />
                 <input
                   className="system-config-input"
                   placeholder={t('system.models.model.name') + ' (e.g. GPT-4o)'}
                   value={newProvider.modelName}
                   onChange={e => setNewProvider(prev => ({ ...prev, modelName: e.target.value }))}
+                  aria-label="首个模型名称"
                 />
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button

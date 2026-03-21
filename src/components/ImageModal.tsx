@@ -11,14 +11,29 @@ export default function ImageModal({ src, onClose }: ImageModalProps) {
   const lastTouchDist = useRef<number | null>(null)
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
 
-  // Close on Escape
+  // Close on Escape and focus trap
   useEffect(() => {
+    // Save previous focus
+    previousActiveElement.current = document.activeElement as HTMLElement
+
+    // Focus close button
+    const timer = setTimeout(() => {
+      const closeBtn = containerRef.current?.querySelector<HTMLElement>('.image-modal-close')
+      closeBtn?.focus()
+    }, 50)
+
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('keydown', handler)
+      previousActiveElement.current?.focus()
+    }
   }, [onClose])
 
   // Prevent body scroll while modal is open
@@ -86,9 +101,12 @@ export default function ImageModal({ src, onClose }: ImageModalProps) {
       className="image-modal-overlay"
       onClick={onClose}
       ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image viewer"
     >
       <button className="image-modal-close" onClick={onClose} aria-label="Close">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
       </button>

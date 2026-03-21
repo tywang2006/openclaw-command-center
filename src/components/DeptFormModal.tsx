@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ICON_MAP, type IconProps } from './Icons'
 import { authedFetch } from '../utils/api'
 import { useLocale } from '../i18n/index'
@@ -70,6 +70,9 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
   const [showApiSection, setShowApiSection] = useState(false)
   const [showSkillSection, setShowSkillSection] = useState(false)
 
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (editDept) {
       setId(editDept.id)
@@ -119,6 +122,33 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
         .finally(() => setSkillsLoading(false))
     }
   }, [showSkillSection])
+
+  // Focus trap and Escape key handler
+  useEffect(() => {
+    if (!open) return
+
+    // Save previous focus
+    previousActiveElement.current = document.activeElement as HTMLElement
+
+    // Focus first input
+    const timer = setTimeout(() => {
+      const firstInput = dialogRef.current?.querySelector<HTMLElement>('input, button, select, textarea')
+      firstInput?.focus()
+    }, 50)
+
+    // Escape key handler
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+
+    // Restore focus on unmount
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('keydown', handleEscape)
+      previousActiveElement.current?.focus()
+    }
+  }, [open, onClose])
 
   const handleNameChange = (v: string) => {
     setName(v)
@@ -180,27 +210,27 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
   if (!open) return null
 
   return (
-    <div className="dept-modal-overlay" onClick={onClose}>
-      <div className="dept-modal" onClick={e => e.stopPropagation()}>
+    <div className="dept-modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="dept-modal-title">
+      <div className="dept-modal" onClick={e => e.stopPropagation()} ref={dialogRef}>
         <div className="dept-modal-header">
-          <h3>{isEdit ? t('dept.edit') : t('dept.create')}</h3>
-          <button className="dept-modal-close" onClick={onClose}>&times;</button>
+          <h3 id="dept-modal-title">{isEdit ? t('dept.edit') : t('dept.create')}</h3>
+          <button className="dept-modal-close" onClick={onClose} aria-label="Close">&times;</button>
         </div>
 
         <div className="dept-modal-body">
           {!isEdit && (
             <div className="dept-field">
               <label>{t('dept.field.id')}</label>
-              <input value={id} onChange={e => setId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))} placeholder="engineering" />
+              <input value={id} onChange={e => setId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))} placeholder="engineering" aria-label="部门ID" />
             </div>
           )}
           <div className="dept-field">
             <label>{t('dept.field.name')}</label>
-            <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder={t('dept.field.namePlaceholder')} />
+            <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder={t('dept.field.namePlaceholder')} aria-label="部门名称" />
           </div>
           <div className="dept-field">
             <label>{t('dept.field.agent')}</label>
-            <input value={agent} onChange={e => setAgent(e.target.value)} placeholder={t('dept.field.agentPlaceholder')} />
+            <input value={agent} onChange={e => setAgent(e.target.value)} placeholder={t('dept.field.agentPlaceholder')} aria-label="代理名称" />
           </div>
 
           <div className="dept-field">
@@ -238,7 +268,7 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
 
           <div className="dept-field">
             <label>{t('dept.field.topicId')}</label>
-            <input value={topicId} onChange={e => setTopicId(e.target.value.replace(/\D/g, ''))} placeholder={t('dept.field.topicIdPlaceholder')} />
+            <input value={topicId} onChange={e => setTopicId(e.target.value.replace(/\D/g, ''))} placeholder={t('dept.field.topicIdPlaceholder')} aria-label="Telegram话题ID" />
           </div>
 
           {/* API Groups Section (collapsible) */}
@@ -330,6 +360,7 @@ export default function DeptFormModal({ open, onClose, editDept }: DeptFormModal
                       value={skillSearch}
                       onChange={e => setSkillSearch(e.target.value)}
                       placeholder={t('dept.field.skills.search')}
+                      aria-label="搜索技能"
                     />
                     <div className="dept-skill-list">
                       {skillsLoading ? (

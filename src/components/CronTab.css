@@ -138,7 +138,6 @@
 .cron-form-group input[type="text"]:focus,
 .cron-form-group input[type="number"]:focus,
 .cron-form-group textarea:focus {
-  outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 2px var(--accent-color);
 }
@@ -590,7 +589,6 @@
 }
 
 .edit-message textarea:focus {
-  outline: none;
   border-color: var(--accent-hover);
   box-shadow: 0 0 0 2px rgba(0, 212, 170, 0.1);
 }
@@ -718,7 +716,6 @@
 }
 
 .dept-select:focus {
-  outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 2px var(--accent-color);
 }

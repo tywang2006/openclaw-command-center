@@ -381,6 +381,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder={t('cron.form.name.placeholder')}
+              aria-label="任务名称"
             />
           </div>
 
@@ -390,6 +391,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               value={form.deptId}
               onChange={(e) => setForm({ ...form, deptId: e.target.value })}
               className="dept-select"
+              aria-label="选择部门"
             >
               <option value="">{t('cron.form.global')}</option>
               {departments.map(d => (
@@ -405,6 +407,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                 value={form.subAgentId}
                 onChange={(e) => setForm({ ...form, subAgentId: e.target.value })}
                 className="dept-select"
+                aria-label="选择子代理"
               >
                 <option value="">{t('cron.form.subagent.main')}</option>
                 {subAgents.map(a => (
@@ -440,6 +443,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                 value={form.intervalMinutes}
                 onChange={(e) => setForm({ ...form, intervalMinutes: parseInt(e.target.value) || 1 })}
                 min="1"
+                aria-label="执行间隔（分钟）"
               />
             </div>
           ) : (
@@ -451,6 +455,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                 value={form.cronExpr}
                 onChange={(e) => setForm({ ...form, cronExpr: e.target.value })}
                 placeholder="*/15 * * * *"
+                aria-label="Cron表达式"
               />
             </div>
           )}
@@ -462,6 +467,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               onChange={(e) => setForm({ ...form, message: e.target.value })}
               placeholder={t('cron.form.message.placeholder')}
               rows={4}
+              aria-label="定时消息内容"
             />
           </div>
 
@@ -472,6 +478,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
               value={form.timeoutSeconds}
               onChange={(e) => setForm({ ...form, timeoutSeconds: parseInt(e.target.value) || 120 })}
               min="1"
+              aria-label="超时时间（秒）"
             />
           </div>
 
@@ -500,7 +507,13 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         ) : (
           jobs.filter(j => filter === 'all' ? true : filter === 'global' ? !j.deptId : j.deptId === filter).map((job) => (
             <div key={job.id} className="job-item">
-              <div className="job-header" onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}>
+              <div
+                className="job-header"
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedJobId(expandedJobId === job.id ? null : job.id) } }}
+              >
                 <div className="job-main-info">
                   {getStatusDot(job)}
                   <div className="job-name-schedule">
@@ -524,6 +537,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                     onClick={() => handleRunNow(job)}
                     disabled={runningJobId === job.id}
                     title={t('cron.action.run')}
+                    aria-label="立即运行"
                   >
                     {runningJobId === job.id ? '⟳' : '▶'}
                   </button>
@@ -531,6 +545,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                     className={`toggle-switch ${job.enabled ? 'enabled' : 'disabled'}`}
                     onClick={() => handleToggleEnabled(job)}
                     title={job.enabled ? t('cron.action.disable') : t('cron.action.enable')}
+                    aria-label={job.enabled ? "禁用" : "启用"}
                   >
                     <span className="toggle-slider"></span>
                   </button>
@@ -554,6 +569,7 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
                       className="btn-delete"
                       onClick={() => setDeleteConfirmId(job.id)}
                       title={t('cron.action.delete')}
+                      aria-label="删除"
                     >
                       ×
                     </button>

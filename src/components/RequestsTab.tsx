@@ -61,6 +61,7 @@ export default function RequestsTab({ requests, onRefresh }: RequestsTabProps) {
 
   return (
     <div className="requests-tab">
+      <h2 className="sr-only">{t('app.tab.requests')}</h2>
       {requests.map((request, index) => {
         const isProcessing = processingFile === request.filename
         return (

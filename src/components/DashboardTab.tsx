@@ -567,7 +567,13 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
 
       {/* Broadcast Modal */}
       {showBroadcastModal && (
-        <div className="dashboard-modal-overlay" onClick={handleBroadcastCancel}>
+        <div
+          className="dashboard-modal-overlay"
+          role="button"
+          tabIndex={0}
+          onClick={handleBroadcastCancel}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBroadcastCancel() } }}
+        >
           <div className="dashboard-modal" onClick={e => e.stopPropagation()}>
             <div className="dashboard-modal-header">
               <h3>{t('dashboard.action.broadcast')}</h3>
@@ -600,7 +606,13 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
 
       {/* Status Message */}
       {statusMessage && (
-        <div className={`dashboard-status-message ${statusMessage.type}`} onClick={() => setStatusMessage(null)}>
+        <div
+          className={`dashboard-status-message ${statusMessage.type}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => setStatusMessage(null)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStatusMessage(null) } }}
+        >
           <span className="status-message-text">{statusMessage.text}</span>
           <button className="status-message-close" onClick={() => setStatusMessage(null)}>&times;</button>
         </div>

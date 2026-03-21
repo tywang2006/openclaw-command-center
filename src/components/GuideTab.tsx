@@ -28,8 +28,8 @@ export default function GuideTab() {
     { id: 'guide-workflow', key: 's12' },
     { id: 'guide-dashboard', key: 's13' },
     { id: 'guide-skills', key: 's14' },
-    { id: 'guide-ops', key: 's16' },
     { id: 'guide-tips', key: 's15' },
+    { id: 'guide-ops', key: 's16' },
   ] as const
 
   return (

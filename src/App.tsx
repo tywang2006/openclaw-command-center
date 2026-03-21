@@ -113,7 +113,7 @@ export default function App() {
         <a href="#main-content" className="skip-to-content">跳到主要内容</a>
         <div className="app-with-sidebar">
           <AppSidebar />
-          <div className="app-main-area" id="main-content">
+          <main className="app-main-area" id="main-content">
             <Routes>
               <Route path="/" element={
                 <OfficePage t={t} locale={locale} setLocale={setLocale}
@@ -125,7 +125,7 @@ export default function App() {
               } />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </div>
+          </main>
         </div>
       </AgentStateProvider>
     </ErrorBoundary>

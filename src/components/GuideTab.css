@@ -78,7 +78,6 @@
   background: rgba(0, 212, 170, 0.08);
   border-color: rgba(0, 212, 170, 0.25);
   color: var(--accent-color);
-  outline: none;
 }
 
 .guide-toc-pill .guide-toc-num {

@@ -355,7 +355,6 @@
 .workflow-input:focus,
 .workflow-select:focus,
 .workflow-textarea:focus {
-  outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 2px var(--accent-color);
 }

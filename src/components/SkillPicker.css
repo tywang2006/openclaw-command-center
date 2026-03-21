@@ -69,7 +69,6 @@
   color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-ui);
-  outline: none;
 }
 
 .skill-picker-search input:focus {

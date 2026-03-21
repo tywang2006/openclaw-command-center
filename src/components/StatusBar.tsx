@@ -70,7 +70,10 @@ function StatusBar({ departments, selectedDeptId, onSelectDept, onAddDept, onEdi
         <div
           key={dept.id}
           className={`dept-card ${selectedDeptId === dept.id ? 'selected' : ''}`}
+          role="button"
+          tabIndex={0}
           onClick={() => handleCardClick(dept.id)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCardClick(dept.id) } }}
           onContextMenu={(e) => handleContextMenu(e, dept)}
           onTouchStart={() => handleTouchStart(dept)}
           onTouchEnd={handleTouchEnd}
@@ -86,7 +89,13 @@ function StatusBar({ departments, selectedDeptId, onSelectDept, onAddDept, onEdi
         </div>
       ))}
       {onAddDept && (
-        <div className="dept-card add-dept-card" onClick={onAddDept}>
+        <div
+          className="dept-card add-dept-card"
+          role="button"
+          tabIndex={0}
+          onClick={onAddDept}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAddDept() } }}
+        >
           <div className="add-dept-icon">+</div>
         </div>
       )}

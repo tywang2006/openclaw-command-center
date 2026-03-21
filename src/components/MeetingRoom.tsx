@@ -434,7 +434,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     <div className="meeting-room-inline">
       <div className="meeting-room">
         <div className="meeting-header">
-          <h3>{t('meeting.title')}</h3>
+          <h2>{t('meeting.title')}</h2>
           {activeMeeting && (
             <span className="meeting-topic">{activeMeeting.topic}</span>
           )}
@@ -452,7 +452,14 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
             <button className="meeting-btn create" onClick={() => setShowCreate(true)}>{t('meeting.create')}</button>
             {meetings.length === 0 && <p className="meeting-empty">{t('meeting.empty')}</p>}
             {meetings.map(m => (
-              <div key={m.id} className="meeting-list-item" onClick={() => loadMeeting(m.id)}>
+              <div
+                key={m.id}
+                className="meeting-list-item"
+                role="button"
+                tabIndex={0}
+                onClick={() => loadMeeting(m.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadMeeting(m.id) } }}
+              >
                 <span className="meeting-list-topic">{m.topic}</span>
                 <span className="meeting-list-depts">{m.deptIds.map(getDeptName).join(', ')}</span>
                 <span className="meeting-list-count">{t('meeting.messages', { count: m.messageCount })}</span>
@@ -491,6 +498,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
               value={newTopic}
               onChange={e => setNewTopic(e.target.value)}
               placeholder={t('meeting.topic.placeholder')}
+              aria-label="会议主题"
             />
             <div className="meeting-dept-select">
               <p className="meeting-dept-label">{t('meeting.selectDepts')}</p>
@@ -519,7 +527,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
 
         {meetingEnded && activeMeeting && (
           <div className="meeting-ended-summary">
-            <h4>{t('meeting.endedTitle', { topic: activeMeeting.topic })}</h4>
+            <h3>{t('meeting.endedTitle', { topic: activeMeeting.topic })}</h3>
             <p className="meeting-summary-meta">
               {t('meeting.summary.participants')}: {activeMeeting.deptIds.map(getDeptName).join(', ')} |
               {t('meeting.summary.messages', { count: activeMeeting.messages.length })} |
@@ -534,7 +542,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
             {/* Action Items Section */}
             {activeMeeting.actionItems && activeMeeting.actionItems.length > 0 && (
               <div className="meeting-action-items">
-                <h5>{t('meeting.actionItems')}</h5>
+                <h4>{t('meeting.actionItems')}</h4>
                 {activeMeeting.actionItems.map((item, i) => (
                   <div key={i} className="meeting-action-item">
                     <span className={`action-priority ${item.priority}`}>
@@ -553,7 +561,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
             )}
 
             <div className="meeting-minutes">
-              <h5>{t('meeting.minutesTitle')}</h5>
+              <h4>{t('meeting.minutesTitle')}</h4>
               {activeMeeting.messages.map((msg, i) => (
                 <div key={i} className="meeting-minute-item">
                   <span className="meeting-minute-sender" style={{ color: getDeptColor(msg.deptId) }}>
@@ -673,6 +681,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                   value={negotiationProposal}
                   onChange={e => setNegotiationProposal(e.target.value)}
                   placeholder={t('meeting.negotiate.placeholder')}
+                  aria-label="协商提案"
                   rows={3}
                 />
                 <div className="meeting-negotiate-form-row">
@@ -680,6 +689,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                     {t('meeting.negotiate.rounds')}:
                     <input type="number" min="1" max="5" value={negotiationRounds}
                       onChange={e => setNegotiationRounds(parseInt(e.target.value) || 3)}
+                      aria-label="协商轮次"
                       style={{ width: '60px', marginLeft: '8px' }} />
                   </label>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -698,6 +708,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
                 onChange={e => setText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder={t('meeting.inputPlaceholder')}
+                aria-label="会议消息输入"
                 disabled={sending || negotiating}
               />
               {!showNegotiateForm && !negotiating && (

@@ -282,8 +282,9 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
             placeholder={t('memory.search.placeholder')}
+            aria-label="搜索记忆"
           />
-          <button className="mem-btn" onClick={handleSearch} disabled={searching || searchQuery.trim().length < 2}>
+          <button className="mem-btn" onClick={handleSearch} disabled={searching || searchQuery.trim().length < 2} aria-label="搜索">
             {searching ? '...' : (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.3" />
@@ -336,7 +337,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         <div className="memory-actions">
           {viewMode === 'persona' ? (
             !editingPersona ? (
-              <button className="mem-btn" onClick={() => { setEditingPersona(true); setPersonaEdit(personaContent || '') }} title={t('memory.edit')}>
+              <button className="mem-btn" onClick={() => { setEditingPersona(true); setPersonaEdit(personaContent || '') }} title={t('memory.edit')} aria-label="编辑">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.3" />
                 </svg>
@@ -354,7 +355,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
           ) : !editing ? (
             <>
               {driveConfigured && (
-                <button className="mem-btn" onClick={handleSaveToDrive} disabled={driveSaving} title={t('drive.save')}>
+                <button className="mem-btn" onClick={handleSaveToDrive} disabled={driveSaving} title={t('drive.save')} aria-label="保存到云盘">
                   {driveSaving ? t('drive.saving') : (
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                       <path d="M8 1v10M4 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -363,14 +364,14 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
                   )}
                 </button>
               )}
-              <button className="mem-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory() }} title={t('memory.history')}>
+              <button className="mem-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchHistory() }} title={t('memory.history')} aria-label="查看历史">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
                   <path d="M8 4v4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                   <path d="M3 8h1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                 </svg>
               </button>
-              <button className="mem-btn" onClick={handleEdit} title={t('memory.edit')}>
+              <button className="mem-btn" onClick={handleEdit} title={t('memory.edit')} aria-label="编辑">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.3" />
                 </svg>
@@ -393,7 +394,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
         <div className="memory-history-panel">
           <div className="memory-history-header">
             <h3>{t('memory.history.title')}</h3>
-            <button className="mem-btn" onClick={() => { setShowHistory(false); setSelectedVersion(null); setVersionContent(null) }}>{t('common.close')}</button>
+            <button className="mem-btn" onClick={() => { setShowHistory(false); setSelectedVersion(null); setVersionContent(null) }} aria-label="关闭">{t('common.close')}</button>
           </div>
           {historyLoading ? (
             <p className="memory-history-loading">{t('memory.history.loading')}</p>

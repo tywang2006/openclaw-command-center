@@ -76,7 +76,13 @@ export default function MobileNav({
     <>
       {/* Department picker overlay */}
       {showDeptPicker && (
-        <div className="mobile-dept-overlay" onClick={onToggleDeptPicker}>
+        <div
+          className="mobile-dept-overlay"
+          role="button"
+          tabIndex={0}
+          onClick={onToggleDeptPicker}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleDeptPicker() } }}
+        >
           <div className="mobile-dept-picker" onClick={(e) => e.stopPropagation()}>
             <div className="mobile-dept-list">
               {departments.map(dept => (

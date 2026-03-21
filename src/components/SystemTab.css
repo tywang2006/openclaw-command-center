@@ -410,7 +410,6 @@
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
-  outline: none;
 }
 
 .system-config-input:focus {

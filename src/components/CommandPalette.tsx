@@ -272,7 +272,13 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
   if (!open) return null
 
   return (
-    <div className="cmd-palette-overlay" onClick={onClose}>
+    <div
+      className="cmd-palette-overlay"
+      role="button"
+      tabIndex={0}
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose() } }}
+    >
       <div
         className="cmd-palette"
         onClick={e => e.stopPropagation()}

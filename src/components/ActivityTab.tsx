@@ -275,6 +275,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
 
   return (
     <div className="activity-tab-container">
+      <h2 className="sr-only">{t('app.tab.activity')}</h2>
       {renderReplayToolbar()}
       {renderReplayList()}
       <div className="activity-tab" ref={scrollRef}>

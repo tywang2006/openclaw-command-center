@@ -277,7 +277,6 @@
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 11px;
-  outline: none;
   box-sizing: border-box;
 }
 
@@ -569,7 +568,6 @@
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
-  outline: none;
   width: 100%;
   box-sizing: border-box;
 }
@@ -769,7 +767,6 @@
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
-  outline: none;
   width: 100%;
   box-sizing: border-box;
   cursor: pointer;
@@ -825,7 +822,6 @@
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 10px;
-  outline: none;
   min-width: 0;
 }
 

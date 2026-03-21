@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocale } from '../i18n/index';
 import { authedFetch } from '../utils/api';
 import './WorkflowEditor.css';
@@ -65,6 +65,8 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
   const [stepStatus, setStepStatus] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'form' | 'pipeline'>('form');
   const [statusMsg, setStatusMsg] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
   // Form state for creating/editing
   const [formName, setFormName] = useState('');
@@ -106,6 +108,30 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
 
     fetchData();
   }, []);
+
+  // Focus trap and Escape key handler
+  useEffect(() => {
+    // Save previous focus
+    previousActiveElement.current = document.activeElement as HTMLElement;
+
+    // Focus first focusable element
+    const timer = setTimeout(() => {
+      const firstFocusable = dialogRef.current?.querySelector<HTMLElement>('button, input, select, textarea');
+      firstFocusable?.focus();
+    }, 50);
+
+    // Escape key handler
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', handleEscape);
+      previousActiveElement.current?.focus();
+    };
+  }, [onClose]);
 
   // Handle creating new workflow
   const handleCreate = () => {
@@ -303,11 +329,11 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="workflow-overlay" onClick={onClose}>
-      <div className="workflow-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="workflow-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="workflow-modal-title">
+      <div className="workflow-modal" onClick={(e) => e.stopPropagation()} ref={dialogRef}>
         <div className="workflow-header">
-          <h2>{t('workflow.title')}</h2>
-          <button className="workflow-close" onClick={onClose}>×</button>
+          <h2 id="workflow-modal-title">{t('workflow.title')}</h2>
+          <button className="workflow-close" onClick={onClose} aria-label="Close">×</button>
         </div>
 
         {statusMsg && (
@@ -444,6 +470,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                       onChange={(e) => setFormName(e.target.value)}
                       placeholder={t('workflow.name.placeholder')}
                       className="workflow-input"
+                      aria-label="工作流名称"
                     />
                   </div>
                   <div className="workflow-view-toggle">
@@ -556,6 +583,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                                   value={step.delayMs / 1000}
                                   onChange={(e) => handleStepChange(idx, 'delayMs', e.target.value)}
                                   className="workflow-input"
+                                  aria-label="延迟时间（秒）"
                                 />
                               </div>
                             </div>
@@ -568,6 +596,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                                 placeholder={t('workflow.step.message.placeholder')}
                                 className="workflow-textarea"
                                 rows={3}
+                                aria-label="步骤消息"
                               />
                             </div>
 
@@ -600,6 +629,7 @@ const WorkflowEditor: React.FC<WorkflowEditorProps> = ({ onClose }) => {
                                       onChange={(e) => handleConditionChange(idx, 'value', e.target.value)}
                                       placeholder={t('workflow.condition.value.placeholder')}
                                       className="workflow-input"
+                                      aria-label="条件值"
                                     />
                                   </div>
                                   <div className="condition-row">

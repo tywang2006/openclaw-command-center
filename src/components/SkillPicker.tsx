@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocale } from '../i18n/index'
 import { authedFetch } from '../utils/api'
 import './SkillPicker.css'
@@ -30,6 +30,8 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
   const [detailLoading, setDetailLoading] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const { t } = useLocale()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -95,6 +97,32 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
     setExecuting(null)
   }, [selectedDeptId, executing, onExecuted, onClose, t])
 
+  // Focus trap and Escape key handler
+  useEffect(() => {
+    if (!open) return
+
+    // Save previous focus
+    previousActiveElement.current = document.activeElement as HTMLElement
+
+    // Focus first input
+    const timer = setTimeout(() => {
+      const firstInput = dialogRef.current?.querySelector<HTMLElement>('input')
+      firstInput?.focus()
+    }, 50)
+
+    // Escape key handler
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('keydown', handleEscape)
+      previousActiveElement.current?.focus()
+    }
+  }, [open, onClose])
+
   if (!open) return null
 
   const filtered = filter
@@ -106,12 +134,12 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
     : skills
 
   return (
-    <div className="skill-picker-overlay" onClick={onClose}>
-      <div className="skill-picker" onClick={e => e.stopPropagation()}>
+    <div className="skill-picker-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="skill-picker-title">
+      <div className="skill-picker" onClick={e => e.stopPropagation()} ref={dialogRef}>
         <div className="skill-picker-header">
-          <h3>{t('skill.picker.title')}</h3>
+          <h3 id="skill-picker-title">{t('skill.picker.title')}</h3>
           <span className="skill-picker-target">{deptName}</span>
-          <button className="skill-picker-close" onClick={onClose}>&times;</button>
+          <button className="skill-picker-close" onClick={onClose} aria-label="Close">&times;</button>
         </div>
 
         <div className="skill-picker-search">
@@ -137,7 +165,13 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
           ) : (
             filtered.map(skill => (
               <div key={skill.slug} className={`skill-card ${expandedSlug === skill.slug ? 'expanded' : ''}`}>
-                <div className="skill-card-header" onClick={() => handleExpand(skill.slug)}>
+                <div
+                  className="skill-card-header"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleExpand(skill.slug)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(skill.slug) } }}
+                >
                   <div className="skill-card-info">
                     <span className="skill-card-name">{skill.name}</span>
                     {skill.version && <span className="skill-card-ver">v{skill.version}</span>}

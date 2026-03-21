@@ -106,6 +106,7 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
 
   return (
     <div className="bulletin-tab">
+      <h2 className="sr-only">{t('app.tab.bulletin')}</h2>
       {/* Broadcast input */}
       <div className="broadcast-bar">
         <textarea
@@ -116,11 +117,13 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
           placeholder={t('bulletin.broadcast.placeholder')}
           rows={1}
           disabled={broadcasting}
+          aria-label="广播消息"
         />
         <button
           className="broadcast-btn"
           onClick={broadcast}
           disabled={broadcasting || !command.trim()}
+          aria-label="发送广播"
         >
           {broadcasting ? '...' : <SendIcon size={14} color="#ff6b35" />}
         </button>
@@ -142,6 +145,7 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
               className="clear-responses-btn"
               onClick={() => setResponses([])}
               title="清除结果"
+              aria-label="清除结果"
             >
               清除
             </button>

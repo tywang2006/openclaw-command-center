@@ -88,7 +88,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
     return (
       <div className="login-overlay">
         <form className="login-panel" onSubmit={handleSetup}>
-          <div className="login-title">ChaoClaw</div>
+          <h1 className="login-title">ChaoClaw</h1>
           <div className="login-subtitle">{t('login.setup.title')}</div>
           <input
             type="password"
@@ -96,6 +96,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
             value={password}
             onChange={e => setPassword(e.target.value)}
             placeholder={t('login.setup.password')}
+            aria-label="设置密码"
             autoFocus
             disabled={loading}
           />
@@ -105,6 +106,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
             value={confirm}
             onChange={e => setConfirm(e.target.value)}
             placeholder={t('login.setup.confirm')}
+            aria-label="确认密码"
             disabled={loading}
           />
           <button className="login-btn" type="submit" disabled={loading || !password.trim() || !confirm.trim()}>
@@ -119,7 +121,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
   return (
     <div className="login-overlay">
       <form className="login-panel" onSubmit={handleLogin}>
-        <div className="login-title">ChaoClaw</div>
+        <h1 className="login-title">ChaoClaw</h1>
         <div className="login-subtitle">Command Center</div>
         <input
           type="password"
@@ -127,6 +129,7 @@ export default function LoginPanel({ onLogin }: LoginPanelProps) {
           value={password}
           onChange={e => setPassword(e.target.value)}
           placeholder={t('login.password')}
+          aria-label="密码"
           autoFocus
           disabled={loading}
         />

@@ -60,7 +60,6 @@
   box-sizing: border-box;
 }
 .dept-field input:focus {
-  outline: none;
   border-color: var(--accent-color, #00d4aa);
 }
 .icon-grid {
@@ -241,7 +240,6 @@
   box-sizing: border-box;
 }
 .dept-skill-search:focus {
-  outline: none;
   border-color: var(--accent-color, #00d4aa);
 }
 .dept-skill-list {

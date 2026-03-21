@@ -171,7 +171,6 @@
   font-family: var(--font-ui);
   font-size: 12px;
   border-radius: 0;
-  outline: none;
   transition: border-color var(--transition-fast);
 }
 
@@ -505,7 +504,6 @@
   font-family: var(--font-ui);
   font-size: 13px;
   resize: none;
-  outline: none;
   min-height: 38px;
   max-height: 120px;
   border-radius: 0;
@@ -680,7 +678,6 @@
   font-family: var(--font-ui);
   font-size: 12px;
   border-radius: 0;
-  outline: none;
   transition: border-color var(--transition-fast);
 }
 
@@ -698,7 +695,6 @@
   font-family: var(--font-mono);
   font-size: 12px;
   border-radius: 0;
-  outline: none;
   text-align: center;
   transition: border-color var(--transition-fast);
 }
@@ -933,7 +929,6 @@
   font-family: var(--font-mono);
   font-size: 12px;
   border-radius: 0;
-  outline: none;
   width: 100%;
 }
 
@@ -1275,7 +1270,6 @@
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 12px;
-  outline: none;
 }
 .chat-email-input:focus {
   border-color: var(--accent-color);
@@ -1287,7 +1281,6 @@
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 12px;
-  outline: none;
   resize: vertical;
   min-height: 50px;
 }

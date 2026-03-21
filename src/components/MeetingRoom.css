@@ -194,7 +194,6 @@
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 13px;
-  outline: none;
 }
 .meeting-input:focus { border-color: var(--accent-color); }
 
@@ -475,7 +474,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  outline: none;
 }
 
 /* Negotiation Vote Cards */

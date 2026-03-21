@@ -164,6 +164,7 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
             className="locale-toggle"
             onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
             title={t('app.locale.toggle')}
+            aria-label="切换语言"
           >
             {locale === 'zh' ? 'EN' : '中'}
           </button>
@@ -171,6 +172,7 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
             className="theme-toggle"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             title={t('app.theme.toggle')}
+            aria-label="切换主题"
           >
             {theme === 'dark' ? (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -183,7 +185,7 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
               </svg>
             )}
           </button>
-          <button className="logout-btn" onClick={onLogout} title={t('app.logout')}>
+          <button className="logout-btn" onClick={onLogout} title={t('app.logout')} aria-label="退出登录">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M6 2H3v12h3M11 4l4 4-4 4M7 8h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -191,7 +193,7 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
         </div>
       </header>
       <div className="ops-body">
-        <aside className="ops-menu">
+        <nav className="ops-menu" aria-label="运维控制台模块">
           {MODULES.map(mod => (
             <button
               key={mod.id}
@@ -202,8 +204,8 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
               <span>{t(mod.labelKey)}</span>
             </button>
           ))}
-        </aside>
-        <main className="ops-content">
+        </nav>
+        <div className="ops-content">
           <ErrorBoundary resetKey={activeModule}>
             <Suspense fallback={<TabFallback />}>
               {activeModule === 'dashboard' && (
@@ -225,7 +227,7 @@ export default function OpsConsolePage({ t, locale, setLocale, theme, setTheme, 
               )}
             </Suspense>
           </ErrorBoundary>
-        </main>
+        </div>
       </div>
     </div>
   )

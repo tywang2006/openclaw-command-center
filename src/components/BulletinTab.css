@@ -31,7 +31,6 @@
   font-family: var(--font-ui);
   font-size: 13px;
   resize: none;
-  outline: none;
   min-height: 36px;
   max-height: 80px;
   border-radius: 0;

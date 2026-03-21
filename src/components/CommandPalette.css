@@ -35,7 +35,6 @@
   border: none;
   color: var(--text-primary);
   font-size: 15px;
-  outline: none;
   font-family: inherit;
 }
 .cmd-palette-input::placeholder { color: var(--text-muted); }

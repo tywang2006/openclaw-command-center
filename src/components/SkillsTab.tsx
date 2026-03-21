@@ -152,7 +152,7 @@ export default function SkillsTab() {
   return (
     <div className="skills-tab">
       <div className="skills-header">
-        <span className="skills-header-title">{t('app.tab.skills')}</span>
+        <h2 className="skills-header-title">{t('app.tab.skills')}</h2>
         <div className="skills-header-actions">
           <button className="skills-header-btn" onClick={() => setShowInstall(true)}>
             {t('skills.install')}
@@ -169,6 +169,7 @@ export default function SkillsTab() {
           placeholder={t('skills.search.placeholder')}
           value={search}
           onChange={e => setSearch(e.target.value)}
+          aria-label="搜索技能"
         />
       </div>
 
@@ -189,7 +190,10 @@ export default function SkillsTab() {
               <div
                 key={skill.slug}
                 className={`skill-card ${selected === skill.slug ? 'selected' : ''}`}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelected(selected === skill.slug ? null : skill.slug)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(selected === skill.slug ? null : skill.slug) } }}
               >
                 <div className="skill-card-name">{skill.name}</div>
                 {skill.summary && <div className="skill-card-summary">{skill.summary}</div>}
@@ -232,21 +236,22 @@ export default function SkillsTab() {
                 <>
                   <div className="skills-detail-field">
                     <label>{t('skills.field.name')}</label>
-                    <input value={editFields.name} onChange={e => setEditFields(f => ({ ...f, name: e.target.value }))} />
+                    <input value={editFields.name} onChange={e => setEditFields(f => ({ ...f, name: e.target.value }))} aria-label="技能名称" />
                   </div>
                   <div className="skills-detail-field">
                     <label>{t('skills.field.summary')}</label>
-                    <input value={editFields.summary} onChange={e => setEditFields(f => ({ ...f, summary: e.target.value }))} />
+                    <input value={editFields.summary} onChange={e => setEditFields(f => ({ ...f, summary: e.target.value }))} aria-label="技能摘要" />
                   </div>
                   <div className="skills-detail-field">
                     <label>{t('skills.field.tags')}</label>
-                    <input value={editFields.tags} onChange={e => setEditFields(f => ({ ...f, tags: e.target.value }))} />
+                    <input value={editFields.tags} onChange={e => setEditFields(f => ({ ...f, tags: e.target.value }))} aria-label="技能标签" />
                   </div>
                   <div className="skills-detail-field">
                     <label>{t('skills.field.content')}</label>
                     <textarea
                       value={editFields.content}
                       onChange={e => setEditFields(f => ({ ...f, content: e.target.value }))}
+                      aria-label="技能内容"
                     />
                   </div>
                   <div className="skills-detail-footer">
@@ -363,11 +368,17 @@ function CreateModal({ t, onClose, onCreated }: {
   }
 
   return (
-    <div className="skills-modal-overlay" onClick={onClose}>
+    <div
+      className="skills-modal-overlay"
+      role="button"
+      tabIndex={0}
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose() } }}
+    >
       <div className="skills-modal" onClick={e => e.stopPropagation()}>
         <div className="skills-modal-header">
           <h3>{t('skills.create')}</h3>
-          <button className="skills-modal-close" onClick={onClose}>&times;</button>
+          <button className="skills-modal-close" onClick={onClose} aria-label="关闭">&times;</button>
         </div>
         <div className="skills-modal-body">
           <div className="skills-modal-field">
@@ -376,23 +387,24 @@ function CreateModal({ t, onClose, onCreated }: {
               value={slug}
               onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
               placeholder={t('skills.create.slug.placeholder')}
+              aria-label="技能标识符"
             />
           </div>
           <div className="skills-modal-field">
             <label>{t('skills.field.name')}</label>
-            <input value={name} onChange={e => setName(e.target.value)} />
+            <input value={name} onChange={e => setName(e.target.value)} aria-label="技能名称" />
           </div>
           <div className="skills-modal-field">
             <label>{t('skills.field.summary')}</label>
-            <input value={summary} onChange={e => setSummary(e.target.value)} />
+            <input value={summary} onChange={e => setSummary(e.target.value)} aria-label="技能摘要" />
           </div>
           <div className="skills-modal-field">
             <label>{t('skills.field.tags')}</label>
-            <input value={tags} onChange={e => setTags(e.target.value)} />
+            <input value={tags} onChange={e => setTags(e.target.value)} aria-label="技能标签" />
           </div>
           <div className="skills-modal-field">
             <label>{t('skills.field.content')}</label>
-            <textarea value={content} onChange={e => setContent(e.target.value)} />
+            <textarea value={content} onChange={e => setContent(e.target.value)} aria-label="技能内容" />
           </div>
           {error && <div className="skills-status error">{error}</div>}
         </div>
@@ -441,11 +453,17 @@ function InstallModal({ t, onClose, onInstalled }: {
   }
 
   return (
-    <div className="skills-modal-overlay" onClick={onClose}>
+    <div
+      className="skills-modal-overlay"
+      role="button"
+      tabIndex={0}
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose() } }}
+    >
       <div className="skills-modal" onClick={e => e.stopPropagation()}>
         <div className="skills-modal-header">
           <h3>{t('skills.install')}</h3>
-          <button className="skills-modal-close" onClick={onClose}>&times;</button>
+          <button className="skills-modal-close" onClick={onClose} aria-label="关闭">&times;</button>
         </div>
         <div className="skills-modal-body">
           <div className="skills-modal-field">
@@ -454,6 +472,7 @@ function InstallModal({ t, onClose, onInstalled }: {
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder={t('skills.install.url.placeholder')}
+              aria-label="技能安装URL"
             />
           </div>
           {error && <div className="skills-status error">{error}</div>}

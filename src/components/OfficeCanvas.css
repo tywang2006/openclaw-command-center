@@ -75,7 +75,6 @@
   appearance: none;
   background: var(--border-color);
   border-radius: 0;
-  outline: none;
   cursor: pointer;
 }
 

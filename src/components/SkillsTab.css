@@ -68,7 +68,6 @@
   color: var(--text-muted);
 }
 .skills-search input:focus {
-  outline: none;
   border-color: var(--accent-color);
 }
 
@@ -203,7 +202,6 @@
 }
 .skills-detail-field input:focus,
 .skills-detail-field textarea:focus {
-  outline: none;
   border-color: var(--accent-color);
 }
 

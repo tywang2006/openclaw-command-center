@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense, type RefObject } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAgentStateContext } from '../contexts/AgentStateContext'
 import { useMobile, useSwipeGesture } from '../hooks/useMobile'
@@ -76,6 +76,8 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
   const [editDeptData, setEditDeptData] = useState<{ id: string; name: string; agent?: string; icon: string; color: string; hue: number; telegramTopicId?: number; order: number } | null>(null)
   const [deleteDeptId, setDeleteDeptId] = useState<string | null>(null)
   const [showPalette, setShowPalette] = useState(false)
+  const deleteDialogRef = useRef<HTMLDivElement>(null)
+  const deleteTriggerRef = useRef<HTMLElement | null>(null)
 
   interface EditDeptParam {
     id: string
@@ -117,6 +119,32 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
     }
     setDeleteDeptId(null)
   }, [deleteDeptId, agentState.selectedDeptId, agentState.setSelectedDeptId])
+
+  // Delete modal focus trap and escape handler
+  useEffect(() => {
+    if (!deleteDeptId) return
+
+    // Save previous focus
+    deleteTriggerRef.current = document.activeElement as HTMLElement
+
+    // Focus first button
+    const timer = setTimeout(() => {
+      const firstBtn = deleteDialogRef.current?.querySelector<HTMLElement>('button')
+      firstBtn?.focus()
+    }, 50)
+
+    // Escape key handler
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDeleteDeptId(null)
+    }
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('keydown', handleEscape)
+      deleteTriggerRef.current?.focus()
+    }
+  }, [deleteDeptId])
 
   const handleCloseDeptForm = useCallback(() => {
     setShowDeptForm(false)
@@ -365,7 +393,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
     return (
       <div className="app mobile" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         <header className="mobile-topbar">
-          <button className="mobile-hamburger" onClick={() => setDrawerOpen(true)}>
+          <button className="mobile-hamburger" onClick={() => setDrawerOpen(true)} aria-label="打开菜单">
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
               <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
@@ -420,6 +448,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
               className={`notify-btn ${notifyPrefs.enabled ? 'active' : ''}`}
               onClick={() => setShowNotifyDropdown(!showNotifyDropdown)}
               title={t('notify.title')}
+              aria-label="通知设置"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <path d="M8 1.5a4 4 0 0 0-4 4v3l-1.5 2h11L12 8.5v-3a4 4 0 0 0-4-4z" stroke="currentColor" strokeWidth="1.3" />
@@ -455,6 +484,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
             className="locale-toggle"
             onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
             title={t('app.locale.toggle')}
+            aria-label="切换语言"
           >
             {locale === 'zh' ? 'EN' : '中'}
           </button>
@@ -462,6 +492,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
             className="theme-toggle"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             title={t('app.theme.toggle')}
+            aria-label="切换主题"
           >
             {theme === 'dark' ? (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -474,7 +505,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
               </svg>
             )}
           </button>
-          <button className="fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? t('app.fullscreen.exit') : t('app.fullscreen.enter')}>
+          <button className="fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? t('app.fullscreen.exit') : t('app.fullscreen.enter')} aria-label={isFullscreen ? "退出全屏" : "进入全屏"}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               {isFullscreen ? (
                 <path d="M5 1v4H1M11 1v4h4M5 15v-4H1M11 15v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -483,7 +514,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
               )}
             </svg>
           </button>
-          <button className="logout-btn" onClick={onLogout} title={t('app.logout')}>
+          <button className="logout-btn" onClick={onLogout} title={t('app.logout')} aria-label="退出登录">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M6 2H3v12h3M11 4l4 4-4 4M7 8h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -512,7 +543,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
             />
           </Suspense>
         </div>
-        <button className="panel-toggle" onClick={() => setPanelCollapsed(!panelCollapsed)} title={panelCollapsed ? t('app.panel.expand') : t('app.panel.collapse')}>
+        <button className="panel-toggle" onClick={() => setPanelCollapsed(!panelCollapsed)} title={panelCollapsed ? t('app.panel.expand') : t('app.panel.collapse')} aria-label={panelCollapsed ? "展开面板" : "收起面板"}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d={panelCollapsed ? 'M4 1l5 5-5 5' : 'M8 1l-5 5 5 5'} stroke="#a0a0b0" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -547,11 +578,11 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
       <DeptFormModal open={showDeptForm} onClose={handleCloseDeptForm} editDept={editDeptData} />
 
       {deleteDeptId && (
-        <div className="dept-modal-overlay" onClick={() => setDeleteDeptId(null)}>
-          <div className="dept-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
+        <div className="dept-modal-overlay" onClick={() => setDeleteDeptId(null)} role="dialog" aria-modal="true" aria-labelledby="delete-dept-title">
+          <div className="dept-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }} ref={deleteDialogRef}>
             <div className="dept-modal-header">
-              <h3>{t('dept.delete')}</h3>
-              <button className="dept-modal-close" onClick={() => setDeleteDeptId(null)}>&times;</button>
+              <h3 id="delete-dept-title">{t('dept.delete')}</h3>
+              <button className="dept-modal-close" onClick={() => setDeleteDeptId(null)} aria-label="Close">&times;</button>
             </div>
             <div className="dept-modal-body">
               <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
