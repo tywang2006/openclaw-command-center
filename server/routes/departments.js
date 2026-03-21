@@ -587,7 +587,7 @@ router.put('/departments/:id', async (req, res) => {
         }
       }
 
-      recordAudit({ action: 'dept:update', target: id, details: req.body, ip: req.ip });
+      recordAudit({ action: 'dept:update', target: id, details: { fields: Object.keys(req.body) }, ip: req.ip });
       res.json({ success: true, department: { id, ...config.departments[id] } });
     });
   } catch (error) {

@@ -105,7 +105,7 @@ export async function recordAudit({ action, target, deptId = null, details = nul
   // Async file I/O to avoid blocking event loop
   try {
     await rotateAuditFile();
-    await fsPromises.appendFile(AUDIT_FILE, JSON.stringify(entry) + '\n', 'utf8');
+    await fsPromises.appendFile(AUDIT_FILE, JSON.stringify(entry) + '\n', { encoding: 'utf8', mode: 0o600 });
   } catch (err) {
     log.error('Write failed: ' + err.message);
   }

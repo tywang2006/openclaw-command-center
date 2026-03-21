@@ -256,7 +256,7 @@ router.post('/email/send', async (req, res) => {
       const info = await transporter.sendMail(mailOptions);
       const recipientCount = [to, cc, bcc].filter(Boolean).join(',').split(',').length;
       log.info(`Sent email to ${recipientCount} recipient(s): ${info.messageId}`);
-      recordAudit({ action: 'email:send', target: to, details: { subject, cc, bcc, recipientCount }, ip: req.ip });
+      recordAudit({ action: 'email:send', target: to, details: { subject, recipientCount }, ip: req.ip });
       res.json({ success: true, messageId: info.messageId });
     } catch (error) {
       log.error(`Failed to send email: ${error.message}`);
