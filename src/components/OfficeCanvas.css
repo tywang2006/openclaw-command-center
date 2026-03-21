@@ -14,6 +14,12 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* Prevent double-tap zoom and enable smooth touch panning */
+  touch-action: manipulation;
+  /* Disable text selection during canvas interactions */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* ---- Zoom controls (pixel style) ---- */
@@ -108,7 +114,60 @@
 }
 
 /* ---- Mobile Responsive ---- */
-@media (max-width: 768px) {
+
+/* Small phones (portrait) */
+@media (max-width: 480px) {
+  .office-canvas-container {
+    /* Ensure canvas takes full available height on small screens */
+    min-height: 300px;
+  }
+
+  .zoom-controls {
+    bottom: 4px;
+    right: 4px;
+    padding: 3px 5px;
+    gap: 3px;
+    /* Slightly more compact on small screens */
+    background: rgba(10, 10, 22, 0.98);
+  }
+
+  .zoom-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    /* Larger touch targets for small phones */
+    border-width: 1px;
+  }
+
+  .zoom-btn:active:not(:disabled) {
+    opacity: 0.7;
+    transform: scale(0.92);
+    transition: transform 60ms ease, opacity 60ms ease;
+  }
+
+  .zoom-slider {
+    width: 50px;
+    height: 8px;
+  }
+
+  .zoom-slider::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .zoom-label {
+    font-size: 11px;
+    min-width: 28px;
+  }
+}
+
+/* Medium phones and phablets */
+@media (min-width: 481px) and (max-width: 768px) {
   .zoom-controls {
     bottom: 6px;
     right: 6px;
@@ -145,5 +204,72 @@
 
   .zoom-label {
     font-size: 12px;
+  }
+}
+
+/* Tablets (portrait and landscape) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .zoom-controls {
+    bottom: 8px;
+    right: 8px;
+    padding: 4px 7px;
+    gap: 5px;
+  }
+
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .zoom-btn:active:not(:disabled) {
+    opacity: 0.8;
+    transform: scale(0.95);
+    transition: transform 80ms ease, opacity 80ms ease;
+  }
+
+  .zoom-slider {
+    width: 65px;
+  }
+
+  .zoom-slider::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* Landscape orientation optimizations for mobile devices */
+@media (max-width: 896px) and (orientation: landscape) {
+  .zoom-controls {
+    /* In landscape, move controls slightly higher to avoid hand blocking */
+    bottom: 8px;
+    right: 8px;
+    padding: 3px 5px;
+  }
+
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .zoom-slider {
+    width: 55px;
+  }
+}
+
+/* High-DPI mobile screens - prevent excessive memory usage */
+@media (max-width: 768px) and (-webkit-min-device-pixel-ratio: 3),
+       (max-width: 768px) and (min-resolution: 3dppx) {
+  /* Canvas resolution is handled in TypeScript via devicePixelRatio capping */
+  /* This media query is here for future CSS-based optimizations if needed */
+  .office-canvas-container {
+    /* Smoother rendering on very high DPI screens */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
   }
 }

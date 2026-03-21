@@ -3,6 +3,26 @@
    Pixel-art themed retro dashboard
    ============================================ */
 
+/* ---- Skip to Content (WCAG 2.1) ---- */
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent-color);
+  color: var(--bg-primary);
+  padding: 8px 16px;
+  z-index: 10000;
+  transition: top 0.2s;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+}
+
+.skip-to-content:focus {
+  top: 0;
+}
+
 /* ---- Sidebar + Main wrapper ---- */
 .app-with-sidebar {
   display: flex;
@@ -357,6 +377,7 @@
 .right-tab.active {
   color: var(--accent-color);
   border-bottom-color: var(--accent-color);
+  background: rgba(0, 212, 170, 0.06);
 }
 
 .right-tab-content {
@@ -611,8 +632,8 @@
   .logout-btn,
   .fullscreen-btn,
   .notify-btn {
-    width: 20px;
-    height: 20px;
+    width: 44px;
+    height: 44px;
     font-size: 9px;
   }
 
@@ -626,7 +647,8 @@
 
   .right-tab {
     font-size: 8px;
-    padding: 4px 1px;
+    padding: 14px 1px;
+    min-height: 44px;
   }
 
   .right-tab span {

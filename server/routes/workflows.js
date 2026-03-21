@@ -13,7 +13,21 @@ const router = express.Router();
 
 const WORKFLOWS_FILE = path.join(OPENCLAW_HOME, 'cron', 'workflows.json');
 
-function readWorkflows() {
+// Async version for better performance
+async function readWorkflows() {
+  try {
+    if (fs.existsSync(WORKFLOWS_FILE)) {
+      const content = await fs.promises.readFile(WORKFLOWS_FILE, 'utf8');
+      return JSON.parse(content);
+    }
+    return { workflows: [] };
+  } catch {
+    return { workflows: [] };
+  }
+}
+
+// Sync version for simple GET endpoints (no lock needed)
+function readWorkflowsSync() {
   try {
     if (fs.existsSync(WORKFLOWS_FILE)) {
       return JSON.parse(fs.readFileSync(WORKFLOWS_FILE, 'utf8'));
@@ -87,7 +101,7 @@ router.get('/templates', (req, res) => {
  */
 router.get('/', (req, res) => {
   try {
-    const data = readWorkflows();
+    const data = readWorkflowsSync();
     res.json({ workflows: data.workflows, count: data.workflows.length });
   } catch (err) {
     log.error(`GET / error: ${err.message}`);
@@ -101,7 +115,7 @@ router.get('/', (req, res) => {
  */
 router.get('/:id', (req, res) => {
   try {
-    const data = readWorkflows();
+    const data = readWorkflowsSync();
     const wf = data.workflows.find(w => w.id === req.params.id);
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
     res.json({ workflow: wf });
@@ -124,24 +138,43 @@ router.post('/', async (req, res) => {
       return res.status(403).json({ error: 'AI agents cannot create workflows. Use the UI or ask a human operator.' });
     }
 
-    await withFileLock(WORKFLOWS_FILE, async () => {
-      const { name, steps } = req.body;
+    const { name, steps } = req.body;
 
-      if (!name || !name.trim()) {
-        return res.status(400).json({ error: 'Workflow name is required' });
-      }
-      if (!Array.isArray(steps) || steps.length === 0) {
-        return res.status(400).json({ error: 'At least one step is required' });
-      }
+    // Validate OUTSIDE the lock (no I/O needed)
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Workflow name is required' });
+    }
+    if (typeof name !== 'string' || name.length > 200) {
+      return res.status(400).json({ error: 'Workflow name must be 200 characters or less' });
+    }
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return res.status(400).json({ error: 'At least one step is required' });
+    }
+    if (steps.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 steps per workflow' });
+    }
 
-      for (let i = 0; i < steps.length; i++) {
-        const s = steps[i];
-        if (!s.deptId || !s.message) {
-          return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      if (!s.deptId || !s.message) {
+        return res.status(400).json({ error: `Step ${i + 1}: deptId and message are required` });
+      }
+      if (typeof s.message !== 'string' || s.message.length > 5000) {
+        return res.status(400).json({ error: `Step ${i + 1}: message must be 5000 characters or less` });
+      }
+      if (typeof s.deptId !== 'string' || s.deptId.length > 50) {
+        return res.status(400).json({ error: `Step ${i + 1}: invalid deptId` });
+      }
+      if (s.delayMs !== undefined) {
+        const delay = parseInt(s.delayMs);
+        if (!Number.isFinite(delay) || delay < 0 || delay > 300000) {
+          return res.status(400).json({ error: `Step ${i + 1}: delayMs must be 0-300000` });
         }
       }
+    }
 
-      const data = readWorkflows();
+    await withFileLock(WORKFLOWS_FILE, async () => {
+      const data = await readWorkflows();
       const now = Date.now();
       const workflow = {
         id: randomUUID(),
@@ -178,22 +211,26 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
+    const { name, steps } = req.body;
+
+    // Validate OUTSIDE the lock
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: 'Name cannot be empty' });
+    }
+    if (steps !== undefined && (!Array.isArray(steps) || steps.length === 0)) {
+      return res.status(400).json({ error: 'At least one step is required' });
+    }
+
     await withFileLock(WORKFLOWS_FILE, async () => {
-      const data = readWorkflows();
+      const data = await readWorkflows();
       const wf = data.workflows.find(w => w.id === req.params.id);
       if (!wf) return res.status(404).json({ error: 'Workflow not found' });
 
-      const { name, steps } = req.body;
-
       if (name !== undefined) {
-        if (!name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
         wf.name = name.trim();
       }
 
       if (steps !== undefined) {
-        if (!Array.isArray(steps) || steps.length === 0) {
-          return res.status(400).json({ error: 'At least one step is required' });
-        }
         wf.steps = steps.map(s => ({
           deptId: s.deptId,
           message: (s.message || '').trim(),
@@ -228,7 +265,7 @@ router.delete('/:id', async (req, res) => {
     }
 
     await withFileLock(WORKFLOWS_FILE, async () => {
-      const data = readWorkflows();
+      const data = await readWorkflows();
       const idx = data.workflows.findIndex(w => w.id === req.params.id);
       if (idx === -1) return res.status(404).json({ error: 'Workflow not found' });
 
@@ -254,16 +291,15 @@ router.delete('/:id', async (req, res) => {
  */
 router.post('/:id/run', async (req, res) => {
   try {
-    // Read and validate inside lock, then release it for execution
-    const wf = await withFileLock(WORKFLOWS_FILE, async () => {
-      const data = readWorkflows();
-      const found = data.workflows.find(w => w.id === req.params.id);
-      if (!found) return null;
-      // Return a snapshot (steps may contain conditions)
-      return JSON.parse(JSON.stringify(found));
-    });
+    // Read workflow OUTSIDE the lock, then execute without holding lock
+    const data = await readWorkflows();
+    const found = data.workflows.find(w => w.id === req.params.id);
+    if (!found) {
+      return res.status(404).json({ error: 'Workflow not found' });
+    }
 
-    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+    // Create a snapshot (steps may contain conditions)
+    const wf = JSON.parse(JSON.stringify(found));
 
     log.info(`Running "${wf.name}" (${wf.steps.length} steps)`);
     const results = [];

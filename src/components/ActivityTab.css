@@ -135,6 +135,13 @@
   font-family: var(--font-mono);
 }
 
+.replay-limit-warning {
+  font-size: 11px;
+  color: #ffa500;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
 /* ---- Light Theme Overrides ---- */
 /* Note: replay-btn.recording hardcoded red glow is kept as-is for light theme */
 

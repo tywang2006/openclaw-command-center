@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DeptIcon, SendIcon } from './Icons'
 import { useToast } from './Toast'
 import { useLocale } from '../i18n/index'
@@ -15,12 +15,58 @@ interface BulletinTabProps {
   bulletin: string
 }
 
+const DRAFT_KEY = 'bulletin-draft-command'
+
 export default function BulletinTab({ bulletin }: BulletinTabProps) {
-  const [command, setCommand] = useState('')
+  const [bulletinContent, setBulletinContent] = useState(bulletin)
+  const [command, setCommand] = useState(() => {
+    // Restore draft from localStorage on mount
+    try {
+      return localStorage.getItem(DRAFT_KEY) || ''
+    } catch {
+      return ''
+    }
+  })
   const [broadcasting, setBroadcasting] = useState(false)
   const [responses, setResponses] = useState<BroadcastResponse[]>([])
   const { showToast } = useToast()
   const { t } = useLocale()
+  const mountedRef = useRef(true)
+
+  // Auto-load bulletin content on mount
+  useEffect(() => {
+    let cancelled = false
+
+    authedFetch('/api/bulletin')
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled || !mountedRef.current) return
+        if (d.content !== undefined) {
+          setBulletinContent(d.content)
+        }
+      })
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn('Fetch bulletin failed:', err)
+      })
+
+    return () => {
+      cancelled = true
+      mountedRef.current = false
+    }
+  }, [])
+
+  // Save draft to localStorage whenever command changes
+  useEffect(() => {
+    try {
+      if (command) {
+        localStorage.setItem(DRAFT_KEY, command)
+      } else {
+        localStorage.removeItem(DRAFT_KEY)
+      }
+    } catch {
+      // localStorage might be disabled
+    }
+  }, [command])
 
   const broadcast = async () => {
     if (!command.trim() || broadcasting) return
@@ -115,8 +161,8 @@ export default function BulletinTab({ bulletin }: BulletinTabProps) {
       {/* Bulletin content */}
       {!responses.length && !broadcasting && (
         <div className="bulletin-content">
-          {bulletin ? (
-            <pre className="markdown-content" style={{ whiteSpace: 'pre-wrap' }}>{bulletin}</pre>
+          {bulletinContent ? (
+            <pre className="markdown-content" style={{ whiteSpace: 'pre-wrap' }}>{bulletinContent}</pre>
           ) : (
             <div className="bulletin-empty">
               <p>{t('bulletin.empty.title')}</p>

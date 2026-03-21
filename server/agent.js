@@ -5,8 +5,15 @@ import { recordChat, recordTokens } from './routes/metrics.js';
 import { BASE_PATH, safeWriteFileSync } from './utils.js';
 import { withFileLock } from './file-lock.js';
 import { createLogger } from './logger.js';
+import { safeBroadcast } from './broadcast.js';
 
 const log = createLogger('Agent');
+
+// WebSocket server for broadcasting sub-agent updates
+let _wss = null;
+export function setWss(wss) {
+  _wss = wss;
+}
 
 // ---- Config / mappings ----
 
@@ -354,6 +361,19 @@ ${tools}`);
         parts.push(ownSubs.join('\n'));
       }
     }
+  }
+
+  // Department memory (capped at 4KB)
+  const memory = loadMemory(deptId);
+  if (memory && memory.trim()) {
+    let memTrimmed = memory.trim();
+    if (Buffer.byteLength(memTrimmed, 'utf8') > 4096) {
+      memTrimmed = memTrimmed.slice(0, 4000);
+      const nl = memTrimmed.lastIndexOf('\n');
+      if (nl > 0) memTrimmed = memTrimmed.slice(0, nl);
+      memTrimmed += '\n...(truncated)';
+    }
+    parts.push(`## 部门记忆\n${memTrimmed}`);
   }
 
   // Bulletin (capped at 4KB to prevent context overflow)
@@ -777,6 +797,25 @@ function clearHistory(deptId) {
 
 // ---- Broadcast ----
 
+// Per-department timeout for broadcast operations
+const DEPT_TIMEOUT_MS = 60000; // 60 seconds per department
+
+/**
+ * Wrap a promise with a timeout.
+ * Returns: { success: boolean, result?: any, error?: string, timedOut?: boolean }
+ */
+function withTimeout(promise, timeoutMs, label) {
+  return Promise.race([
+    promise.then(result => ({ success: true, result })).catch(error => ({ success: false, error: error.message })),
+    new Promise(resolve => setTimeout(() => resolve({ success: false, error: 'Timeout', timedOut: true }), timeoutMs))
+  ]);
+}
+
+/**
+ * Broadcast a command to all departments in parallel.
+ * Each department call has its own timeout (60s). Failures are isolated - one department
+ * failing or timing out won't block others.
+ */
 async function broadcastCommand(command, options = {}) {
   const traceId = options.traceId || '';
   const config = loadConfig();
@@ -788,58 +827,53 @@ async function broadcastCommand(command, options = {}) {
   const departments = Object.entries(config.departments || {}).map(([id, dept]) => ({ ...dept, id }));
   log.info(`Broadcast started: ${command.substring(0, 60)}`, { traceId, deptCount: departments.length });
 
-  // Overall timeout: 3 minutes for the entire broadcast operation
-  const BROADCAST_TIMEOUT_MS = 180000;
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Broadcast timeout')), BROADCAST_TIMEOUT_MS);
-  });
+  // Process all departments in parallel (no batching)
+  const results = await Promise.all(departments.map(async (dept) => {
+    const sessionKey = getSessionKey(dept.id);
+    const startMs = Date.now();
 
-  const broadcastPromise = (async () => {
-    // Process departments with concurrency limit of 3
-    const CONCURRENCY = 3;
-    const results = [];
-    for (let i = 0; i < departments.length; i += CONCURRENCY) {
-      const batch = departments.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.allSettled(batch.map(async (dept) => {
-        const sessionKey = getSessionKey(dept.id);
-        try {
-          const startMs = Date.now();
-          const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
-          const result = await gateway.sendAgentMessage(sessionKey, wrappedCmd, [], { traceId });
-          const durationMs = Date.now() - startMs;
+    try {
+      const wrappedCmd = wrapWithContext(dept.id, `[Broadcast] ${command}`);
 
-          recordChat(dept.id, durationMs, !result.text);
-          if (result.usage) {
-            recordTokens(dept.id, result.usage);
-          }
+      // Wrap the gateway call with a timeout
+      const timeoutResult = await withTimeout(
+        gateway.sendAgentMessage(sessionKey, wrappedCmd, [], { traceId }),
+        DEPT_TIMEOUT_MS,
+        dept.id
+      );
 
-          return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
-        } catch (err) {
-          recordChat(dept.id, 0, true);
-          return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
-        }
-      }));
-      results.push(...batchResults);
+      const durationMs = Date.now() - startMs;
+
+      if (timeoutResult.timedOut) {
+        log.warn(`Broadcast to ${dept.id} timed out after ${DEPT_TIMEOUT_MS}ms`, { traceId, deptId: dept.id });
+        recordChat(dept.id, durationMs, true);
+        return { deptId: dept.id, name: dept.name, reply: '[Timeout - no response]', timeout: true };
+      }
+
+      if (!timeoutResult.success) {
+        log.error(`Broadcast to ${dept.id} error: ${timeoutResult.error}`, { traceId, deptId: dept.id });
+        recordChat(dept.id, durationMs, true);
+        return { deptId: dept.id, name: dept.name, reply: `[Error] ${timeoutResult.error}` };
+      }
+
+      const result = timeoutResult.result;
+      recordChat(dept.id, durationMs, !result.text);
+      if (result.usage) {
+        recordTokens(dept.id, result.usage);
+      }
+
+      return { deptId: dept.id, name: dept.name, reply: result.text || '[Empty response]' };
+    } catch (err) {
+      // Catch any unexpected errors not caught by withTimeout
+      const durationMs = Date.now() - startMs;
+      log.error(`Broadcast to ${dept.id} unexpected error: ${err.message}`, { traceId, deptId: dept.id });
+      recordChat(dept.id, durationMs, true);
+      return { deptId: dept.id, name: dept.name, reply: `[Error] ${err.message}` };
     }
+  }));
 
-    return results.map((r, i) =>
-      r.status === 'fulfilled' ? r.value : { deptId: departments[i].id, name: departments[i].name, reply: `[Error] ${r.reason?.message}` }
-    );
-  })();
-
-  try {
-    return await Promise.race([broadcastPromise, timeoutPromise]);
-  } catch (err) {
-    // Timeout occurred - return partial results with timeout flag
-    log.warn(`Broadcast timeout after ${BROADCAST_TIMEOUT_MS}ms, returning partial results`, { traceId });
-    const partialResults = departments.map(dept => ({
-      deptId: dept.id,
-      name: dept.name,
-      reply: '[Timeout - no response]',
-      timeout: true
-    }));
-    return partialResults;
-  }
+  log.info(`Broadcast completed: ${results.length} departments responded`, { traceId, deptCount: results.length });
+  return results;
 }
 
 // ---- Sub-agents ----
@@ -878,6 +912,16 @@ async function createSubAgent(deptId, task, name, skills) {
       task: task.substring(0, 50),
       skills: skills ? skills.join(',') : undefined
     });
+
+    // Broadcast sub-agent creation to WebSocket clients
+    if (_wss) {
+      safeBroadcast(_wss, {
+        event: 'subagent:created',
+        data: { deptId, subId, name: agentName, task, status: 'active' },
+        timestamp: new Date().toISOString()
+      });
+    }
+
     return { subId, name: agentName };
   });
 }
@@ -991,6 +1035,16 @@ async function removeSubAgent(deptId, subId) {
     delete data.agents[subId];
     saveSubAgents(deptId, data);
     log.info('Archived and removed sub-agent', { subId, name: agent.name });
+
+    // Broadcast sub-agent removal to WebSocket clients
+    if (_wss) {
+      safeBroadcast(_wss, {
+        event: 'subagent:removed',
+        data: { deptId, subId },
+        timestamp: new Date().toISOString()
+      });
+    }
+
     return true;
   });
 }
@@ -1119,6 +1173,8 @@ function startSubAgentCleanup() {
 }
 
 // ---- Exports ----
+
+// Note: setWss is already exported above as a named export
 
 export {
   chat, chatAsync, getChatHistory, getSessionKey,

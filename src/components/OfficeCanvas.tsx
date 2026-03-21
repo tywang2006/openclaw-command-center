@@ -5,6 +5,7 @@ import type { SubAgent } from './ChatPanel'
 import { OfficeState } from '../office/engine/officeState'
 import { renderFrame } from '../office/engine/renderer'
 import { initFurnitureCatalog } from '../office/furnitureAssets'
+import { clearSpriteCache } from '../office/sprites/spriteCache'
 import { authedFetch } from '../utils/api'
 import {
   TILE_SIZE,
@@ -385,14 +386,19 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     if (!ctx) return
 
     // Offscreen buffer for flicker-free rendering
-    let offscreen = document.createElement('canvas')
-    let offCtx = offscreen.getContext('2d')!
+    let offscreen: HTMLCanvasElement | null = document.createElement('canvas')
+    let offCtx: CanvasRenderingContext2D | null = offscreen.getContext('2d')!
 
     // Frame rate limiting: cap at 60fps to avoid wasteful rendering on high refresh displays
     const TARGET_FRAME_MS = 1000 / 60
     let lastFrameTime = 0
 
     const render = (time: number) => {
+      // Exit early if cleanup already happened
+      if (!offscreen || !offCtx) {
+        return
+      }
+
       // Skip rendering when tab is hidden to save resources
       if (document.hidden) {
         rafRef.current = requestAnimationFrame(render)
@@ -415,7 +421,10 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
 
       // Resize canvas to match container
       const rect = container.getBoundingClientRect()
-      const dpr = window.devicePixelRatio || 1
+      // Cap DPR on mobile to prevent excessive memory usage (max 2x on mobile, 3x on desktop)
+      const isMobile = window.innerWidth <= 768
+      const maxDpr = isMobile ? 2 : 3
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr)
       const w = Math.floor(rect.width)
       const h = Math.floor(rect.height)
       const pw = w * dpr
@@ -579,13 +588,28 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     rafRef.current = requestAnimationFrame(render)
 
     return () => {
+      // Cancel animation frame
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
+
+      // Release offscreen canvas memory (~16MB per buffer)
+      if (offscreen) {
+        offscreen.width = 0
+        offscreen.height = 0
+        offscreen = null
+      }
+      offCtx = null
+
+      // Clear sprite cache to prevent memory leaks (can reach 97MB)
+      clearSpriteCache()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Track whether a left-click drag moved enough to be a pan (vs a click)
   const dragDistRef = useRef(0)
+
+  // Touch state for mobile interactions
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
 
   // Click to select character / drag to pan
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -729,6 +753,94 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
     return () => canvas.removeEventListener('wheel', handler)
   }, [])
 
+  // Native touchmove listener with { passive: false } to allow preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handler = (e: TouchEvent) => {
+      if (e.touches.length === 1 && isPanning) {
+        e.preventDefault()
+      }
+    }
+    canvas.addEventListener('touchmove', handler, { passive: false })
+    return () => canvas.removeEventListener('touchmove', handler)
+  }, [isPanning])
+
+  // Touch event handlers for mobile panning and tap-to-select
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const touchX = touch.clientX - rect.left
+      const touchY = touch.clientY - rect.top
+
+      touchStartRef.current = { x: touchX, y: touchY, time: Date.now() }
+      setIsPanning(true)
+      dragDistRef.current = 0
+      panStartRef.current = { x: touchX, y: touchY, panX: panXRef.current, panY: panYRef.current }
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1 && isPanning) {
+      const touch = e.touches[0]
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const touchX = touch.clientX - rect.left
+      const touchY = touch.clientY - rect.top
+
+      const dx = touchX - panStartRef.current.x
+      const dy = touchY - panStartRef.current.y
+      dragDistRef.current = Math.max(dragDistRef.current, Math.abs(dx) + Math.abs(dy))
+
+      setPanX(panStartRef.current.panX + dx)
+      setPanY(panStartRef.current.panY + dy)
+    }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const wasPanning = isPanning
+    setIsPanning(false)
+
+    // Check if this was a tap (quick touch with minimal movement)
+    if (wasPanning && dragDistRef.current < 10 && touchStartRef.current) {
+      const touchDuration = Date.now() - touchStartRef.current.time
+      // Tap should be quick (< 300ms) and have minimal movement
+      if (touchDuration < 300) {
+        const canvas = canvasRef.current
+        if (!canvas || !officeStateRef.current) return
+
+        const rect = canvas.getBoundingClientRect()
+        const touchX = touchStartRef.current.x
+        const touchY = touchStartRef.current.y
+        const { offsetX, offsetY } = lastOffsetsRef.current
+        const worldX = (touchX - offsetX) / zoomRef.current
+        const worldY = (touchY - offsetY) / zoomRef.current
+
+        // First try character click
+        const clickedId = officeStateRef.current.getCharacterAt(worldX, worldY)
+        if (clickedId !== null && clickedId >= 0) {
+          const dept = departments[clickedId]
+          if (dept) {
+            onSelectDept(selectedDeptId === dept.id ? null : dept.id)
+            touchStartRef.current = null
+            return
+          }
+        }
+
+        // If no character clicked, check furniture interaction
+        handleFurnitureClick(worldX, worldY)
+      }
+    }
+
+    touchStartRef.current = null
+  }
+
   return (
     <div ref={containerRef} className="office-canvas-container panel">
       <canvas
@@ -737,6 +849,10 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => setIsPanning(false)}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => { setIsPanning(false); touchStartRef.current = null }}
         onContextMenu={e => e.preventDefault()}
         style={{ cursor: isPanning ? 'grabbing' : 'default' }}
       />
@@ -745,6 +861,7 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
           className="zoom-btn"
           onClick={() => setZoom(prev => Math.max(1, prev - 0.5))}
           disabled={zoom <= 1}
+          aria-label="缩小"
         >−</button>
         <input
           type="range"
@@ -754,11 +871,13 @@ export default function OfficeCanvas({ departments, selectedDeptId, onSelectDept
           step="0.25"
           value={zoom}
           onChange={e => setZoom(parseFloat(e.target.value))}
+          aria-label="缩放级别"
         />
         <button
           className="zoom-btn"
           onClick={() => setZoom(prev => Math.min(5, prev + 0.5))}
           disabled={zoom >= 5}
+          aria-label="放大"
         >+</button>
         <span className="zoom-label">{zoom.toFixed(1)}x</span>
       </div>

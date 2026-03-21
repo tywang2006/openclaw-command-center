@@ -21,20 +21,23 @@ import emailRoutes from './routes/email.js';
 import driveRoutes from './routes/drive.js';
 import voiceRoutes from './routes/voice.js';
 import searchRoutes from './routes/search.js';
-import auditRoutes, { recordAudit } from './routes/audit.js';
-import notificationsRoutes, { notifyError, notifyWarning, notifyInfo } from './routes/notifications.js';
+import auditRoutes, { recordAudit, setAuditWss } from './routes/audit.js';
+import notificationsRoutes, { notifyError, notifyWarning, notifyInfo, setWss as setNotificationsWss, stopNotificationPersist } from './routes/notifications.js';
 import meetingsRoutes from './routes/meetings.js';
 import chatRetryRouter from './routes/chat-retry.js';
 import pushRouter from './routes/push.js';
+import backupRoutes from './routes/backup.js';
 import { getGateway } from './gateway.js';
-import { authRouter, authMiddleware, validateToken, onTokensCleared, onTokenRevoked } from './auth.js';
+import { authRouter, authMiddleware, validateToken, onTokensCleared, onTokenRevoked, stopAuthCleanup } from './auth.js';
 import setupRoutes, { checkSetupStatus } from './routes/setup.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { BASE_PATH } from './utils.js';
+import { BASE_PATH, OPENCLAW_HOME } from './utils.js';
 import crypto from 'crypto';
-import { startSubAgentCleanup, handleGatewayDisconnect, cleanupAsyncRequest } from './agent.js';
+import { startSubAgentCleanup, handleGatewayDisconnect, cleanupAsyncRequest, setWss as setAgentWss } from './agent.js';
 import { createLogger } from './logger.js';
+import { startPeriodicBackup, stopPeriodicBackup } from './backup.js';
+import { safeBroadcast } from './broadcast.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +46,7 @@ const log = createLogger('Server');
 
 // Global interval references for cleanup
 let subAgentCleanupInterval = null;
+let backupInterval = null;
 
 // Ensure minimum directory structure exists (for fresh installs)
 const requiredDirs = [
@@ -54,6 +58,29 @@ for (const dir of requiredDirs) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     log.info('Created missing directory', { dir });
+  }
+}
+
+// Harden file permissions on sensitive files at startup.
+// Fixes any existing files that were written with permissive umask defaults.
+const sensitiveFiles = [
+  path.join(OPENCLAW_HOME, 'command-center', '.auth_password'),
+  path.join(OPENCLAW_HOME, 'command-center', 'integrations.json'),
+  path.join(OPENCLAW_HOME, 'command-center', '.encryption_key'),
+  path.join(OPENCLAW_HOME, 'gogcli-tokens.json'),
+];
+for (const filePath of sensitiveFiles) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      const currentMode = stat.mode & 0o777;
+      if (currentMode !== 0o600) {
+        fs.chmodSync(filePath, 0o600);
+        log.info('Hardened file permissions to 0600', { filePath, previousMode: '0' + currentMode.toString(8) });
+      }
+    }
+  } catch (err) {
+    log.warn('Failed to harden file permissions', { filePath, error: err.message });
   }
 }
 
@@ -88,6 +115,38 @@ app.use(helmet({
   crossOriginResourcePolicy: false,  // Allow loading through nginx reverse proxy
   crossOriginOpenerPolicy: false,    // Not useful without HTTPS
 }));
+
+// Request logging middleware - log all HTTP requests
+app.use((req, res, next) => {
+  const startTime = Date.now();
+
+  // Capture response finish event
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    const logData = {
+      method: req.method,
+      url: req.url,
+      status: res.statusCode,
+      duration,
+      traceId: req.traceId,
+      ip: req.ip
+    };
+
+    // Log errors (4xx/5xx) as warnings/errors, others as info
+    if (res.statusCode >= 500) {
+      log.error('HTTP request error', logData);
+    } else if (res.statusCode >= 400) {
+      log.warn('HTTP request client error', logData);
+    } else if (duration > 5000) {
+      // Slow requests (>5s) are warnings even if successful
+      log.warn('HTTP request slow', logData);
+    } else {
+      log.info('HTTP request', logData);
+    }
+  });
+
+  next();
+});
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -186,6 +245,7 @@ app.use('/api/system/shutdown', adminLimiter);
 app.use('/api/system/openclaw/update', adminLimiter);
 app.use('/api/integrations/config', adminLimiter);
 app.use('/api/skills/install', adminLimiter);
+app.use('/api/backup', adminLimiter);
 
 // API routes
 app.use('/api', apiRoutes);
@@ -209,6 +269,7 @@ app.use('/api', notificationsRoutes);
 app.use('/api/meetings', meetingsRoutes);
 app.use('/api/departments', chatRetryRouter);
 app.use('/api/push', pushRouter);
+app.use('/api/backup', backupRoutes);
 
 // Serve static files in production under /cmd/
 const distPath = path.join(__dirname, '../dist');
@@ -251,15 +312,35 @@ app.get('/cmd', (req, res) => {
 
 // Global Express error handler (must be after all routes)
 app.use((err, req, res, next) => {
-  log.error('Unhandled Express error', { error: err.stack || err.message || err });
+  const errorDetails = {
+    message: err.message || 'Unknown error',
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    traceId: req.traceId,
+  };
+
+  // Log full error details for debugging
+  log.error('Unhandled Express error', errorDetails);
+
+  // Don't send response if headers already sent
   if (res.headersSent) return next(err);
-  res.status(500).json({ error: 'Internal server error' });
+
+  // Production-safe error response (no stack traces leaked)
+  const statusCode = err.statusCode || err.status || 500;
+  res.status(statusCode).json({
+    error: 'Internal server error',
+    traceId: req.traceId,
+  });
 });
 
 // WebSocket server — accept both /ws and /cmd/ws
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1048576 });
 app.locals.wss = wss; // Expose to routes for broadcasting
 setWss(wss); // Pass to metrics for health alerts
+setNotificationsWss(wss); // Pass to notifications for real-time broadcasting
+setAuditWss(wss); // Pass to audit for real-time event broadcasting
+setAgentWss(wss); // Pass to agent for sub-agent updates broadcasting
 
 // Track active WebSocket connections with their auth tokens
 const activeWsConnections = new Set();
@@ -288,6 +369,8 @@ setInterval(() => {
 wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
   let authenticated = false;
+  ws.isAlive = true; // Heartbeat tracker
+  ws._remoteAddress = clientIp; // Store for heartbeat logging
 
   // Auth via first message — client must send { type: 'auth', token } within 5s
   const authTimeout = setTimeout(() => {
@@ -295,6 +378,11 @@ wss.on('connection', (ws, req) => {
       ws.close(1008, 'Auth timeout');
     }
   }, 5000);
+
+  // Heartbeat pong handler — mark connection as alive
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   ws.on('message', function onFirstMessage(raw) {
     if (authenticated) return;
@@ -335,16 +423,9 @@ wss.on('connection', (ws, req) => {
 
       log.info('WebSocket client authenticated', { clientIp, totalClients: wss.clients.size });
 
-      // Start ping interval only after auth succeeds
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === 1) {
-          ws.ping();
-        } else {
-          clearInterval(pingInterval);
-        }
-      }, 30000);
+      // No need for per-client ping interval — handled by global heartbeat interval below
+
       ws.on('close', () => {
-        clearInterval(pingInterval);
         activeWsConnections.delete(ws);
       });
 
@@ -392,6 +473,24 @@ wss.on('connection', (ws, req) => {
   });
 
 });
+
+// Global heartbeat interval — verify pong responses and terminate zombie connections
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws._authenticated) return; // Only check authenticated connections
+
+    if (!ws.isAlive) {
+      log.warn('WebSocket client failed heartbeat, terminating', {
+        remoteAddress: ws._remoteAddress,
+        totalClients: wss.clients.size
+      });
+      return ws.terminate(); // Immediate connection close without handshake
+    }
+
+    ws.isAlive = false; // Reset flag
+    ws.ping(); // Send ping, expect pong to set isAlive back to true
+  });
+}, 30000);
 
 // Create file watcher and attach to WebSocket server
 const watcher = createWatcher(wss);
@@ -479,19 +578,20 @@ gateway.onStatus(({ status, detail }) => {
     handleGatewayDisconnect();
   }
 
-  const payload = JSON.stringify({
+  safeBroadcast(wss, {
     event: 'gateway:status',
     data: { status, detail },
     timestamp: new Date().toISOString(),
   });
-  wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
 });
 
 // Close all authenticated WS connections when tokens are cleared (password change)
 onTokensCleared(() => {
   let closed = 0;
   activeWsConnections.forEach(c => {
-    try { c.close(4001, 'auth-revoked'); } catch (err) { /* expected during cleanup */ }
+    try { c.close(4001, 'auth-revoked'); } catch (err) {
+      log.warn('Error closing revoked connection', { error: err.message });
+    }
     closed++;
   });
   activeWsConnections.clear();
@@ -503,7 +603,9 @@ onTokenRevoked((revokedToken) => {
   let closed = 0;
   activeWsConnections.forEach(c => {
     if (c._authToken === revokedToken) {
-      try { c.close(4001, 'auth-revoked'); } catch (err) { /* expected during cleanup */ }
+      try { c.close(4001, 'auth-revoked'); } catch (err) {
+      log.warn('Error closing revoked connection', { error: err.message });
+    }
       closed++;
     }
   });
@@ -531,7 +633,7 @@ gateway.onEvent((event) => {
 
     // Broadcast assistant response to frontend WebSocket clients
     if (event.assistantMessage) {
-      const payload = JSON.stringify({
+      const eventData = {
         event: 'activity:new',
         data: {
           deptId,
@@ -541,10 +643,10 @@ gateway.onEvent((event) => {
           source: 'gateway',
         },
         timestamp,
-      });
-      wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
+      };
+      safeBroadcast(wss, eventData);
       // Record for replay (F13)
-      if (isRecording()) addReplayEvent(JSON.parse(payload));
+      if (isRecording()) addReplayEvent(eventData);
     }
   }
 
@@ -553,7 +655,7 @@ gateway.onEvent((event) => {
     const deptId = sessionKeyToDeptId(event.sessionKey);
     if (!deptId) return;
 
-    const payload = JSON.stringify({
+    const eventData = {
       event: 'tool:update',
       data: {
         deptId,
@@ -562,9 +664,9 @@ gateway.onEvent((event) => {
         done: event.done,
       },
       timestamp: new Date().toISOString(),
-    });
-    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
-    if (isRecording()) addReplayEvent(JSON.parse(payload));
+    };
+    safeBroadcast(wss, eventData);
+    if (isRecording()) addReplayEvent(eventData);
   }
 
   // Forward streaming chunks to frontend (F14)
@@ -572,13 +674,13 @@ gateway.onEvent((event) => {
     const deptId = sessionKeyToDeptId(event.sessionKey);
     if (!deptId) return;
 
-    const payload = JSON.stringify({
+    const eventData = {
       event: 'chat:stream',
       data: { deptId, chunk: event.chunk },
       timestamp: new Date().toISOString(),
-    });
-    wss.clients.forEach(c => { if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch (err) { /* client disconnected */ } });
-    if (isRecording()) addReplayEvent(JSON.parse(payload));
+    };
+    safeBroadcast(wss, eventData);
+    if (isRecording()) addReplayEvent(eventData);
   }
 
   // Record permission events (F15)
@@ -595,13 +697,24 @@ syncAutoBackupCronJob();
 // Start sub-agent cleanup scheduler
 subAgentCleanupInterval = startSubAgentCleanup();
 
+// Start periodic backup scheduler (every 1 hour)
+backupInterval = startPeriodicBackup(60 * 60 * 1000);
+
 // Graceful shutdown
 function gracefulShutdown(signal) {
   log.info('Shutting down gracefully', { signal });
   flushMetrics();
   getGateway().disconnect();
   watcher.close();
-  try { fs.unwatchFile(deptConfigPath); } catch (_) { /* already unwatched */ }
+  try { fs.unwatchFile(deptConfigPath); } catch (err) {
+    log.warn('Error unwatching config file', { error: err.message });
+  }
+
+  // Stop heartbeat interval
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    log.info('WebSocket heartbeat interval stopped');
+  }
 
   // Stop sub-agent cleanup scheduler
   if (subAgentCleanupInterval) {
@@ -609,9 +722,23 @@ function gracefulShutdown(signal) {
     log.info('SubAgent cleanup scheduler stopped');
   }
 
+  // Stop backup scheduler
+  if (backupInterval) {
+    stopPeriodicBackup(backupInterval);
+  }
+
+  // Stop notification persist timer and auth cleanup timers
+  stopNotificationPersist();
+  stopAuthCleanup();
+
+  // Clear gateway event/status listeners to prevent accumulation on restart
+  getGateway().clearListeners();
+
   // Close all WebSocket clients
   for (const client of wss.clients) {
-    try { client.close(1001, 'Server shutting down'); } catch (err) { /* expected during shutdown */ }
+    try { client.close(1001, 'Server shutting down'); } catch (err) {
+      log.warn('Error closing client during shutdown', { error: err.message });
+    }
   }
 
   server.close(() => {

@@ -36,6 +36,7 @@ interface Skill {
   version: string | null
   hasAssets: boolean
   hasApiKey: boolean
+  apiKeyPreview?: string
 }
 
 interface SkillDetail extends Skill {
@@ -68,6 +69,35 @@ interface IntegrationsTabProps {
   onSwitchToChat?: (deptId: string, prefillMessage: string) => void
 }
 
+// Model config types
+interface ModelConfigModel {
+  id: string
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+}
+
+interface ModelConfigProvider {
+  models: ModelConfigModel[]
+  apiKey?: string
+  baseUrl?: string
+}
+
+interface ModelConfig {
+  providers: Record<string, ModelConfigProvider>
+  defaultProvider?: string
+  primary?: string
+  fallbacks?: string[]
+}
+
+// Integration config types
+interface IntegrationServiceConfig {
+  enabled?: boolean
+  [key: string]: unknown
+}
+
+type IntegrationConfig = Record<string, IntegrationServiceConfig>
+
 /* ---------- Helpers ---------- */
 
 function getTagColor(tag: string): string {
@@ -96,7 +126,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   const [detailLoading, setDetailLoading] = useState(false)
 
   // Integration config states
-  const [integConfig, setIntegConfig] = useState<Record<string, any> | null>(null)
+  const [integConfig, setIntegConfig] = useState<IntegrationConfig | null>(null)
   const [configModal, setConfigModal] = useState<string | null>(null)
   const [configForm, setConfigForm] = useState<Record<string, any>>({})
   const [configSaving, setConfigSaving] = useState(false)
@@ -111,10 +141,10 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   const [sysTestResult, setSysTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   // System config data
-  const [modelConfig, setModelConfig] = useState<any>(null)
-  const [telegramConfig, setTelegramConfig] = useState<any>(null)
-  const [skillsConfig, setSkillsConfig] = useState<any[]>([])
-  const [autoBackupConfig, setAutoBackupConfig] = useState<any>(null)
+  const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null)
+  const [telegramConfig, setTelegramConfig] = useState<Record<string, any> | null>(null)
+  const [skillsConfig, setSkillsConfig] = useState<Skill[]>([])
+  const [autoBackupConfig, setAutoBackupConfig] = useState<Record<string, any> | null>(null)
 
   // Skill API key editing states
   const [skillKeyEdits, setSkillKeyEdits] = useState<Record<string, string>>({})
@@ -186,8 +216,20 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setTestResult(null)
   }
 
+  // Helper to safely get string value from form objects
+  const getFormString = (form: Record<string, unknown>, key: string, defaultValue = ''): string => {
+    const val = form[key]
+    return typeof val === 'string' ? val : defaultValue
+  }
+
+  // Helper to safely get boolean value from form objects
+  const getFormBoolean = (form: Record<string, unknown>, key: string, defaultValue = false): boolean => {
+    const val = form[key]
+    return typeof val === 'boolean' ? val : defaultValue
+  }
+
   // Strip frontend-only mask fields before sending to backend
-  const cleanFormForSave = (form: Record<string, any>) => {
+  const cleanFormForSave = (form: Record<string, any>): Record<string, any> => {
     const clean = { ...form }
     delete clean.hasAppPassword
     delete clean.hasServiceAccountKey
@@ -317,7 +359,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
       setSysTestResult({ ok: false, msg: t('sys.password.mismatch') })
       return
     }
-    if (newPassword.length < 6) {
+    if (newPassword.length < 8) {
       setSysTestResult({ ok: false, msg: t('sys.password.tooShort') })
       return
     }
@@ -401,7 +443,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
     setSysSaving(true)
     setSysTestResult(null)
     try {
-      const body: Record<string, unknown> = {
+      const body: Record<string, any> = {
         enabled: sysForm.enabled,
         dmPolicy: sysForm.dmPolicy,
         allowFrom: sysForm.allowFrom,
@@ -548,7 +590,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
   // Build model options list from modelConfig providers
   const modelOptions: string[] = []
   if (modelConfig?.providers) {
-    for (const [provId, prov] of Object.entries(modelConfig.providers) as any[]) {
+    for (const [provId, prov] of Object.entries(modelConfig.providers)) {
       for (const m of prov.models || []) {
         modelOptions.push(`${provId}/${m.id}`)
       }
@@ -1251,21 +1293,21 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.password.current')}</label>
                     <input type="password" className="cap-config-input"
-                      value={sysForm.currentPassword || ''}
+                      value={(sysForm.currentPassword as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, currentPassword: e.target.value })}
                     />
                   </div>
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.password.new')}</label>
                     <input type="password" className="cap-config-input"
-                      value={sysForm.newPassword || ''}
+                      value={(sysForm.newPassword as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, newPassword: e.target.value })}
                     />
                   </div>
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.password.confirm')}</label>
                     <input type="password" className="cap-config-input"
-                      value={sysForm.confirmPassword || ''}
+                      value={(sysForm.confirmPassword as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, confirmPassword: e.target.value })}
                     />
                   </div>
@@ -1290,7 +1332,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.models.primary')}</label>
                     <select className="cap-config-select"
-                      value={sysForm.primary || ''}
+                      value={(sysForm.primary as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, primary: e.target.value })}
                     >
                       {modelOptions.map(opt => (
@@ -1301,7 +1343,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.models.fallbacks')}</label>
                     <input className="cap-config-input"
-                      value={sysForm.fallbacks || ''}
+                      value={(sysForm.fallbacks as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, fallbacks: e.target.value })}
                       placeholder="provider/model, provider/model"
                     />
@@ -1313,10 +1355,10 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <input type="password" className="cap-config-input"
                           placeholder={prov.apiKeyPreview || 'API Key'}
-                          value={(sysForm._providerKeys || {})[provId] || ''}
+                          value={((sysForm._providerKeys as Record<string, string> | undefined) || {})[provId] || ''}
                           onChange={e => setSysForm({
                             ...sysForm,
-                            _providerKeys: { ...(sysForm._providerKeys || {}), [provId]: e.target.value }
+                            _providerKeys: { ...((sysForm._providerKeys as Record<string, string> | undefined) || {}), [provId]: e.target.value }
                           })}
                         />
                         <button className="cap-skill-row-btn" onClick={() => handleModelsTest(provId)} disabled={sysTesting}>
@@ -1345,7 +1387,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-restart-warn">{t('sys.telegram.restart.warn')}</div>
                   <div className="cap-config-toggle">
                     <label>
-                      <input type="checkbox" checked={sysForm.enabled || false}
+                      <input type="checkbox" checked={(sysForm.enabled as boolean | undefined) || false}
                         onChange={e => setSysForm({ ...sysForm, enabled: e.target.checked })}
                       />
                       {sysForm.enabled ? t('integ.enabled') : t('integ.disabled')}
@@ -1354,7 +1396,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.telegram.botToken')}</label>
                     <input type="password" className="cap-config-input"
-                      value={sysForm.botToken || ''}
+                      value={(sysForm.botToken as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, botToken: e.target.value })}
                       placeholder={telegramConfig?.botTokenPreview || 'Bot token'}
                     />
@@ -1362,7 +1404,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.telegram.dmPolicy')}</label>
                     <select className="cap-config-select"
-                      value={sysForm.dmPolicy || 'allowlist'}
+                      value={(sysForm.dmPolicy as string | undefined) || 'allowlist'}
                       onChange={e => setSysForm({ ...sysForm, dmPolicy: e.target.value })}
                     >
                       <option value="allowlist">Allowlist</option>
@@ -1373,7 +1415,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.telegram.allowFrom')}</label>
                     <input className="cap-config-input"
-                      value={sysForm.allowFrom || ''}
+                      value={(sysForm.allowFrom as string | undefined) || ''}
                       onChange={e => setSysForm({ ...sysForm, allowFrom: e.target.value })}
                       placeholder="123456789, 987654321"
                     />
@@ -1382,7 +1424,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.telegram.streaming')}</label>
                     <select className="cap-config-select"
-                      value={sysForm.streaming || 'partial'}
+                      value={(sysForm.streaming as string | undefined) || 'partial'}
                       onChange={e => setSysForm({ ...sysForm, streaming: e.target.value })}
                     >
                       <option value="partial">Partial</option>
@@ -1393,7 +1435,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('sys.telegram.groupPolicy')}</label>
                     <select className="cap-config-select"
-                      value={sysForm.groupPolicy || 'allowlist'}
+                      value={(sysForm.groupPolicy as string | undefined) || 'allowlist'}
                       onChange={e => setSysForm({ ...sysForm, groupPolicy: e.target.value })}
                     >
                       <option value="allowlist">Allowlist</option>
@@ -1477,7 +1519,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('integ.backup.schedule')}</label>
                     <select className="cap-config-select"
-                      value={sysForm.schedule || 'daily'}
+                      value={(sysForm.schedule as string | undefined) || 'daily'}
                       onChange={e => setSysForm({ ...sysForm, schedule: e.target.value })}
                     >
                       <option value="daily">{t('integ.backup.schedule.daily')}</option>
@@ -1487,7 +1529,7 @@ export default function IntegrationsTab({ onSwitchToChat }: IntegrationsTabProps
                   <div className="cap-config-field">
                     <label className="cap-config-label">{t('integ.backup.time')}</label>
                     <input type="time" className="cap-config-input"
-                      value={sysForm.time || '03:00'}
+                      value={(sysForm.time as string | undefined) || '03:00'}
                       onChange={e => setSysForm({ ...sysForm, time: e.target.value })}
                     />
                   </div>

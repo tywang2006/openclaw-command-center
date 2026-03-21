@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import type { Department } from '../hooks/useAgentState'
 import { consumeMeetingDeptResponse, consumeMeetingRoundComplete, consumeMeetingEvent, useMeetingEvents } from '../hooks/useAgentState'
 import { useLocale } from '../i18n/index'
@@ -220,7 +220,7 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   const [showNegotiateForm, setShowNegotiateForm] = useState(false)
   const [negotiationProposal, setNegotiationProposal] = useState('')
   const [negotiationRounds, setNegotiationRounds] = useState(3)
-  const [negotiationVotes, setNegotiationVotes] = useState<Array<{ deptId: string; stance: string; reason: string; suggestion: string; round: number }>>([])
+  const [negotiationVotes, setNegotiationVotes] = useState<Array<{ deptId: string; stance: string; reason: string; suggestion?: string; round: number }>>([])
   const [negotiationRound, setNegotiationRound] = useState(0)
   const [negotiationMaxRounds, setNegotiationMaxRounds] = useState(3)
   const [negotiationResult, setNegotiationResult] = useState<string | null>(null)
@@ -281,20 +281,36 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
   useEffect(() => {
     let event = consumeMeetingEvent()
     while (event) {
-      const e = event as any
-      if (e.type === 'meeting:negotiation-vote' && e.meetingId === activeMeeting?.id) {
-        setNegotiationVotes(prev => [...prev, { deptId: e.deptId, stance: e.stance, reason: e.reason, suggestion: e.suggestion, round: e.round }])
-      } else if (e.type === 'meeting:negotiation-round' && e.meetingId === activeMeeting?.id) {
-        setNegotiationRound(e.round)
-        setNegotiationMaxRounds(e.maxRounds)
-        setNegotiationAgreeCount(e.agreeCount)
-        setNegotiationTotal(e.total)
-      } else if (e.type === 'meeting:negotiation-end' && e.meetingId === activeMeeting?.id) {
-        setNegotiating(false)
-        setNegotiationResult(e.result)
-        setNegotiationAgreeCount(e.agreeCount || 0)
-        setNegotiationTotal(e.total || 0)
-        if (activeMeeting) loadMeeting(activeMeeting.id)
+      if (event.meetingId !== activeMeeting?.id) {
+        event = consumeMeetingEvent()
+        continue
+      }
+
+      // Use const to capture event for type narrowing
+      const currentEvent = event
+      switch (currentEvent.type) {
+        case 'meeting:negotiation-vote':
+          setNegotiationVotes(prev => [...prev, {
+            deptId: currentEvent.deptId,
+            stance: currentEvent.stance,
+            reason: currentEvent.reason,
+            suggestion: currentEvent.suggestion,
+            round: currentEvent.round
+          }])
+          break
+        case 'meeting:negotiation-round':
+          setNegotiationRound(currentEvent.round)
+          setNegotiationMaxRounds(currentEvent.maxRounds)
+          setNegotiationAgreeCount(currentEvent.agreeCount)
+          setNegotiationTotal(currentEvent.total)
+          break
+        case 'meeting:negotiation-end':
+          setNegotiating(false)
+          setNegotiationResult(currentEvent.result)
+          setNegotiationAgreeCount(currentEvent.agreeCount)
+          setNegotiationTotal(currentEvent.total)
+          if (activeMeeting) loadMeeting(activeMeeting.id)
+          break
       }
       event = consumeMeetingEvent()
     }
@@ -401,18 +417,18 @@ export default function MeetingRoom({ departments, onClose }: MeetingRoomProps) 
     }
   }
 
-  // Dept color helper
-  const getDeptColor = (deptId: string): string => {
+  // Memoize dept helpers to prevent re-creating on every render
+  const getDeptColor = useCallback((deptId: string): string => {
     const dept = departments.find(d => d.id === deptId)
     return dept?.color || '#94a3b8'
-  }
+  }, [departments])
 
-  const getDeptName = (deptId: string): string => {
+  const getDeptName = useCallback((deptId: string): string => {
     if (deptId === 'user') return t('meeting.user')
     if (deptId === 'negotiation') return t('meeting.negotiationSystem')
     if (deptId === 'action-items') return t('meeting.actionItems')
     return departments.find(d => d.id === deptId)?.name || deptId
-  }
+  }, [departments, t])
 
   return (
     <div className="meeting-room-inline">

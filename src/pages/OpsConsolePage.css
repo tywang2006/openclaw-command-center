@@ -82,6 +82,8 @@
 .ops-menu-item.active {
   background: var(--accent-muted);
   color: var(--accent-color);
+  border-left: 2px solid var(--accent-color);
+  padding-left: 10px;
 }
 
 /* ---- Content area ---- */

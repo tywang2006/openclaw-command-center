@@ -13,6 +13,7 @@ interface SidePanelProps {
   agentState: AgentState & {
     setSelectedDeptId: (id: string | null) => void
     addActivity: (a: Activity) => void
+    refreshRequests: () => void
   }
 }
 
@@ -52,7 +53,7 @@ export default function SidePanel({ agentState }: SidePanelProps) {
             departments={agentState.departments}
           />
         )}
-        {activeTab === 'requests' && <RequestsTab requests={agentState.requests} />}
+        {activeTab === 'requests' && <RequestsTab requests={agentState.requests} onRefresh={agentState.refreshRequests} />}
         {activeTab === 'activity' && <ActivityTab activities={agentState.activities} departments={agentState.departments} />}
       </div>
       <CommandPanel

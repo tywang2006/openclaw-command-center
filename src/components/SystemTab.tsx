@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocale } from '../i18n/index'
-import { authedFetch } from '../utils/api'
+import { authedFetch, clearToken } from '../utils/api'
 import { useVisibilityInterval } from '../hooks/useVisibilityInterval'
 import './SystemTab.css'
 
@@ -111,6 +111,7 @@ export default function SystemTab() {
   const [observerRunning, setObserverRunning] = useState(false)
   const [observerMsg, setObserverMsg] = useState<string | null>(null)
   const [shutdownConfirm, setShutdownConfirm] = useState(false)
+  const [shutdownPassword, setShutdownPassword] = useState('')
   const [serverStopped, setServerStopped] = useState(false)
 
   // OpenClaw config state
@@ -131,6 +132,11 @@ export default function SystemTab() {
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordStatus, setPasswordStatus] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
 
   const showConfigStatus = (key: string, type: 'ok' | 'err' | 'saving', msg: string) => {
     setConfigStatus(prev => ({ ...prev, [key]: { type, msg } }))
@@ -375,10 +381,29 @@ export default function SystemTab() {
       })
       if (res.ok) {
         const data = await res.json()
-        const summary = Object.entries(data.results || {})
+        const results = data.results || {}
+        const entries = Object.entries(results)
+
+        // Count successes and failures
+        const successCount = entries.filter(([_, r]: [string, any]) => r.success).length
+        const failCount = entries.filter(([_, r]: [string, any]) => !r.success).length
+
+        // Build summary message
+        const summary = entries
           .map(([id, r]: [string, any]) => r.success ? `${id}: ${r.count}` : `${id}: ${r.error}`)
           .join(', ')
-        showModelStatus('ok', `${t('system.models.synced')} (${summary})`)
+
+        // Show appropriate status based on results
+        if (successCount === 0 && failCount > 0) {
+          // All failed
+          showModelStatus('err', `${t('system.models.synced')} - ${failCount} failed (${summary})`)
+        } else if (failCount > 0) {
+          // Mixed results
+          showModelStatus('err', `${t('system.models.synced')} - ${successCount} ok, ${failCount} failed (${summary})`)
+        } else {
+          // All succeeded
+          showModelStatus('ok', `${t('system.models.synced')} (${summary})`)
+        }
         fetchAll()
       } else {
         const err = await res.json()
@@ -420,12 +445,79 @@ export default function SystemTab() {
   }
 
   const handleShutdown = async () => {
+    if (!shutdownPassword) {
+      alert(t('system.shutdown.password.required') || 'Password required for shutdown')
+      return
+    }
     try {
-      await authedFetch('/api/system/shutdown', { method: 'POST' })
+      const res = await authedFetch('/api/system/shutdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'SHUTDOWN', password: shutdownPassword }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || 'Shutdown failed')
+        return
+      }
     } catch {
       // Expected — server dies before response completes
     }
     setServerStopped(true)
+  }
+
+  const handleChangePassword = async () => {
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordStatus({ type: 'err', msg: t('system.password.required') })
+      setTimeout(() => setPasswordStatus(null), 3000)
+      return
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordStatus({ type: 'err', msg: t('system.password.tooshort') })
+      setTimeout(() => setPasswordStatus(null), 3000)
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordStatus({ type: 'err', msg: t('system.password.mismatch') })
+      setTimeout(() => setPasswordStatus(null), 3000)
+      return
+    }
+
+    setChangingPassword(true)
+    try {
+      const res = await authedFetch('/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+
+      if (res.ok) {
+        setPasswordStatus({ type: 'ok', msg: t('system.password.changed') })
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+        // Clear token and redirect to login after 2 seconds
+        setTimeout(() => {
+          clearToken()
+          window.location.href = '/'
+        }, 2000)
+      } else {
+        const err = await res.json()
+        if (err.error.includes('incorrect')) {
+          setPasswordStatus({ type: 'err', msg: t('system.password.incorrect') })
+        } else {
+          setPasswordStatus({ type: 'err', msg: err.error || t('system.password.failed') })
+        }
+        setTimeout(() => setPasswordStatus(null), 3000)
+      }
+    } catch {
+      setPasswordStatus({ type: 'err', msg: t('system.password.failed') })
+      setTimeout(() => setPasswordStatus(null), 3000)
+    }
+    setChangingPassword(false)
   }
 
   // ---- OpenClaw Config handlers ----
@@ -693,55 +785,18 @@ export default function SystemTab() {
                 </div>
                 <div className="system-row">
                   <span className="system-label">Token</span>
-                  {editingKeys['gw-token'] !== undefined ? (
-                    <span className="system-inline-edit">
-                      <input
-                        type="password"
-                        value={editingKeys['gw-token']}
-                        onChange={e => setEditingKeys(p => ({ ...p, 'gw-token': e.target.value }))}
-                        placeholder="Gateway auth token"
-                        className="system-input"
-                      />
-                      <button className="system-btn-sm ok" onClick={async () => {
-                        showConfigStatus('gw', 'saving', '...')
-                        const body: Record<string, string> = { token: editingKeys['gw-token'] }
-                        if (editingKeys['gw-url']) body.url = editingKeys['gw-url']
-                        const r = await authedFetch('/api/system/config/gateway', {
-                          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(body),
-                        })
-                        if (r.ok) {
-                          showConfigStatus('gw', 'ok', t('system.gateway.saved'))
-                          setEditingKeys(p => { const n = { ...p }; delete n['gw-token']; delete n['gw-url']; return n })
-                          fetchAll()
-                        } else {
-                          showConfigStatus('gw', 'err', 'Failed')
-                        }
-                      }}>Save</button>
-                      <button className="system-btn-sm" onClick={() => setEditingKeys(p => { const n = { ...p }; delete n['gw-token']; delete n['gw-url']; return n })}>Cancel</button>
-                    </span>
-                  ) : (
-                    <span className="system-value">
-                      {gwConfig.hasToken ? gwConfig.tokenPreview : <em style={{ color: '#f44' }}>Not set</em>}
-                      {' '}
-                      <button className="system-btn-sm" onClick={() => setEditingKeys(p => ({ ...p, 'gw-token': '', 'gw-url': gwConfig.url }))}>
-                        {t('system.edit')}
-                      </button>
-                    </span>
-                  )}
+                  <span className="system-value">
+                    {gwConfig.hasToken ? gwConfig.tokenPreview : <em style={{ color: '#f44' }}>Not set</em>}
+                  </span>
                 </div>
-                {editingKeys['gw-url'] !== undefined && (
-                  <div className="system-row">
-                    <span className="system-label">URL</span>
-                    <input
-                      type="text"
-                      value={editingKeys['gw-url']}
-                      onChange={e => setEditingKeys(p => ({ ...p, 'gw-url': e.target.value }))}
-                      placeholder="ws://127.0.0.1:18789"
-                      className="system-input"
-                    />
-                  </div>
-                )}
+                <div className="system-row">
+                  <span className="system-label">Client ID</span>
+                  <span className="system-value" style={{ fontSize: 11 }}>{gwConfig.clientId}</span>
+                </div>
+                <div className="system-row">
+                  <span className="system-label">Client Mode</span>
+                  <span className="system-value">{gwConfig.clientMode}</span>
+                </div>
                 {configStatus['gw'] && (
                   <div className={`system-config-status ${configStatus['gw'].type}`}>{configStatus['gw'].msg}</div>
                 )}
@@ -751,6 +806,9 @@ export default function SystemTab() {
                     const d = await r.json()
                     showConfigStatus('gw', d.success ? 'ok' : 'err', d.message || d.error)
                   }}>{t('system.gateway.test')}</button>
+                </div>
+                <div className="system-row" style={{ marginTop: 8, fontSize: 10, opacity: 0.6 }}>
+                  <span>{t('system.gateway.edit.note') || 'Note: Gateway URL and token must be edited via openclaw.json file on the server for security.'}</span>
                 </div>
               </div>
             )}
@@ -1162,6 +1220,66 @@ export default function SystemTab() {
         )}
       </div>
 
+      {/* Password Change */}
+      <div className="system-section">
+        <button className="system-section-header" onClick={() => toggle('password')}>
+          <span className="system-section-title">{t('system.password.title')}</span>
+          <span className="system-chevron">{collapsed.password ? '▸' : '▾'}</span>
+        </button>
+        {!collapsed.password && (
+          <div className="system-section-body">
+            {passwordStatus && (
+              <div className={`system-config-status ${passwordStatus.type}`} style={{ marginBottom: 8 }}>
+                {passwordStatus.msg}
+              </div>
+            )}
+            <div className="system-password-form">
+              <div className="system-password-field">
+                <label className="system-password-label">{t('system.password.current')}</label>
+                <input
+                  type="password"
+                  className="system-config-input"
+                  placeholder={t('system.password.current.placeholder')}
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  disabled={changingPassword}
+                />
+              </div>
+              <div className="system-password-field">
+                <label className="system-password-label">{t('system.password.new')}</label>
+                <input
+                  type="password"
+                  className="system-config-input"
+                  placeholder={t('system.password.new.placeholder')}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  disabled={changingPassword}
+                />
+              </div>
+              <div className="system-password-field">
+                <label className="system-password-label">{t('system.password.confirm')}</label>
+                <input
+                  type="password"
+                  className="system-config-input"
+                  placeholder={t('system.password.confirm.placeholder')}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  disabled={changingPassword}
+                />
+              </div>
+              <button
+                className="system-action-btn"
+                style={{ width: '100%', marginTop: 6 }}
+                onClick={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? t('system.password.changing') : t('system.password.change')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Server Shutdown */}
       <div className="system-section system-shutdown-section">
         <button className="system-section-header" onClick={() => toggle('shutdown')}>
@@ -1180,11 +1298,19 @@ export default function SystemTab() {
             ) : (
               <div className="system-shutdown-confirm">
                 <p>{t('system.shutdown.confirm')}</p>
+                <input
+                  type="password"
+                  className="system-config-input"
+                  placeholder={t('system.shutdown.password.placeholder') || 'Enter password to confirm'}
+                  value={shutdownPassword}
+                  onChange={e => setShutdownPassword(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                />
                 <div className="system-shutdown-actions">
                   <button className="system-shutdown-btn danger" onClick={handleShutdown}>
                     {t('system.shutdown.btn')}
                   </button>
-                  <button className="system-action-btn" onClick={() => setShutdownConfirm(false)}>
+                  <button className="system-action-btn" onClick={() => { setShutdownConfirm(false); setShutdownPassword(''); }}>
                     Cancel
                   </button>
                 </div>

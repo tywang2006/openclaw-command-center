@@ -431,6 +431,27 @@
 .system-config-status.err { color: var(--danger); }
 .system-config-status.saving { color: var(--accent-color); }
 
+/* ---- Password change form ---- */
+.system-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.system-password-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
 /* ---- Shutdown section ---- */
 .system-shutdown-section {
   grid-column: 1 / -1;

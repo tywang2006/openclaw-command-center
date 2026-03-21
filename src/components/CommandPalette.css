@@ -135,3 +135,125 @@
   color: #ffbb00;
   background: rgba(255, 187, 0, 0.15);
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .cmd-palette-overlay {
+    padding-top: 8vh;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .cmd-palette {
+    width: calc(100% - 24px);
+    max-width: none;
+    border-radius: var(--radius-md);
+  }
+
+  .cmd-palette-input-row {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .cmd-palette-input {
+    font-size: 16px;
+    min-height: 44px;
+    line-height: 44px;
+  }
+
+  .cmd-palette-list {
+    max-height: calc(100vh - 30vh - 72px);
+    padding: 6px;
+  }
+
+  .cmd-palette-item,
+  .cmd-palette-item[role="option"] {
+    min-height: 44px;
+    padding: 12px 14px;
+    gap: 10px;
+    font-size: 14px;
+  }
+
+  .cmd-palette-label {
+    font-size: 14px;
+  }
+
+  .cmd-palette-desc {
+    font-size: 13px;
+  }
+
+  .cmd-palette-category {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+
+  .cmd-search-badge {
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+
+  .cmd-palette-kbd {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+
+  .cmd-palette-empty,
+  .cmd-search-loading {
+    padding: 24px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .cmd-palette-overlay {
+    padding-top: 4vh;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .cmd-palette {
+    width: calc(100% - 16px);
+    border-radius: var(--radius-sm);
+  }
+
+  .cmd-palette-input-row {
+    padding: 12px 14px;
+  }
+
+  .cmd-palette-input {
+    font-size: 16px;
+  }
+
+  .cmd-palette-list {
+    max-height: calc(100vh - 20vh - 68px);
+    padding: 4px;
+  }
+
+  .cmd-palette-item,
+  .cmd-palette-item[role="option"] {
+    min-height: 48px;
+    padding: 14px 12px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .cmd-palette-label {
+    font-size: 15px;
+    flex: 1 1 auto;
+  }
+
+  .cmd-palette-desc {
+    font-size: 12px;
+    margin-left: 0;
+    flex-basis: 100%;
+    margin-top: 4px;
+  }
+
+  .cmd-palette-category {
+    order: -1;
+  }
+
+  .cmd-search-badge {
+    order: -1;
+  }
+}

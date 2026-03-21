@@ -73,13 +73,13 @@ function _flushStreamNotify() {
   for (const fn of _streamingListeners) fn()
 }
 function _notifyStreamListeners() {
-  // Debounce: batch streaming notifications every 50ms to reduce re-renders during fast streaming
+  // Debounce: batch streaming notifications every 16ms (60fps) for smooth streaming with minimal re-renders
   if (_streamNotifyTimer) return
   _streamNotifyTimer = setTimeout(() => {
     _streamNotifyTimer = null
     _streamingVersion++
     for (const fn of _streamingListeners) fn()
-  }, 50)
+  }, 16)
 }
 
 export function getStreamingSnapshot() { return _streamingTexts }
@@ -132,13 +132,75 @@ export function consumeVisit(): DeptVisit | undefined {
 // Cap arrays to prevent unbounded growth if events aren't consumed
 const MAX_EVENT_QUEUE = 100
 
-interface MeetingEvent {
-  type: 'start' | 'end'
+// Base meeting event
+interface BaseMeetingEvent {
   meetingId: string
-  topic?: string
-  deptIds: string[]
   timestamp: number
 }
+
+// Meeting lifecycle events
+interface MeetingStartEvent extends BaseMeetingEvent {
+  type: 'start'
+  topic?: string
+  deptIds: string[]
+}
+
+interface MeetingEndEvent extends BaseMeetingEvent {
+  type: 'end'
+  deptIds: string[]
+}
+
+// Negotiation events
+interface NegotiationStartEvent extends BaseMeetingEvent {
+  type: 'meeting:negotiation-start'
+  proposal: string
+  maxRounds: number
+}
+
+interface NegotiationVoteEvent extends BaseMeetingEvent {
+  type: 'meeting:negotiation-vote'
+  deptId: string
+  stance: 'agree' | 'disagree' | 'modify' | 'abstain'
+  reason: string
+  suggestion?: string
+  round: number
+}
+
+interface NegotiationRoundEvent extends BaseMeetingEvent {
+  type: 'meeting:negotiation-round'
+  round: number
+  maxRounds: number
+  agreeCount: number
+  total: number
+}
+
+interface NegotiationEndEvent extends BaseMeetingEvent {
+  type: 'meeting:negotiation-end'
+  result: 'accepted' | 'rejected' | 'timeout'
+  agreeCount: number
+  total: number
+}
+
+// Action items event
+interface ActionItemsEvent extends BaseMeetingEvent {
+  type: 'meeting:action-items'
+  actionItems: Array<{
+    task: string
+    assignedTo: string
+    dueDate?: string
+    priority?: string
+  }>
+}
+
+// Union type for all meeting events
+export type MeetingEvent =
+  | MeetingStartEvent
+  | MeetingEndEvent
+  | NegotiationStartEvent
+  | NegotiationVoteEvent
+  | NegotiationRoundEvent
+  | NegotiationEndEvent
+  | ActionItemsEvent
 
 let meetingEvents: MeetingEvent[] = []
 const meetingListeners = new Set<() => void>()
@@ -154,7 +216,7 @@ export function consumeMeetingEvent(): MeetingEvent | undefined {
   return item
 }
 
-export function useMeetingEvents(): MeetingEvent[] {
+export function useMeetingEvents(): readonly MeetingEvent[] {
   return useSyncExternalStore(
     (cb) => {
       meetingListeners.add(cb)
@@ -228,6 +290,76 @@ export function useMeetingRoundCompletes(): MeetingRoundComplete[] {
       return () => { meetingRoundListeners.delete(cb) }
     },
     () => meetingRoundCompletes
+  )
+}
+
+// Sub-agent events store — decoupled for real-time updates
+export interface SubAgentEvent {
+  type: 'created' | 'removed' | 'status-changed'
+  deptId: string
+  subId: string
+  name?: string
+  task?: string
+  status?: string
+  timestamp: number
+}
+
+let subAgentEvents: SubAgentEvent[] = []
+const subAgentListeners = new Set<() => void>()
+
+function emitSubAgentChange() {
+  for (const fn of subAgentListeners) fn()
+}
+
+export function consumeSubAgentEvent(): SubAgentEvent | undefined {
+  if (subAgentEvents.length === 0) return undefined
+  const item = subAgentEvents[0]
+  subAgentEvents = subAgentEvents.slice(1)
+  return item
+}
+
+export function useSubAgentEvents(): SubAgentEvent[] {
+  return useSyncExternalStore(
+    (cb) => {
+      subAgentListeners.add(cb)
+      return () => { subAgentListeners.delete(cb) }
+    },
+    () => subAgentEvents
+  )
+}
+
+// Audit events store — decoupled for real-time updates
+export interface AuditEvent {
+  id: string
+  timestamp: string
+  action: string
+  target: string
+  deptId: string | null
+  details: unknown
+  ip: string | null
+}
+
+let auditEvents: AuditEvent[] = []
+const auditListeners = new Set<() => void>()
+
+function emitAuditChange() {
+  for (const fn of auditListeners) fn()
+}
+
+export function consumeAuditEvent(): AuditEvent | undefined {
+  if (auditEvents.length === 0) return undefined
+  const item = auditEvents[0]
+  auditEvents = auditEvents.slice(1)
+  return item
+}
+
+export function useAuditEvents(): AuditEvent[] {
+  return useSyncExternalStore(
+    (cb) => {
+      auditListeners.add(cb)
+      return () => { auditListeners.delete(cb) }
+    },
+    () => auditEvents
   )
 }
 
@@ -584,7 +716,7 @@ export function useAgentState() {
         meetingEvents.push({
           type: 'start',
           meetingId: (d.meetingId as string) || '',
-          topic: d.topic as string | undefined,
+          topic: (d.topic as string) || '',
           deptIds: (d.deptIds as string[]) || [],
           timestamp: Date.now()
         })
@@ -609,9 +741,10 @@ export function useAgentState() {
         // Negotiation events - forward to meeting components via meeting events
         if (meetingEvents.length >= MAX_EVENT_QUEUE) meetingEvents = meetingEvents.slice(-50)
         meetingEvents.push({
-          type: event as 'start' | 'end',
-          ...d,
-          timestamp: Date.now()
+          type: event as MeetingEvent['type'],
+          meetingId: (d.meetingId as string) || '',
+          timestamp: Date.now(),
+          ...(d as Record<string, unknown>)
         } as MeetingEvent)
         emitMeetingChange()
         break
@@ -641,6 +774,17 @@ export function useAgentState() {
         emitMeetingRoundChange()
         break
 
+      case 'meeting:action-items':
+        if (meetingEvents.length >= MAX_EVENT_QUEUE) meetingEvents = meetingEvents.slice(-50)
+        meetingEvents.push({
+          type: event as MeetingEvent['type'],
+          meetingId: (d.meetingId as string) || '',
+          timestamp: Date.now(),
+          ...(d as Record<string, unknown>)
+        } as MeetingEvent)
+        emitMeetingChange()
+        break
+
       case 'gateway:status': {
         const status = d.status as 'unknown' | 'connected' | 'disconnected' | 'fatal' | undefined
         if (mountedRef.current && status) {
@@ -652,6 +796,45 @@ export function useAgentState() {
         }
         break
       }
+
+      case 'subagent:created':
+        if (subAgentEvents.length >= MAX_EVENT_QUEUE) subAgentEvents = subAgentEvents.slice(-50)
+        subAgentEvents.push({
+          type: 'created',
+          deptId: (d.deptId as string) || '',
+          subId: (d.subId as string) || '',
+          name: d.name as string | undefined,
+          task: d.task as string | undefined,
+          status: (d.status as string) || 'active',
+          timestamp: Date.now()
+        })
+        emitSubAgentChange()
+        break
+
+      case 'subagent:removed':
+        if (subAgentEvents.length >= MAX_EVENT_QUEUE) subAgentEvents = subAgentEvents.slice(-50)
+        subAgentEvents.push({
+          type: 'removed',
+          deptId: (d.deptId as string) || '',
+          subId: (d.subId as string) || '',
+          timestamp: Date.now()
+        })
+        emitSubAgentChange()
+        break
+
+      case 'audit:new':
+        if (auditEvents.length >= MAX_EVENT_QUEUE) auditEvents = auditEvents.slice(-50)
+        auditEvents.push({
+          id: (d.id as string) || '',
+          timestamp: (d.timestamp as string) || new Date().toISOString(),
+          action: (d.action as string) || '',
+          target: (d.target as string) || '',
+          deptId: (d.deptId as string | null) || null,
+          details: d.details || null,
+          ip: (d.ip as string | null) || null,
+        })
+        emitAuditChange()
+        break
 
       case 'departments:updated':
         // Reload departments from REST API
@@ -716,20 +899,43 @@ export function useAgentState() {
     }
   }, [])
 
-  const setSelectedDeptId = (deptId: string | null) => {
+  // Wrap setter functions in useCallback to maintain stable references
+  const setSelectedDeptId = useCallback((deptId: string | null) => {
     setState(prev => ({ ...prev, selectedDeptId: deptId }))
-  }
+  }, [])
 
-  const addActivity = (activity: Activity) => {
+  const addActivity = useCallback((activity: Activity) => {
     setState(prev => ({
       ...prev,
       activities: [...prev.activities, activity].slice(-200),
     }))
-  }
+  }, [])
+
+  const refreshRequests = useCallback(async () => {
+    try {
+      const response = await authedFetch('/api/requests')
+      if (response.ok) {
+        const data = await response.json()
+        if (mountedRef.current && Array.isArray(data.requests)) {
+          setState(prev => ({
+            ...prev,
+            requests: data.requests.map((r: { filename: string; content: string; modified?: string; created?: string }) => ({
+              filename: r.filename || '',
+              content: r.content || '',
+              date: r.modified || r.created || new Date().toISOString(),
+            }))
+          }))
+        }
+      }
+    } catch (err) {
+      console.error('[API] Failed to fetch requests:', err)
+    }
+  }, [])
 
   return {
     ...state,
     setSelectedDeptId,
     addActivity,
+    refreshRequests,
   }
 }

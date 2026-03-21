@@ -10,6 +10,7 @@ import { safeWriteFileSync, BASE_PATH } from '../utils.js';
 import { withMutex } from '../file-lock.js';
 import { recordAudit } from './audit.js';
 import { createLogger } from '../logger.js';
+import { safeBroadcast } from '../broadcast.js';
 
 const log = createLogger('Meetings');
 
@@ -21,6 +22,9 @@ const meetings = new Map();
 // Constants
 const MAX_ACTIVE_MEETINGS = 10;
 const MAX_MESSAGES_PER_MEETING = 200;  // H7 Fix: Cap at 200 messages
+
+// Meeting ID format: mtg_ + 12 hex chars
+const VALID_MEETING_ID = /^mtg_[a-f0-9]{12}$/;
 const DEPT_RESPONSE_TIMEOUT = 180000; // 3 minutes
 const NEGOTIATION_TIMEOUT = 600000; // 10 minutes
 
@@ -30,62 +34,106 @@ if (!fs.existsSync(MEETINGS_DIR)) {
   fs.mkdirSync(MEETINGS_DIR, { recursive: true });
 }
 
-// Load meetings from disk on startup
-function loadMeetingsFromDisk() {
+// Load meetings from disk on startup (async with parallel file reads)
+async function loadMeetingsFromDisk() {
   const dir = path.join(BASE_PATH, 'departments', 'meetings');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     return;
   }
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-  for (const file of files) {
-    try {
-      const data = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
-      if (data.id && data.status === 'active') {
+
+  try {
+    const files = await fs.promises.readdir(dir);
+    const jsonFiles = files.filter(f => f.endsWith('.json'));
+
+    // Read all files in parallel for faster startup
+    const fileReads = jsonFiles.map(async (file) => {
+      try {
+        const content = await fs.promises.readFile(path.join(dir, file), 'utf8');
+        const data = JSON.parse(content);
+        if (data.id && data.status === 'active') {
+          return data;
+        }
+      } catch (err) {
+        log.warn(`Failed to parse ${file}: ${err.message}`);
+      }
+      return null;
+    });
+
+    const results = await Promise.all(fileReads);
+
+    // Add valid meetings to map
+    for (const data of results) {
+      if (data) {
         meetings.set(data.id, data);
       }
-    } catch (err) {
-      log.warn(`Failed to parse ${file}: ${err.message}`);
     }
-  }
-  log.info(`Loaded ${meetings.size} active meetings from disk`);
-}
-loadMeetingsFromDisk();
 
-// Clean up old meeting files (older than 30 days)
-function cleanupOldMeetings() {
+    log.info(`Loaded ${meetings.size} active meetings from disk`);
+  } catch (err) {
+    log.error(`Failed to load meetings: ${err.message}`);
+  }
+}
+// Start loading async (don't block server startup)
+loadMeetingsFromDisk().catch(err => log.error(`Meeting load error: ${err.message}`));
+
+// Clean up old meeting files (older than 30 days) - async version with parallel I/O
+async function cleanupOldMeetings() {
   try {
     const dir = path.join(BASE_PATH, 'departments', 'meetings');
     if (!fs.existsSync(dir)) return;
     const now = Date.now();
     const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-    let cleaned = 0;
-    for (const file of files) {
+
+    const files = await fs.promises.readdir(dir);
+    const jsonFiles = files.filter(f => f.endsWith('.json'));
+
+    // Check files in parallel, collect files to delete
+    const checks = jsonFiles.map(async (file) => {
       try {
         const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
+        const stat = await fs.promises.stat(filePath);
         if (now - stat.mtimeMs > MAX_AGE_MS) {
-          fs.unlinkSync(filePath);
-          cleaned++;
+          return filePath;
         }
       } catch {}
+      return null;
+    });
+
+    const filesToDelete = (await Promise.all(checks)).filter(Boolean);
+
+    // Delete files in parallel
+    if (filesToDelete.length > 0) {
+      await Promise.all(filesToDelete.map(fp => fs.promises.unlink(fp).catch(() => {})));
+      log.info(`Cleaned up ${filesToDelete.length} old meeting files`);
     }
-    if (cleaned > 0) log.info(`Cleaned up ${cleaned} old meeting files`);
   } catch (err) {
     log.warn('Cleanup error:', err.message);
   }
 }
 
 // Run cleanup on startup and every 6 hours
-cleanupOldMeetings();
-setInterval(cleanupOldMeetings, 6 * 60 * 60 * 1000);
+cleanupOldMeetings().catch(err => log.warn('Initial cleanup error:', err.message));
+setInterval(() => {
+  cleanupOldMeetings().catch(err => log.warn('Periodic cleanup error:', err.message));
+}, 6 * 60 * 60 * 1000);
 
-// Persist meeting to disk
-function persistMeeting(meeting) {
+// Persist meeting to disk (async to avoid blocking event loop)
+async function persistMeeting(meeting) {
   const dir = path.join(BASE_PATH, 'departments', 'meetings');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  safeWriteFileSync(path.join(dir, `${meeting.id}.json`), JSON.stringify(meeting, null, 2));
+  const filePath = path.join(dir, `${meeting.id}.json`);
+  const data = JSON.stringify(meeting, null, 2);
+
+  // Use async write to avoid blocking event loop
+  try {
+    await fs.promises.writeFile(filePath + '.tmp', data, 'utf8');
+    await fs.promises.rename(filePath + '.tmp', filePath);
+  } catch (err) {
+    log.error(`Failed to persist meeting ${meeting.id}: ${err.message}`);
+    // Fallback to sync for critical data safety
+    safeWriteFileSync(filePath, data);
+  }
 }
 
 /**
@@ -105,37 +153,52 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'invalid deptIds' });
   }
 
-  // P0 Fix #1: Unbounded meeting creation - enforce limit
-  const activeMeetingsCount = [...meetings.values()].filter(m => m.status === 'active').length;
-  if (activeMeetingsCount >= MAX_ACTIVE_MEETINGS) {
-    return res.status(429).json({
-      error: 'Maximum active meetings limit reached',
-      limit: MAX_ACTIVE_MEETINGS,
-      active: activeMeetingsCount
-    });
+  // Use mutex to prevent TOCTOU race condition on meeting creation
+  const result = await withMutex('meeting-creation', async () => {
+    // P0 Fix #1: Unbounded meeting creation - enforce limit
+    const activeMeetingsCount = [...meetings.values()].filter(m => m.status === 'active').length;
+    if (activeMeetingsCount >= MAX_ACTIVE_MEETINGS) {
+      return {
+        error: true,
+        status: 429,
+        data: {
+          error: 'Maximum active meetings limit reached',
+          limit: MAX_ACTIVE_MEETINGS,
+          active: activeMeetingsCount
+        }
+      };
+    }
+
+    const meetingId = 'mtg_' + randomUUID().replace(/-/g, '').substring(0, 12);
+    const meeting = {
+      id: meetingId,
+      topic,
+      deptIds,
+      initiatorDeptId: initiatorDeptId || deptIds[0],
+      messages: [],
+      status: 'active',
+      createdAt: Date.now(),
+    };
+    meetings.set(meetingId, meeting);
+    await persistMeeting(meeting);
+
+    log.info(`Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
+    recordAudit({ action: 'meeting:create', target: meetingId, details: { topic, deptIds }, ip: req.ip });
+
+    return { error: false, meeting, meetingId };
+  });
+
+  if (result.error) {
+    return res.status(result.status).json(result.data);
   }
 
-  const meetingId = 'mtg_' + randomUUID().replace(/-/g, '').substring(0, 12);
-  const meeting = {
-    id: meetingId,
-    topic,
-    deptIds,
-    initiatorDeptId: initiatorDeptId || deptIds[0],
-    messages: [],
-    status: 'active',
-    createdAt: Date.now(),
-  };
-  meetings.set(meetingId, meeting);
-  persistMeeting(meeting);
-
-  log.info(`Created ${meetingId}: ${topic} with ${deptIds.join(', ')}`);
-  recordAudit({ action: 'meeting:create', target: meetingId, details: { topic, deptIds }, ip: req.ip });
+  const { meeting, meetingId } = result;
 
   // Broadcast meeting:start event to WebSocket clients
   try {
     const wss = req.app.locals.wss;
     if (wss) {
-      const msg = JSON.stringify({
+      const stats = safeBroadcast(wss, {
         event: 'meeting:start',
         data: {
           meetingId: meeting.id,
@@ -144,18 +207,7 @@ router.post('/', async (req, res) => {
         },
         timestamp: new Date().toISOString()
       });
-      let sent = 0;
-      wss.clients.forEach(c => {
-        if (c.readyState === 1 && c._authenticated) {
-          try {
-            c.send(msg);
-            sent++;
-          } catch (err) {
-            log.warn(`WS send error: ${err.message}`);
-          }
-        }
-      });
-      log.info(`Broadcast meeting:start to ${sent} WS clients (total: ${wss.clients.size})`);
+      log.info(`Broadcast meeting:start to ${stats.sent} WS clients (total: ${wss.clients.size})`);
     } else {
       log.info('No wss available for broadcast');
     }
@@ -188,6 +240,9 @@ router.get('/', (req, res) => {
  * Get meeting details with message history
  */
 router.get('/:id', (req, res) => {
+  if (!VALID_MEETING_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid meeting ID format' });
+  }
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
   res.json({ success: true, meeting });
@@ -205,6 +260,9 @@ router.get('/:id', (req, res) => {
  * Returns immediately with a roundId, then streams department responses via WebSocket.
  */
 router.post('/:id/message', async (req, res) => {
+  if (!VALID_MEETING_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid meeting ID format' });
+  }
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
 
@@ -214,7 +272,13 @@ router.post('/:id/message', async (req, res) => {
   }
 
   const { message, fromDeptId } = req.body;
-  if (!message) return res.status(400).json({ error: 'message required' });
+  if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
+  if (message.length > 10000) {
+    return res.status(400).json({ error: 'Message too long (max 10000 chars)' });
+  }
+  if (fromDeptId !== undefined && (typeof fromDeptId !== 'string' || fromDeptId.length > 50)) {
+    return res.status(400).json({ error: 'Invalid fromDeptId' });
+  }
 
   const roundId = randomUUID();
 
@@ -236,7 +300,7 @@ router.post('/:id/message', async (req, res) => {
     meeting.messages = [...first10, ...last190];
   }
 
-  persistMeeting(meeting);
+  await persistMeeting(meeting);
 
   // Send to all departments in meeting (real Gateway calls)
   const targetDepts = fromDeptId
@@ -297,13 +361,13 @@ ${recentHistory}
         }
 
         // P0 Fix #5: Move persistMeeting inside withMutex
-        persistMeeting(meeting);
+        await persistMeeting(meeting);
 
         results.push({ deptId, reply, success: result.success });
 
         // Broadcast department response immediately via WebSocket
         if (wss) {
-          const deptMsg = JSON.stringify({
+          safeBroadcast(wss, {
             event: 'meeting:dept-response',
             data: {
               meetingId: meeting.id,
@@ -314,15 +378,6 @@ ${recentHistory}
               totalDepts: targetDepts.length,
               timestamp: Date.now(),
             },
-          });
-          wss.clients.forEach(c => {
-            if (c.readyState === 1 && c._authenticated) {
-              try {
-                c.send(deptMsg);
-              } catch (err) {
-                log.warn(`WS send error: ${err.message}`);
-              }
-            }
           });
         }
       } catch (err) {
@@ -350,13 +405,13 @@ ${recentHistory}
         }
 
         // P0 Fix #5: Move persistMeeting inside withMutex
-        persistMeeting(meeting);
+        await persistMeeting(meeting);
 
         results.push({ deptId, reply: errorReply, success: false });
 
         // Broadcast error via WebSocket
         if (wss) {
-          const deptMsg = JSON.stringify({
+          safeBroadcast(wss, {
             event: 'meeting:dept-response',
             data: {
               meetingId: meeting.id,
@@ -369,22 +424,13 @@ ${recentHistory}
               timeout: isTimeout
             },
           });
-          wss.clients.forEach(c => {
-            if (c.readyState === 1 && c._authenticated) {
-              try {
-                c.send(deptMsg);
-              } catch (err) {
-                log.warn(`WS send error: ${err.message}`);
-              }
-            }
-          });
         }
       }
     }
 
     // Broadcast round complete
     if (wss) {
-      const completeMsg = JSON.stringify({
+      safeBroadcast(wss, {
         event: 'meeting:round-complete',
         data: {
           meetingId: meeting.id,
@@ -393,15 +439,6 @@ ${recentHistory}
           results,
         },
         timestamp: new Date().toISOString(),
-      });
-      wss.clients.forEach(c => {
-        if (c.readyState === 1 && c._authenticated) {
-          try {
-            c.send(completeMsg);
-          } catch (err) {
-            log.warn(`WS send error: ${err.message}`);
-          }
-        }
       });
     }
     });
@@ -444,14 +481,20 @@ function generateMeetingMinutes(meeting) {
  * End a meeting and optionally export to Google Drive
  */
 router.post('/:id/end', async (req, res) => {
+  if (!VALID_MEETING_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid meeting ID format' });
+  }
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+
+  let actionItemsSuccess = true;
+  let actionItemsError = null;
 
   // Wrap critical section in mutex to prevent race conditions
   await withMutex(`meeting-${req.params.id}`, async () => {
     meeting.status = 'ended';
     meeting.endedAt = Date.now();
-    persistMeeting(meeting);
+    await persistMeeting(meeting);
     log.info(`Ended ${meeting.id}: ${meeting.topic}`);
 
     recordAudit({ action: 'meeting:end', target: meeting.id, details: { topic: meeting.topic }, ip: req.ip });
@@ -461,6 +504,8 @@ router.post('/:id/end', async (req, res) => {
     try {
       await extractActionItems(meeting, wss, req.traceId);
     } catch (err) {
+      actionItemsSuccess = false;
+      actionItemsError = err.message;
       log.error(`Action item extraction failed: ${err.message}`);
     }
   });
@@ -470,8 +515,9 @@ router.post('/:id/end', async (req, res) => {
 
   // Broadcast meeting:end event to WebSocket clients
   try {
+    const wss = req.app.locals.wss;
     if (wss) {
-      const msg = JSON.stringify({
+      safeBroadcast(wss, {
         event: 'meeting:end',
         data: {
           meetingId: meeting.id,
@@ -479,23 +525,16 @@ router.post('/:id/end', async (req, res) => {
         },
         timestamp: new Date().toISOString()
       });
-      wss.clients.forEach(c => {
-        if (c.readyState === 1 && c._authenticated) {
-          try {
-            c.send(msg);
-          } catch (err) {
-            log.warn(`WS send error: ${err.message}`);
-          }
-        }
-      });
     }
   } catch (err) {
     log.error(`WS broadcast error: ${err.message}`);
   }
 
   let driveResult = null;
+  let driveExportSuccess = true;
+  let driveExportError = null;
 
-  // Try to export to Google Drive if auth is available
+  // Try to export to Google Drive if auth is available (best-effort, non-blocking)
   if (hasDriveAuth()) {
     try {
       const driveConfig = getDriveConfig();
@@ -525,6 +564,7 @@ router.post('/:id/end', async (req, res) => {
       });
 
       driveResult = {
+        success: true,
         fileId: file.data.id,
         fileName: file.data.name,
         webViewLink: file.data.webViewLink
@@ -541,12 +581,25 @@ router.post('/:id/end', async (req, res) => {
         actionUrl: file.data.webViewLink
       });
     } catch (error) {
+      driveExportSuccess = false;
+      driveExportError = error.message;
       log.error(`Drive export failed (non-fatal): ${error.message}`);
-      // Non-fatal: meeting still ends successfully
+      // Non-fatal: meeting still ends successfully, but return error status
+      driveResult = {
+        success: false,
+        error: error.message
+      };
     }
   }
 
-  res.json({ success: true, driveResult });
+  res.json({
+    success: true,
+    driveResult,
+    actionItems: {
+      success: actionItemsSuccess,
+      error: actionItemsError
+    }
+  });
 });
 
 /**
@@ -596,23 +649,16 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
           timestamp: Date.now()
         });
 
-        persistMeeting(meeting);
+        await persistMeeting(meeting);
 
         // Broadcast to UI
-        const msg = JSON.stringify({
-          event: 'meeting:action-items',
-          data: { meetingId: meeting.id, actionItems },
-          timestamp: new Date().toISOString()
-        });
-        if (wss) wss.clients.forEach(c => {
-          if (c.readyState === 1 && c._authenticated) {
-            try {
-              c.send(msg);
-            } catch (err) {
-              log.warn(`WS send error: ${err.message}`);
-            }
-          }
-        });
+        if (wss) {
+          safeBroadcast(wss, {
+            event: 'meeting:action-items',
+            data: { meetingId: meeting.id, actionItems },
+            timestamp: new Date().toISOString()
+          });
+        }
 
         log.info(`Extracted ${actionItems.length} action items for ${meeting.id}`);
       }
@@ -627,6 +673,9 @@ Extract 3-8 action items. Use actual department IDs from the transcript. Be spec
  * Get action items for a meeting
  */
 router.get('/:id/action-items', (req, res) => {
+  if (!VALID_MEETING_ID.test(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid meeting ID format' });
+  }
   const meeting = meetings.get(req.params.id);
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
   res.json({ actionItems: meeting.actionItems || [], meetingId: meeting.id });
@@ -638,6 +687,9 @@ router.get('/:id/action-items', (req, res) => {
  */
 router.post('/:id/negotiate', async (req, res) => {
   const { id } = req.params;
+  if (!VALID_MEETING_ID.test(id)) {
+    return res.status(400).json({ error: 'Invalid meeting ID format' });
+  }
   const { proposal, maxRounds = 3 } = req.body;
   const meeting = meetings.get(id);
   if (!meeting || meeting.status !== 'active') {
@@ -835,16 +887,7 @@ Try to find common ground. Be concise.`;
  */
 function broadcastToMeeting(wss, meetingId, event, data) {
   if (!wss) return;
-  const msg = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
-  wss.clients.forEach(c => {
-    if (c.readyState === 1 && c._authenticated) {
-      try {
-        c.send(msg);
-      } catch (err) {
-        log.warn(`WS send error: ${err.message}`);
-      }
-    }
-  });
+  safeBroadcast(wss, { event, data, timestamp: new Date().toISOString() });
 }
 
 export default router;

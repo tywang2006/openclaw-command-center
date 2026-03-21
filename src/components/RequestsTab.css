@@ -46,4 +46,146 @@
   max-height: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 12px;
+}
+
+.request-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.request-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 100ms ease;
+  white-space: nowrap;
+}
+
+.request-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.request-btn.approve {
+  background: var(--accent-a15);
+  color: var(--accent);
+  border: 1px solid var(--accent-a30);
+}
+
+.request-btn.approve:hover:not(:disabled) {
+  background: var(--accent-a30);
+  border-color: var(--accent);
+}
+
+.request-btn.deny {
+  background: var(--danger-a15);
+  color: var(--danger);
+  border: 1px solid var(--danger-a30);
+}
+
+.request-btn.deny:hover:not(:disabled) {
+  background: var(--danger-a30);
+  border-color: var(--danger);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .requests-tab {
+    padding: var(--sp-2);
+  }
+
+  .requests-tab.empty {
+    min-height: 200px;
+    padding: var(--sp-4);
+    font-size: var(--fs-sm);
+  }
+
+  .request-card {
+    padding: var(--sp-4);
+    margin-bottom: var(--sp-4);
+    border-radius: 8px;
+  }
+
+  .request-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-4);
+  }
+
+  .request-date {
+    font-size: var(--fs-xs);
+    order: -1;
+  }
+
+  .request-filename {
+    font-size: var(--fs-base);
+    margin-bottom: var(--sp-2);
+    word-break: break-word;
+  }
+
+  .request-content {
+    font-size: var(--fs-sm);
+    max-height: 150px;
+    word-break: break-word;
+  }
+
+  .request-actions {
+    flex-direction: row;
+    gap: var(--sp-2);
+  }
+
+  /* Ensure any buttons have proper touch targets */
+  .request-btn,
+  .request-card button,
+  .request-card input[type="button"],
+  .request-card input[type="submit"] {
+    min-height: 44px;
+    min-width: 44px;
+    padding: var(--sp-2) var(--sp-4);
+    font-size: 16px;
+    flex: 1;
+  }
+
+  /* Prevent iOS zoom on input focus */
+  .request-card input,
+  .request-card textarea,
+  .request-card select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .requests-tab {
+    padding: var(--sp-1);
+  }
+
+  .requests-tab.empty {
+    min-height: 150px;
+    padding: var(--sp-2);
+  }
+
+  .request-card {
+    padding: var(--sp-2);
+    margin-bottom: var(--sp-2);
+  }
+
+  .request-header {
+    gap: var(--sp-1);
+    margin-bottom: var(--sp-2);
+  }
+
+  .request-filename {
+    font-size: var(--fs-sm);
+  }
+
+  .request-content {
+    font-size: var(--fs-xs);
+    line-height: 1.4;
+  }
 }

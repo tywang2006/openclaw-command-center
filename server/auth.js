@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { DATA_DIR, safeWriteFileSync } from './utils.js';
 import { createLogger } from './logger.js';
+import { recordAudit } from './routes/audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,7 @@ const OLD_PASSWORD_FILE = path.join(__dirname, '../.auth_password');
 if (!fs.existsSync(PASSWORD_FILE) && fs.existsSync(OLD_PASSWORD_FILE)) {
   try {
     fs.copyFileSync(OLD_PASSWORD_FILE, PASSWORD_FILE);
+    fs.chmodSync(PASSWORD_FILE, 0o600);
     fs.unlinkSync(OLD_PASSWORD_FILE);
     log.info('Migrated password file to persistent location', { path: PASSWORD_FILE });
   } catch (err) {
@@ -31,7 +33,13 @@ const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const activeTokens = new Map();
 
 // Periodic token cleanup every 5 minutes
-setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
+const _tokenCleanupTimer = setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
+
+/** Stop the token cleanup timer (call during graceful shutdown) */
+export function stopAuthCleanup() {
+  clearInterval(_tokenCleanupTimer);
+  clearInterval(_rateLimitCleanupTimer);
+}
 
 /**
  * Check if a password file exists (i.e. password has been set by user)
@@ -181,7 +189,7 @@ function checkLoginRateLimit(ip) {
   return true;
 }
 
-setInterval(() => {
+const _rateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, record] of loginAttempts.entries()) {
     if (now - record.firstAttempt > RATE_LIMIT_WINDOW_MS) loginAttempts.delete(ip);
@@ -282,25 +290,31 @@ authRouter.post('/login', (req, res) => {
 });
 
 /**
- * POST /api/auth/logout (optional, for completeness)
- * Revokes the current token and closes associated WebSocket connections
+ * POST /api/auth/logout
+ * Revokes the current token and closes associated WebSocket connections.
+ * Requires a valid Bearer token (prevents unauthenticated token-guessing revocation).
  */
 authRouter.post('/logout', (req, res) => {
   const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    if (activeTokens.has(token)) {
-      activeTokens.delete(token);
-      log.info('Token revoked', { activeTokens: activeTokens.size });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
 
-      // Close WebSocket connections authenticated with this token
-      for (const cb of _tokenRevokedCallbacks) {
-        try {
-          cb(token);
-        } catch (err) {
-          log.error('Error in token revoked callback', { error: err.message });
-        }
-      }
+  const token = authHeader.substring(7);
+
+  if (!validateToken(token)) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+  }
+
+  activeTokens.delete(token);
+  log.info('Token revoked via logout', { activeTokens: activeTokens.size });
+
+  // Close WebSocket connections authenticated with this token
+  for (const cb of _tokenRevokedCallbacks) {
+    try {
+      cb(token);
+    } catch (err) {
+      log.error('Error in token revoked callback', { error: err.message });
     }
   }
 
@@ -312,10 +326,20 @@ authRouter.post('/logout', (req, res) => {
 
 /**
  * PUT /api/auth/password
- * Change the system password
+ * Change the system password. Requires a valid Bearer token.
  * Body: { currentPassword, newPassword }
  */
 authRouter.put('/password', (req, res) => {
+  // Require valid token before allowing password change
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+  const token = authHeader.substring(7);
+  if (!validateToken(token)) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+  }
+
   const clientIp = req.ip || req.socket.remoteAddress;
   if (!checkLoginRateLimit(clientIp)) {
     return res.status(429).json({
@@ -336,9 +360,10 @@ authRouter.put('/password', (req, res) => {
   const storedPassword = getStoredPassword();
 
   if (!storedPassword || !verifyPassword(currentPassword, storedPassword)) {
+    recordAudit({ action: 'password:change:failed', target: 'system', ip: clientIp });
     return res.status(401).json({
       success: false,
-      error: 'Current password is incorrect'
+      error: 'Invalid credentials'
     });
   }
 
@@ -368,6 +393,8 @@ authRouter.put('/password', (req, res) => {
   for (const cb of _tokensClaredCallbacks) { try { cb(); } catch {
     // Callback error — non-critical
   } }
+
+  recordAudit({ action: 'password:changed', target: 'system', ip: clientIp });
 
   res.json({
     success: true,

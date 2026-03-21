@@ -1,9 +1,11 @@
 import express from 'express';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 import crypto from 'node:crypto';
 import { DATA_DIR } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { safeBroadcast } from '../broadcast.js';
 
 const log = createLogger('Audit');
 const router = express.Router();
@@ -27,8 +29,17 @@ function csvSafe(value) {
 
 const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl');
 const MAX_ENTRIES = 500;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 let auditLog = [];
+let wss = null;
+
+/**
+ * Set WebSocket server for real-time audit broadcasting
+ */
+export function setAuditWss(websocketServer) {
+  wss = websocketServer;
+}
 
 // Load existing entries
 try {
@@ -47,7 +58,26 @@ try {
   log.error('Failed to load: ' + err.message);
 }
 
-export function recordAudit({ action, target, deptId = null, details = null, ip = null }) {
+/**
+ * Rotate audit file if it exceeds MAX_FILE_SIZE.
+ * Renames audit.jsonl to audit.jsonl.1 (overwrites old backup).
+ */
+async function rotateAuditFile() {
+  try {
+    const stats = await fsPromises.stat(AUDIT_FILE);
+    if (stats.size >= MAX_FILE_SIZE) {
+      const backupFile = AUDIT_FILE + '.1';
+      await fsPromises.rename(AUDIT_FILE, backupFile);
+      log.info(`Rotated audit.jsonl (${(stats.size / 1024 / 1024).toFixed(2)}MB) to audit.jsonl.1`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      log.error('Rotation check failed: ' + err.message);
+    }
+  }
+}
+
+export async function recordAudit({ action, target, deptId = null, details = null, ip = null }) {
   const entry = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
@@ -63,17 +93,32 @@ export function recordAudit({ action, target, deptId = null, details = null, ip 
     auditLog = auditLog.slice(-MAX_ENTRIES);
   }
 
-  fs.appendFile(AUDIT_FILE, JSON.stringify(entry) + '\n', (err) => {
-    if (err) log.error('Write failed: ' + err.message);
-  });
+  // Broadcast to connected WebSocket clients in real-time
+  if (wss) {
+    safeBroadcast(wss, {
+      event: 'audit:new',
+      data: entry,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Async file I/O to avoid blocking event loop
+  try {
+    await rotateAuditFile();
+    await fsPromises.appendFile(AUDIT_FILE, JSON.stringify(entry) + '\n', 'utf8');
+  } catch (err) {
+    log.error('Write failed: ' + err.message);
+  }
 
   return entry;
 }
 
 router.get('/audit', (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), MAX_ENTRIES);
-    const offset = parseInt(req.query.offset || '0', 10);
+    const parsedLimit = parseInt(req.query.limit || '50', 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(1, parsedLimit), MAX_ENTRIES) : 50;
+    const parsedOffset = parseInt(req.query.offset || '0', 10);
+    const offset = Number.isFinite(parsedOffset) ? Math.max(0, parsedOffset) : 0;
     const actionFilter = req.query.action || null;
     const deptFilter = req.query.deptId || null;
 

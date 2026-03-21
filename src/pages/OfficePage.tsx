@@ -49,15 +49,25 @@ interface OfficePageProps {
 export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLogout }: OfficePageProps) {
   const agentState = useAgentStateContext()
   const isMobile = useMobile()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [rightTab, setRightTab] = useState<RightTab>(() => {
-    const tabParam = searchParams.get('tab')
-    if (tabParam && ['chat','bulletin','memory','activity','requests','meeting','integrations','skills','guide'].includes(tabParam)) {
-      return tabParam as RightTab
+  // Valid tabs for URL sync
+  const validTabs = useMemo(() => ['chat','bulletin','memory','activity','requests','meeting','integrations','skills','guide'], [])
+
+  // Sync rightTab state with URL params
+  const tabParam = searchParams.get('tab')
+  const initialTab = (tabParam && validTabs.includes(tabParam)) ? (tabParam as RightTab) : 'chat'
+  const [rightTab, setRightTab] = useState<RightTab>(initialTab)
+
+  // Update rightTab when URL changes
+  useEffect(() => {
+    const currentTab = searchParams.get('tab')
+    if (currentTab && validTabs.includes(currentTab) && currentTab !== rightTab) {
+      setRightTab(currentTab as RightTab)
+    } else if (!currentTab && rightTab !== 'chat') {
+      setRightTab('chat')
     }
-    return 'chat'
-  })
+  }, [searchParams, rightTab, validTabs])
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [subAgentsByDept, setSubAgentsByDept] = useState<Record<string, SubAgent[]>>({})
   const [showDeptPicker, setShowDeptPicker] = useState(false)
@@ -116,8 +126,8 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
   const handleSwitchToChat = useCallback((deptId: string, prefillMessage: string) => {
     agentState.setSelectedDeptId(deptId)
     setChatPrefill(prefillMessage)
-    setRightTab('chat')
-  }, [agentState.setSelectedDeptId])
+    setSearchParams({ tab: 'chat' })
+  }, [agentState.setSelectedDeptId, setSearchParams])
 
   // Swipe to switch departments on mobile
   const swipeToDept = useCallback((direction: 'next' | 'prev') => {
@@ -341,9 +351,9 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
         />
       )}
       {rightTab === 'requests' && (
-        <RequestsTab requests={agentState.requests} />
+        <RequestsTab requests={agentState.requests} onRefresh={agentState.refreshRequests} />
       )}
-      {rightTab === 'meeting' && <MeetingRoom departments={agentState.departments} onClose={() => setRightTab('chat')} />}
+      {rightTab === 'meeting' && <MeetingRoom departments={agentState.departments} onClose={() => setSearchParams({ tab: 'chat' })} />}
       {rightTab === 'integrations' && <IntegrationsTab onSwitchToChat={handleSwitchToChat} />}
       {rightTab === 'skills' && <SkillsTab />}
       {rightTab === 'guide' && <GuideTab />}
@@ -386,7 +396,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
 
         <MobileNav
           activeTab={rightTab}
-          onTabChange={setRightTab}
+          onTabChange={(tab) => setSearchParams({ tab })}
           departments={agentState.departments}
           selectedDeptId={agentState.selectedDeptId}
           onSelectDept={agentState.setSelectedDeptId}
@@ -513,7 +523,7 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
               <button
                 key={tab.id}
                 className={`right-tab ${rightTab === tab.id ? 'active' : ''}`}
-                onClick={() => setRightTab(tab.id)}
+                onClick={() => setSearchParams({ tab: tab.id })}
               >
                 <tab.Icon size={14} color={rightTab === tab.id ? '#00d4aa' : '#a0a0b0'} />
                 <span>{tab.label}</span>
@@ -563,8 +573,8 @@ export default function OfficePage({ t, locale, setLocale, theme, setTheme, onLo
             onClose={() => setShowPalette(false)}
             departments={agentState.departments}
             onSelectDept={(id) => agentState.setSelectedDeptId(id)}
-            onSwitchTab={(tab) => setRightTab(tab as RightTab)}
-            onOpenMeeting={() => setRightTab('meeting')}
+            onSwitchTab={(tab) => setSearchParams({ tab })}
+            onOpenMeeting={() => setSearchParams({ tab: 'meeting' })}
           />
         </Suspense>
       )}

@@ -875,10 +875,10 @@
   }
 
   .btn-delete {
-    width: 32px;
-    height: 32px;
-    min-height: 32px;
-    min-width: 32px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
     font-size: 13px;
   }
 
@@ -905,7 +905,7 @@
   .btn-cancel-delete {
     padding: 4px 8px;
     font-size: 11px;
-    min-height: 32px;
+    min-height: 44px;
     white-space: nowrap;
   }
 

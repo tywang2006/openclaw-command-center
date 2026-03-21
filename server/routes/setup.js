@@ -232,6 +232,8 @@ function bootstrapDepartments() {
     path.join(BASE_PATH, 'departments', 'bulletin'),
     path.join(BASE_PATH, 'departments', 'bulletin', 'requests'),
     path.join(BASE_PATH, 'departments', 'personas'),
+    path.join(BASE_PATH, 'departments', 'meetings'),
+    path.join(BASE_PATH, 'departments', 'memory'),
   ];
   for (const d of dirs) {
     fs.mkdirSync(d, { recursive: true });

@@ -6,12 +6,15 @@ export default function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useLocale()
-  const isOps = location.pathname.startsWith('/ops')
+
+  // Determine active page based on pathname
+  const isOfficePage = location.pathname === '/'
+  const isOpsPage = location.pathname.startsWith('/ops')
 
   return (
     <nav className="app-sidebar">
       <button
-        className={`app-sidebar-btn ${!isOps ? 'active' : ''}`}
+        className={`app-sidebar-btn ${isOfficePage ? 'active' : ''}`}
         onClick={() => navigate('/')}
         title={t('sidebar.office')}
       >
@@ -22,7 +25,7 @@ export default function AppSidebar() {
         <span className="app-sidebar-label">{t('sidebar.office')}</span>
       </button>
       <button
-        className={`app-sidebar-btn ${isOps ? 'active' : ''}`}
+        className={`app-sidebar-btn ${isOpsPage ? 'active' : ''}`}
         onClick={() => navigate('/ops')}
         title={t('sidebar.ops')}
       >

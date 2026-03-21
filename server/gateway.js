@@ -10,14 +10,26 @@ const gLog = createLogger('Gateway');
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const HEARTBEAT_INTERVAL_MS = 25000;
 const RECONNECT_BASE_DELAY_MS = 1000;
-const RECONNECT_MAX_DELAY_MS = 60000; // Reduced from 30s to 60s max delay
+const RECONNECT_MAX_DELAY_MS = 30000; // 30s max delay with exponential backoff
 const RECONNECT_MAX_ATTEMPTS = 5; // Stop retrying after N consecutive failures
-const REQUEST_TIMEOUT_MS = 120000; // 2 minutes
+const REQUEST_TIMEOUT_MS = 120000; // 2 minutes for AI chat requests
+const REQUEST_TIMEOUT_NORMAL_MS = 30000; // 30s for normal requests
 const MAX_STREAM_BUFFER_BYTES = 1048576; // 1MB per stream buffer
 const MAX_PENDING_REQUESTS = 100; // Maximum concurrent pending requests
 const MAX_TOTAL_STREAM_BUFFERS = 50; // Maximum total stream buffers
 const STUCK_REQUEST_THRESHOLD_MS = 90000; // 90s (3/4 of REQUEST_TIMEOUT_MS)
 const STUCK_REQUEST_SCAN_INTERVAL_MS = 30000; // Scan every 30 seconds
+
+// Error codes and types for proper error handling
+const ErrorCodes = {
+  TIMEOUT: 'GATEWAY_TIMEOUT',
+  QUEUE_FULL: 'GATEWAY_QUEUE_FULL',
+  NOT_CONNECTED: 'GATEWAY_NOT_CONNECTED',
+  CONNECTION_LOST: 'GATEWAY_CONNECTION_LOST',
+  DISCONNECTING: 'GATEWAY_DISCONNECTING',
+  CONNECTION_TIMEOUT: 'GATEWAY_CONNECTION_TIMEOUT',
+  WEBSOCKET_ERROR: 'GATEWAY_WEBSOCKET_ERROR',
+};
 
 // Fatal error codes — do not reconnect on these
 const FATAL_ERROR_CODES = ['NOT_PAIRED', 'AUTH_FAILED', 'INVALID_TOKEN', 'FORBIDDEN', 'INVALID_REQUEST'];
@@ -135,6 +147,16 @@ function resolveAuthToken() {
   return token || '';
 }
 
+/**
+ * Create a typed error with error code for proper error handling.
+ */
+function createGatewayError(code, message, details = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
 class GatewayClient {
   constructor() {
     this.ws = null;
@@ -206,7 +228,7 @@ class GatewayClient {
 
   connect() {
     if (this.shutdownRequested) {
-      return Promise.reject(new Error('Client is shutting down'));
+      return Promise.reject(createGatewayError(ErrorCodes.DISCONNECTING, 'Client is shutting down'));
     }
 
     // If already connected and authenticated, return resolved promise
@@ -227,7 +249,12 @@ class GatewayClient {
       const connectTimeout = setTimeout(() => {
         if (this._connectReject) {
           this._connectingPromise = null;
-          this._connectReject(new Error('Connection timeout (30s)'));
+          const error = createGatewayError(
+            ErrorCodes.CONNECTION_TIMEOUT,
+            'Connection timeout after 30s',
+            { timeoutMs: 30000 }
+          );
+          this._connectReject(error);
           this._connectResolve = null;
           this._connectReject = null;
           // Close the potentially stuck socket
@@ -315,7 +342,7 @@ class GatewayClient {
 
     for (const [, req] of this.pendingRequests) {
       clearTimeout(req.timer);
-      req.reject(new Error('Client disconnecting'));
+      req.reject(createGatewayError(ErrorCodes.DISCONNECTING, 'Client disconnecting'));
     }
     this.pendingRequests.clear();
 
@@ -511,7 +538,9 @@ class GatewayClient {
       if (isReconnect) {
         import('./routes/metrics.js').then(({ recordGatewayReconnect }) => {
           recordGatewayReconnect();
-        }).catch(() => {});
+        }).catch((err) => {
+          gLog.warn('Failed to record gateway reconnect metric', { error: err.message });
+        });
       }
 
       this._emitStatus('connected', isReconnect ? 'reconnected' : 'initial');
@@ -752,6 +781,12 @@ class GatewayClient {
     this._statusListeners.push(callback);
   }
 
+  /** Remove all event and status listeners (call during graceful shutdown) */
+  clearListeners() {
+    this._eventListeners = [];
+    this._statusListeners = [];
+  }
+
   _emitStatus(status, detail) {
     for (const listener of this._statusListeners) {
       try { listener({ status, detail }); } catch (err) { gLog.warn('Status listener error:', err.message); }
@@ -781,11 +816,11 @@ class GatewayClient {
     }
 
     // Reject all waiting ready callbacks
-    this._rejectReadyCallbacks(new Error('Connection closed'));
+    this._rejectReadyCallbacks(createGatewayError(ErrorCodes.CONNECTION_LOST, 'Connection closed', { code }));
 
     for (const [, req] of this.pendingRequests) {
       clearTimeout(req.timer);
-      req.reject(new Error('Gateway connection lost'));
+      req.reject(createGatewayError(ErrorCodes.CONNECTION_LOST, 'Gateway connection lost', { code }));
     }
     this.pendingRequests.clear();
 
@@ -932,21 +967,29 @@ class GatewayClient {
    * Send a raw request to the Gateway and resolve with the full payload.
    * Used for methods like chat.history, sessions.list, etc.
    */
-  _sendRawRequest(method, params, timeoutMs = 15000) {
+  _sendRawRequest(method, params, timeoutMs = REQUEST_TIMEOUT_NORMAL_MS) {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.authenticated) {
-        return reject(new Error('Gateway not connected'));
+        return reject(createGatewayError(ErrorCodes.NOT_CONNECTED, 'Gateway not connected'));
       }
 
       // Check if queue is full (P0 fix: prevent unbounded pendingRequests growth)
       if (this.pendingRequests.size >= MAX_PENDING_REQUESTS) {
-        return reject(new Error(`Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`));
+        return reject(createGatewayError(
+          ErrorCodes.QUEUE_FULL,
+          `Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`,
+          { queueSize: this.pendingRequests.size, maxSize: MAX_PENDING_REQUESTS }
+        ));
       }
 
       const requestId = `raw_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        reject(new Error(`Request ${method} timeout`));
+        reject(createGatewayError(
+          ErrorCodes.TIMEOUT,
+          `Request ${method} timeout after ${timeoutMs}ms`,
+          { method, timeoutMs, requestId }
+        ));
       }, timeoutMs);
 
       this.pendingRequests.set(requestId, { resolve, reject, timer, raw: true, startTime: Date.now() });
@@ -984,15 +1027,20 @@ class GatewayClient {
   sendAgentMessage(sessionKey, message, attachments = [], options = {}) {
     return new Promise((resolve, reject) => {
       if (!this.connected || !this.authenticated) {
-        return reject(new Error('Gateway not connected'));
+        return reject(createGatewayError(ErrorCodes.NOT_CONNECTED, 'Gateway not connected'));
       }
 
       // Check if queue is full (P0 fix: prevent unbounded pendingRequests growth)
       if (this.pendingRequests.size >= MAX_PENDING_REQUESTS) {
-        return reject(new Error(`Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`));
+        return reject(createGatewayError(
+          ErrorCodes.QUEUE_FULL,
+          `Gateway queue full (${MAX_PENDING_REQUESTS} pending requests)`,
+          { queueSize: this.pendingRequests.size, maxSize: MAX_PENDING_REQUESTS }
+        ));
       }
 
       const traceId = options.traceId || '';
+      const timeoutMs = options.timeoutMs || REQUEST_TIMEOUT_MS;
       const reqUuid = randomUUID().replace(/-/g, '');
       const requestId = `req_${reqUuid}`;
       const idempotencyKey = `cmd_${sessionKey}_${Date.now()}_${reqUuid.substring(0, 8)}`;
@@ -1000,9 +1048,13 @@ class GatewayClient {
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
-          reject(new Error('Request timeout (120s)'));
+          reject(createGatewayError(
+            ErrorCodes.TIMEOUT,
+            `Request timeout after ${timeoutMs}ms`,
+            { sessionKey, timeoutMs, requestId, traceId }
+          ));
         }
-      }, REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
 
       this.pendingRequests.set(requestId, {
         resolve,
@@ -1077,7 +1129,11 @@ class GatewayClient {
         // Remove from callback list on timeout
         const idx = this._readyCallbacks.findIndex(cb => cb.resolve === resolve);
         if (idx !== -1) this._readyCallbacks.splice(idx, 1);
-        reject(new Error('Gateway connection timeout'));
+        reject(createGatewayError(
+          ErrorCodes.CONNECTION_TIMEOUT,
+          `Gateway connection timeout after ${timeoutMs}ms`,
+          { timeoutMs }
+        ));
       }, timeoutMs);
 
       // Add to callback list, will be called when authenticated
@@ -1141,7 +1197,9 @@ class GatewayClient {
 
   _send(frame) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket not open');
+      throw createGatewayError(ErrorCodes.WEBSOCKET_ERROR, 'WebSocket not open', {
+        readyState: this.ws?.readyState,
+      });
     }
     this.ws.send(JSON.stringify(frame));
   }
@@ -1156,4 +1214,4 @@ function getGateway() {
   return gateway;
 }
 
-export { GatewayClient, getGateway };
+export { GatewayClient, getGateway, ErrorCodes };

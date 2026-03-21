@@ -5,7 +5,12 @@ export default function GuideTab() {
   const { t } = useLocale()
 
   const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => {
+      const element = document.getElementById(id)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 0)
   }
 
   const tocItems = [
@@ -25,7 +30,7 @@ export default function GuideTab() {
     { id: 'guide-skills', key: 's14' },
     { id: 'guide-ops', key: 's16' },
     { id: 'guide-tips', key: 's15' },
-  ]
+  ] as const
 
   return (
     <div className="guide-tab">
@@ -36,14 +41,20 @@ export default function GuideTab() {
       </div>
 
       {/* Quick nav pills */}
-      <div className="guide-toc">
+      <nav className="guide-toc" aria-label="Guide sections">
         {tocItems.map((s, i) => (
-          <a key={s.id} className="guide-toc-pill" onClick={() => scrollTo(s.id)}>
-            <span className="guide-toc-num">{i + 1}</span>
+          <button
+            key={s.id}
+            type="button"
+            className="guide-toc-pill"
+            onClick={() => scrollTo(s.id)}
+            aria-label={`Jump to ${t(`guide.${s.key}.title`)}`}
+          >
+            <span className="guide-toc-num" aria-hidden="true">{i + 1}</span>
             {t(`guide.${s.key}.title`)}
-          </a>
+          </button>
         ))}
-      </div>
+      </nav>
 
       {/* 1. Overview */}
       <div className="guide-section" id="guide-overview">

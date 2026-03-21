@@ -15,6 +15,7 @@ import { recordAudit } from './audit.js';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, safeWriteFileSync, getConfigValue } from '../utils.js';
 import { withFileLock } from '../file-lock.js';
 import { createLogger } from '../logger.js';
+import { isPrivateUrl, validateUrlSafety } from '../ssrf-guard.js';
 
 const log = createLogger('IntegConfig');
 
@@ -31,32 +32,6 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
-
-/**
- * SSRF protection: check if a URL points to a private/internal network
- */
-function isPrivateUrl(urlStr) {
-  try {
-    const parsed = new URL(urlStr);
-    // Only allow https
-    if (parsed.protocol !== 'https:') return true;
-    const host = parsed.hostname;
-    // Block private/reserved IPs
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return true;
-    // Block private ranges
-    const parts = host.split('.').map(Number);
-    if (parts.length === 4 && !parts.some(isNaN)) {
-      if (parts[0] === 127) return true;  // Full loopback range 127.0.0.0/8
-      if (parts[0] === 10) return true;
-      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-      if (parts[0] === 192 && parts[1] === 168) return true;
-      if (parts[0] === 169 && parts[1] === 254) return true;
-    }
-    return false;
-  } catch {
-    return true;
-  }
-}
 
 const router = express.Router();
 
@@ -97,7 +72,7 @@ function writeJsonFile(filePath, data, { backup = false } = {}) {
       // Current → .bak.1
       fs.copyFileSync(filePath, path.join(dir, `${base}.bak.1`));
     }
-    safeWriteFileSync(filePath, JSON.stringify(data, null, 2));
+    safeWriteFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
     return true;
   } catch (error) {
     log.error('Error writing JSON file', { filePath, error: error.message });
@@ -291,8 +266,12 @@ router.put('/integrations/config/:service', async (req, res) => {
       if (updates.url && updates.url.length > 2048) {
         return res.status(400).json({ error: 'Webhook URL must be 2048 characters or less' });
       }
-      if (updates.url && isPrivateUrl(updates.url)) {
-        return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
+      if (updates.url) {
+        const ssrfCheck = await validateUrlSafety(updates.url);
+        if (!ssrfCheck.safe) {
+          log.warn('Webhook URL blocked by SSRF protection', { url: updates.url.substring(0, 60), reason: ssrfCheck.reason });
+          return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
+        }
       }
       if (updates.platform !== undefined && !['discord', 'slack', 'feishu', 'custom'].includes(updates.platform)) {
         return res.status(400).json({ error: 'platform must be one of: discord, slack, feishu, custom' });
@@ -416,8 +395,10 @@ router.post('/integrations/config/:service/test', async (req, res) => {
         return res.status(400).json({ error: 'Webhook URL not configured' });
       }
 
-      // SSRF protection: block private/internal URLs
-      if (isPrivateUrl(url)) {
+      // SSRF protection: block private/internal URLs (sync check + async DNS resolution)
+      const ssrfCheck = await validateUrlSafety(url);
+      if (!ssrfCheck.safe) {
+        log.warn('Webhook URL blocked by SSRF protection', { url: url.substring(0, 60), reason: ssrfCheck.reason });
         return res.status(400).json({ error: 'Webhook URL must use HTTPS and cannot target private/internal networks' });
       }
 
@@ -859,8 +840,10 @@ router.put('/integrations/autobackup', async (req, res) => {
       return res.status(500).json({ error: 'Failed to save config' });
     }
 
-    // Sync to OpenClaw cron system
-    syncAutoBackupCronJob();
+    // Sync to OpenClaw cron system (fire-and-forget is intentional — errors logged inside)
+    syncAutoBackupCronJob().catch(err => {
+      log.error('syncAutoBackupCronJob failed', { error: err.message });
+    });
 
     res.json({ success: true });
   } catch (error) {

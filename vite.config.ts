@@ -9,5 +9,14 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:5100',
       '/ws': { target: 'ws://127.0.0.1:5100', ws: true }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom']
+        }
+      }
+    }
   }
 })

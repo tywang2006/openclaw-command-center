@@ -55,12 +55,12 @@ export default function SkillsTab() {
   // Fetch detail when selected
   useEffect(() => {
     if (!selected) { setDetail(null); setEditing(false); return }
-    let cancelled = false
+    const abortController = new AbortController()
     setDetailLoading(true)
-    authedFetch(`/api/skills/${selected}`)
+    authedFetch(`/api/skills/${selected}`, { signal: abortController.signal })
       .then(r => r.json())
       .then(data => {
-        if (!cancelled && data.skill) {
+        if (data.skill) {
           setDetail(data.skill)
           setEditFields({
             name: data.skill.name || '',
@@ -70,9 +70,13 @@ export default function SkillsTab() {
           })
         }
       })
-      .catch(() => { if (!cancelled) setStatus({ type: 'error', text: t('skills.error.detail') }) })
-      .finally(() => { if (!cancelled) setDetailLoading(false) })
-    return () => { cancelled = true }
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setStatus({ type: 'error', text: t('skills.error.detail') })
+        }
+      })
+      .finally(() => setDetailLoading(false))
+    return () => abortController.abort()
   }, [selected, t])
 
   // Filter skills
@@ -370,7 +374,7 @@ function CreateModal({ t, onClose, onCreated }: {
             <label>{t('skills.create.slug')}</label>
             <input
               value={slug}
-              onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
               placeholder={t('skills.create.slug.placeholder')}
             />
           </div>

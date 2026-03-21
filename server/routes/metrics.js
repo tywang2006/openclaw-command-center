@@ -4,6 +4,7 @@ import path from 'path';
 import { getGateway } from '../gateway.js';
 import { OPENCLAW_HOME, safeWriteFileSync } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { safeBroadcast } from '../broadcast.js';
 
 const log = createLogger('Metrics');
 
@@ -187,13 +188,10 @@ function checkDepartmentHealth(deptId, isError, responseTime) {
 
       // Broadcast health alert via WebSocket
       if (_wss) {
-        const payload = JSON.stringify({
+        safeBroadcast(_wss, {
           event: 'health:alert',
           data: { deptId, consecutiveErrors: state.consecutiveErrors },
-          timestamp: new Date().toISOString(),
-        });
-        _wss.clients.forEach(c => {
-          if (c.readyState === 1 && c._authenticated) try { c.send(payload); } catch {}
+          timestamp: new Date().toISOString()
         });
       }
     }

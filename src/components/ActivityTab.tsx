@@ -23,6 +23,7 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
   const [showReplayList, setShowReplayList] = useState(false)
   const [playbackState, setPlaybackState] = useState<{ playing: boolean; current: number; total: number; speed: number } | null>(null)
   const playbackRef = useRef<number | null>(null)
+  const MAX_REPLAY_EVENTS = 10000
 
   // Cleanup playback timeout on unmount
   useEffect(() => {
@@ -181,6 +182,13 @@ export default function ActivityTab({ activities, departments, addActivity }: Ac
       {isRecording && recordingStatus && (
         <span className="recording-indicator">
           {t('replay.recording', { count: recordingStatus.eventCount })}
+        </span>
+      )}
+
+      {/* Limit warning */}
+      {isRecording && recordingStatus && recordingStatus.eventCount >= MAX_REPLAY_EVENTS && (
+        <span className="replay-limit-warning">
+          {t('replay.limit.warning', { limit: MAX_REPLAY_EVENTS })}
         </span>
       )}
 

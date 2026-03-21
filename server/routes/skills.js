@@ -1,7 +1,8 @@
 import express from 'express';
 import fs from 'fs';
+import fsp from 'fs/promises';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import { BASE_PATH, readJsonFile, readTextFile, parseFrontmatter, safeWriteFileSync } from '../utils.js';
 import { recordAudit } from './audit.js';
 import { createLogger } from '../logger.js';
@@ -10,6 +11,73 @@ const log = createLogger('Skills');
 const router = express.Router();
 
 const SKILLS_PATH = path.join(BASE_PATH, 'skills');
+
+// Minimum free disk space required for git clone (200MB in bytes)
+const MIN_DISK_SPACE_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Check available disk space on the filesystem containing the given path.
+ * Returns available bytes, or null if unable to determine.
+ */
+async function getAvailableDiskSpace(targetPath) {
+  try {
+    const stats = await fsp.statfs(targetPath);
+    // bavail = available blocks for unprivileged users, bsize = block size
+    return stats.bavail * stats.bsize;
+  } catch (error) {
+    log.error(`Failed to check disk space: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Clone a git repository asynchronously with timeout and depth limit.
+ * @param {string} gitUrl - Git repository URL
+ * @param {string} targetDir - Target directory for clone
+ * @param {number} timeoutMs - Timeout in milliseconds (default 60000)
+ * @returns {Promise<void>}
+ */
+function gitCloneAsync(gitUrl, targetDir, timeoutMs = 60000) {
+  return new Promise((resolve, reject) => {
+    const gitProcess = spawn('git', ['clone', '--depth', '1', gitUrl, targetDir], {
+      stdio: 'pipe'
+    });
+
+    let stderr = '';
+    let timeoutId = null;
+    let killed = false;
+
+    // Set timeout
+    timeoutId = setTimeout(() => {
+      killed = true;
+      gitProcess.kill('SIGTERM');
+      reject(new Error(`Git clone timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    // Capture stderr for error messages
+    gitProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    gitProcess.on('error', (error) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (!killed) {
+        reject(new Error(`Git process error: ${error.message}`));
+      }
+    });
+
+    gitProcess.on('close', (code) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (killed) return; // Already rejected by timeout
+
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Git clone failed with exit code ${code}: ${stderr.trim()}`));
+      }
+    });
+  });
+}
 
 /**
  * Escape a string for safe inclusion as a YAML frontmatter value.
@@ -419,8 +487,14 @@ router.delete('/skills/:slug', (req, res) => {
 /**
  * POST /api/skills/install
  * Install a skill from a GitHub repository
+ * Security fixes:
+ * - Async git clone to avoid blocking event loop
+ * - Disk space check before cloning (requires 200MB free)
+ * - 60-second timeout with --depth 1 for shallow clone
  */
-router.post('/skills/install', (req, res) => {
+router.post('/skills/install', async (req, res) => {
+  let tmpDir = null;
+
   try {
     // C15 Fix: Only human operators can install skills from external sources
     const sourceDept = req.headers['x-source-dept'];
@@ -449,13 +523,21 @@ router.post('/skills/install', (req, res) => {
       return res.status(400).json({ error: 'Only HTTPS and git@ URLs are allowed' });
     }
 
-    // Clone to temp dir
-    const tmpDir = path.join(SKILLS_PATH, '.tmp-install-' + Date.now());
-    try {
-      execFileSync('git', ['clone', '--depth=1', gitUrl, tmpDir], {
-        timeout: 30000,
-        stdio: 'pipe'
+    // Security fix: Check available disk space before cloning
+    const availableSpace = await getAvailableDiskSpace(SKILLS_PATH);
+    if (availableSpace !== null && availableSpace < MIN_DISK_SPACE_BYTES) {
+      const availableMB = Math.floor(availableSpace / (1024 * 1024));
+      return res.status(507).json({
+        error: `Insufficient disk space. Available: ${availableMB}MB, Required: 200MB`
       });
+    }
+
+    // Clone to temp dir
+    tmpDir = path.join(SKILLS_PATH, '.tmp-install-' + Date.now());
+
+    try {
+      // Security fix: Async git clone with 60s timeout and --depth 1 (shallow clone)
+      await gitCloneAsync(gitUrl, tmpDir, 60000);
     } catch (cloneErr) {
       log.error(`Git clone failed: ${cloneErr.message}`);
       return res.status(400).json({ error: 'Failed to clone repository. Check the URL and try again.' });
@@ -502,11 +584,19 @@ router.post('/skills/install', (req, res) => {
     if (!existingMeta.ownerId) existingMeta.ownerId = 'community';
     safeWriteFileSync(metaPath, JSON.stringify(existingMeta, null, 2));
 
+    recordAudit({ action: 'skill:install', target: slug, details: { url, name: skillName }, ip: req.ip });
     res.json({ success: true, slug, name: skillName });
   } catch (error) {
     log.error(`Error in POST /api/skills/install: ${error.message}`);
+
     // Clean up temp dir if it exists
-    const tmpPattern = path.join(SKILLS_PATH, '.tmp-install-*');
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {}
+    }
+
+    // Also clean up any orphaned temp dirs
     try {
       const entries = fs.readdirSync(SKILLS_PATH);
       for (const e of entries) {
@@ -515,6 +605,7 @@ router.post('/skills/install', (req, res) => {
         }
       }
     } catch {}
+
     res.status(500).json({ error: 'Failed to install skill' });
   }
 });
@@ -524,8 +615,9 @@ router.post('/skills/install', (req, res) => {
  * Search across all department memories.
  * Query: ?q=searchTerm
  * H25 Fix: Returns only metadata (deptId, matchCount, preview) to prevent leaking detailed memory content.
+ * Performance: Async I/O with Promise.all, limits to 100 most recent departments.
  */
-router.get('/memory/search', (req, res) => {
+router.get('/memory/search', async (req, res) => {
   try {
     const { q } = req.query;
     if (!q || typeof q !== 'string' || q.trim().length < 2) {
@@ -539,18 +631,38 @@ router.get('/memory/search', (req, res) => {
       return res.json({ results: [], count: 0 });
     }
 
-    const results = [];
-    const entries = fs.readdirSync(deptsPath, { withFileTypes: true });
+    // Async directory read
+    const entries = await fsp.readdir(deptsPath, { withFileTypes: true });
+    const deptDirs = entries
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(entry => ({
+        name: entry.name,
+        path: path.join(deptsPath, entry.name, 'memory', 'MEMORY.md')
+      }));
 
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    // Limit to 100 most recent departments (by directory mtime)
+    const MAX_DEPTS = 100;
+    let deptsToScan = deptDirs;
+    if (deptsToScan.length > MAX_DEPTS) {
+      const withStats = await Promise.all(
+        deptDirs.map(async (d) => {
+          try {
+            const stat = await fsp.stat(path.dirname(d.path));
+            return { ...d, mtime: stat.mtime };
+          } catch {
+            return { ...d, mtime: new Date(0) };
+          }
+        })
+      );
+      withStats.sort((a, b) => b.mtime - a.mtime);
+      deptsToScan = withStats.slice(0, MAX_DEPTS);
+    }
 
-      const memPath = path.join(deptsPath, entry.name, 'memory', 'MEMORY.md');
-      if (!fs.existsSync(memPath)) continue;
-
+    // Search files in parallel with Promise.all
+    const searchPromises = deptsToScan.map(async (dept) => {
       try {
-        const content = fs.readFileSync(memPath, 'utf8');
-        if (!content.toLowerCase().includes(query)) continue;
+        const content = await fsp.readFile(dept.path, 'utf8');
+        if (!content.toLowerCase().includes(query)) return null;
 
         // H25 Fix: Count matches and get first match preview only
         const lines = content.split('\n');
@@ -561,22 +673,23 @@ router.get('/memory/search', (req, res) => {
           if (lines[i].toLowerCase().includes(query)) {
             matchCount++;
             if (!firstMatchPreview) {
-              // Only store first match preview (50 chars max)
               firstMatchPreview = lines[i].trim().substring(0, 50);
             }
           }
         }
 
-        // Only return metadata, not full matching text
-        results.push({
-          deptId: entry.name,
+        return {
+          deptId: dept.name,
           matchCount,
           preview: firstMatchPreview,
-        });
+        };
       } catch {
-        // Skip unreadable files
+        return null; // Skip unreadable files
       }
-    }
+    });
+
+    const searchResults = await Promise.all(searchPromises);
+    const results = searchResults.filter(r => r !== null);
 
     res.json({
       query: q.trim(),

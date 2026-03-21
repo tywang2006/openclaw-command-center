@@ -277,6 +277,57 @@
 }
 
 /* ---- Mobile Responsive ---- */
+@media (max-width: 768px) {
+  .dept-modal {
+    width: 95vw;
+    min-width: 0;
+    max-height: calc(100vh - 80px);
+  }
+
+  .dept-modal-body {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+  }
+
+  /* Fix iOS auto-zoom - input font-size must be >= 16px */
+  .dept-field input,
+  .modal-input {
+    font-size: 16px;
+  }
+
+  .dept-skill-search {
+    font-size: 16px;
+  }
+
+  /* Improve readability on mobile */
+  .tag-list,
+  .dept-skill-tag {
+    font-size: 11px;
+  }
+
+  /* Touch-friendly buttons */
+  .dept-btn-cancel,
+  .dept-btn-save {
+    min-height: 44px;
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  .icon-option {
+    min-height: 44px;
+    padding: 8px;
+  }
+
+  .color-option {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dept-section-toggle {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 480px) {
   .dept-modal {
     width: 95vw;

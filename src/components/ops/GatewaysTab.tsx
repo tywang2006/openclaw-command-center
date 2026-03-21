@@ -32,11 +32,10 @@ interface DevicesResponse {
 }
 
 interface MetricsResponse {
-  raw: {
-    global: {
-      reconnectCount?: number
-    }
+  global?: {
+    gatewayReconnects?: number
   }
+  [key: string]: unknown
 }
 
 const formatUptime = (ms: number): string => {
@@ -68,8 +67,7 @@ export default function GatewaysTab() {
 
       const statsJson = statsResponse.ok ? await statsResponse.json() as { success?: boolean; gateway?: GatewayStats } : null
       const devicesJson = devicesResponse.ok ? await devicesResponse.json() as DevicesResponse : null
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const metricsJson = metricsResponse.ok ? await metricsResponse.json() as any : null
+      const metricsJson = metricsResponse.ok ? await metricsResponse.json() as MetricsResponse : null
 
       if (statsJson?.success && statsJson.gateway) {
         const stats = { ...statsJson.gateway }

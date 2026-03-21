@@ -1,10 +1,42 @@
 import type { SpriteData } from '../types.js'
 
+// LRU cache configuration
+const MAX_ZOOM_LEVELS = 10 // Limit zoom level cache entries (typically only 1-5 are used)
 const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>()
+const zoomCacheLRU: number[] = [] // Track access order for LRU eviction
+
+// ── Cache management ─────────────────────────────────────────
+
+/** Clear all sprite caches (called on component unmount to prevent memory leaks) */
+export function clearSpriteCache(): void {
+  zoomCaches.clear()
+  zoomCacheLRU.length = 0
+  outlineCache = new WeakMap() // Reset outline cache
+}
+
+/** Evict least recently used zoom cache if limit exceeded */
+function evictLRUZoomCache(): void {
+  if (zoomCacheLRU.length > MAX_ZOOM_LEVELS) {
+    const oldestZoom = zoomCacheLRU.shift()
+    if (oldestZoom !== undefined) {
+      zoomCaches.delete(oldestZoom)
+    }
+  }
+}
+
+/** Track zoom level access for LRU */
+function touchZoomCache(zoom: number): void {
+  const idx = zoomCacheLRU.indexOf(zoom)
+  if (idx >= 0) {
+    zoomCacheLRU.splice(idx, 1)
+  }
+  zoomCacheLRU.push(zoom)
+  evictLRUZoomCache()
+}
 
 // ── Outline sprite generation ─────────────────────────────────
 
-const outlineCache = new WeakMap<SpriteData, SpriteData>()
+let outlineCache = new WeakMap<SpriteData, SpriteData>()
 
 /** Generate a 1px white outline SpriteData (2px larger in each dimension) */
 export function getOutlineSprite(sprite: SpriteData): SpriteData {
@@ -68,10 +100,14 @@ export function getCachedSprite(sprite: SpriteData, zoom: number): HTMLCanvasEle
   if (!cache) {
     cache = new WeakMap()
     zoomCaches.set(zoom, cache)
+    touchZoomCache(zoom)
   }
 
   const cached = cache.get(sprite)
-  if (cached) return cached
+  if (cached) {
+    touchZoomCache(zoom)
+    return cached
+  }
 
   const rows = sprite.length
   const cols = sprite[0].length

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Department } from '../../hooks/useAgentState'
+import { useAuditEvents, consumeAuditEvent } from '../../hooks/useAgentState'
 import { DeptIcon } from '../Icons'
 import { useLocale } from '../../i18n/index'
 import { authedFetch } from '../../utils/api'
@@ -55,6 +56,7 @@ export default function ActivityOpsTab({ departments }: Props) {
   const [filterAction, setFilterAction] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
   const [exporting, setExporting] = useState(false)
+  const auditEvents = useAuditEvents()
 
   const fetchEntries = useCallback(async (currentOffset: number, append = false) => {
     setLoading(true)
@@ -112,6 +114,37 @@ export default function ActivityOpsTab({ departments }: Props) {
     setOffset(0)
     fetchEntries(0, false)
   }, [filterAction, filterDept, fetchEntries])
+
+  // Consume real-time audit events from WebSocket
+  useEffect(() => {
+    if (auditEvents.length === 0) return
+
+    const event = consumeAuditEvent()
+    if (!event) return
+
+    // Convert to AuditEntry format
+    const newEntry: AuditEntry = {
+      id: event.id,
+      timestamp: event.timestamp,
+      action: event.action,
+      target: event.target,
+      deptId: event.deptId,
+      details: event.details ? JSON.stringify(event.details) : '',
+    }
+
+    // Apply filters
+    const matchesAction = filterAction === 'all' || event.action === filterAction
+    const matchesDept = filterDept === 'all' || event.deptId === filterDept
+
+    if (matchesAction && matchesDept) {
+      // Prepend new entry to the list
+      setEntries(prev => [newEntry, ...prev])
+      setTotal(prev => prev + 1)
+    }
+
+    // Update stats
+    fetchStats()
+  }, [auditEvents, filterAction, filterDept, fetchStats])
 
   const handleLoadMore = () => {
     const newOffset = offset + 50

@@ -110,9 +110,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AgentStateProvider>
+        <a href="#main-content" className="skip-to-content">跳到主要内容</a>
         <div className="app-with-sidebar">
           <AppSidebar />
-          <div className="app-main-area">
+          <div className="app-main-area" id="main-content">
             <Routes>
               <Route path="/" element={
                 <OfficePage t={t} locale={locale} setLocale={setLocale}

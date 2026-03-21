@@ -28,6 +28,7 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
   const [expandedSlug, setExpandedSlug] = useState<string | null>(null)
   const [skillDetail, setSkillDetail] = useState<{ markdown: string } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [lastError, setLastError] = useState<string | null>(null)
   const { t } = useLocale()
 
   useEffect(() => {
@@ -40,27 +41,37 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
       .finally(() => setLoading(false))
   }, [open])
 
-  const handleExpand = useCallback(async (slug: string) => {
-    if (expandedSlug === slug) {
-      setExpandedSlug(null)
+  useEffect(() => {
+    if (!expandedSlug) {
       setSkillDetail(null)
       return
     }
-    setExpandedSlug(slug)
+    const abortController = new AbortController()
     setDetailLoading(true)
-    try {
-      const res = await authedFetch(`/api/skills/${slug}`)
-      const data = await res.json()
-      setSkillDetail({ markdown: data.skill?.markdown || '' })
-    } catch {
-      setSkillDetail({ markdown: '' })
+    authedFetch(`/api/skills/${expandedSlug}`, { signal: abortController.signal })
+      .then(res => res.json())
+      .then(data => setSkillDetail({ markdown: data.skill?.markdown || '' }))
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setSkillDetail({ markdown: '' })
+        }
+      })
+      .finally(() => setDetailLoading(false))
+    return () => abortController.abort()
+  }, [expandedSlug])
+
+  const handleExpand = useCallback((slug: string) => {
+    if (expandedSlug === slug) {
+      setExpandedSlug(null)
+    } else {
+      setExpandedSlug(slug)
     }
-    setDetailLoading(false)
   }, [expandedSlug])
 
   const handleExecute = useCallback(async (skill: Skill) => {
     if (!selectedDeptId || executing) return
     setExecuting(skill.slug)
+    setLastError(null)
     try {
       const res = await authedFetch(`/api/skills/${skill.slug}/execute`, {
         method: 'POST',
@@ -72,10 +83,14 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
         onExecuted(skill.name, data.reply)
         onClose()
       } else {
-        onExecuted(skill.name, `[${t('skill.exec.failed')}] ${data.error || ''}`)
+        const errorMsg = `[${t('skill.exec.failed')}] ${data.error || ''}`
+        setLastError(errorMsg)
+        onExecuted(skill.name, errorMsg)
       }
     } catch {
-      onExecuted(skill.name, `[${t('skill.exec.error')}]`)
+      const errorMsg = `[${t('skill.exec.error')}]`
+      setLastError(errorMsg)
+      onExecuted(skill.name, errorMsg)
     }
     setExecuting(null)
   }, [selectedDeptId, executing, onExecuted, onClose, t])
@@ -107,6 +122,12 @@ export default function SkillPicker({ open, onClose, selectedDeptId, deptName, o
             autoFocus
           />
         </div>
+
+        {lastError && (
+          <div style={{ padding: '8px 12px', margin: '8px 12px', background: 'var(--danger-a8)', color: 'var(--text-primary)', borderRadius: '4px', fontSize: '12px' }}>
+            {lastError}
+          </div>
+        )}
 
         <div className="skill-picker-list">
           {loading ? (

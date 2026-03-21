@@ -374,7 +374,7 @@
   }
 
   .memory-editor {
-    font-size: 14px;
+    font-size: 16px;
     max-width: 100%;
     min-height: 200px;
     padding: 12px;
@@ -393,7 +393,7 @@
 
   .mode-btn {
     padding: 8px 14px;
-    font-size: 12px;
+    font-size: 13px;
     min-height: 40px;
     flex: 1;
   }

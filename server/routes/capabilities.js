@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'fs';
+import fsp from 'fs/promises';
 import path from 'path';
 import { BASE_PATH, OPENCLAW_HOME, readJsonFile, readTextFile, parseFrontmatter, getOpenClawConfig } from '../utils.js';
 import { createLogger } from '../logger.js';
@@ -33,13 +34,87 @@ function formatSize(n) {
   return String(n);
 }
 
+// Cache for capabilities (TTL: 30 seconds)
+let capabilitiesCache = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 30000; // 30 seconds
+
+/**
+ * Async skill directory scanner with parallel I/O
+ * @param {string} basePath - Directory to scan
+ * @param {string} source - Source identifier (workspace/sandbox/extension)
+ * @returns {Promise<Array>} - Array of skill objects
+ */
+async function scanSkillDirAsync(basePath, source, skillEntries) {
+  try {
+    if (!fs.existsSync(basePath)) return [];
+
+    const dirs = await fsp.readdir(basePath, { withFileTypes: true });
+    const skillDirs = dirs
+      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+      .map(d => d.name);
+
+    // Limit to first 50 skills per source to prevent excessive scanning
+    const MAX_SKILLS_PER_SOURCE = 50;
+    const limitedDirs = skillDirs.slice(0, MAX_SKILLS_PER_SOURCE);
+
+    // Scan skills in parallel
+    const skillPromises = limitedDirs.map(async (slug) => {
+      try {
+        const skillMdPath = path.join(basePath, slug, 'SKILL.md');
+        const metaPath = path.join(basePath, slug, '_meta.json');
+        const assetsPath = path.join(basePath, slug, 'assets');
+
+        const [skillMd, metaContent, assetsExists] = await Promise.all([
+          fsp.readFile(skillMdPath, 'utf8').catch(() => null),
+          fsp.readFile(metaPath, 'utf8').catch(() => null),
+          fsp.access(assetsPath).then(() => true).catch(() => false)
+        ]);
+
+        if (!skillMd) return null;
+
+        const { frontmatter } = parseFrontmatter(skillMd);
+        const meta = metaContent ? JSON.parse(metaContent) : null;
+
+        return {
+          slug,
+          name: frontmatter.name || slug,
+          summary: frontmatter.summary || frontmatter.description || null,
+          description: frontmatter.description || null,
+          tags: Array.isArray(frontmatter.tags) ? frontmatter.tags : (meta?.tags || []),
+          version: meta?.version || frontmatter.version || null,
+          hasAssets: assetsExists,
+          hasApiKey: slug in skillEntries,
+          source,
+        };
+      } catch (err) {
+        log.error(`Failed to read skill ${slug} from ${source}: ${err.message}`);
+        return null;
+      }
+    });
+
+    const skills = await Promise.all(skillPromises);
+    return skills.filter(s => s !== null);
+  } catch (err) {
+    log.error(`Failed to scan skill directory ${basePath}: ${err.message}`);
+    return [];
+  }
+}
+
 /**
  * GET /api/system/capabilities
  * Returns system-wide capabilities: channels, plugins, skills, models.
  * All secrets (API keys, tokens) are stripped.
+ * Performance: Uses 30s cache + async I/O with Promise.all
  */
-router.get('/system/capabilities', (req, res) => {
+router.get('/system/capabilities', async (req, res) => {
   try {
+    // Check cache
+    const now = Date.now();
+    if (capabilitiesCache && (now - cacheTimestamp) < CACHE_TTL) {
+      return res.json(capabilitiesCache);
+    }
+
     const config = getOpenClawConfig();
     if (!config || Object.keys(config).length === 0) {
       return res.status(500).json({ error: 'Cannot read openclaw.json' });
@@ -88,55 +163,52 @@ router.get('/system/capabilities', (req, res) => {
     const skillEntries = config.skills?.entries || {};
     const skillMap = new Map(); // slug -> skill object (dedup, workspace wins)
 
-    function scanSkillDir(basePath, source) {
-      if (!fs.existsSync(basePath)) return;
-      const dirs = fs.readdirSync(basePath, { withFileTypes: true })
-        .filter(d => d.isDirectory() && !d.name.startsWith('.'))
-        .map(d => d.name);
+    // Scan all three sources in parallel for maximum performance
+    const [sandboxSkills, extensionSkills, workspaceSkills] = await Promise.all([
+      // 1) Sandbox skills (OpenClaw built-in library)
+      (async () => {
+        if (!fs.existsSync(SANDBOXES_PATH)) return [];
+        const sandboxes = await fsp.readdir(SANDBOXES_PATH, { withFileTypes: true });
+        const agentMainDirs = sandboxes
+          .filter(d => d.isDirectory() && d.name.startsWith('agent-main'))
+          .map(d => d.name);
 
-      for (const slug of dirs) {
-        if (source !== 'workspace' && skillMap.has(slug)) continue; // workspace takes priority
-        const skillMd = readTextFile(path.join(basePath, slug, 'SKILL.md'));
-        if (!skillMd) continue;
+        // Scan first agent-main sandbox only to avoid excessive I/O
+        if (agentMainDirs.length > 0) {
+          const skillsPath = path.join(SANDBOXES_PATH, agentMainDirs[0], 'skills');
+          return await scanSkillDirAsync(skillsPath, 'sandbox', skillEntries);
+        }
+        return [];
+      })(),
 
-        const { frontmatter } = parseFrontmatter(skillMd);
-        const meta = readJsonFile(path.join(basePath, slug, '_meta.json'));
-        const hasAssets = fs.existsSync(path.join(basePath, slug, 'assets'));
+      // 2) Extension skills
+      (async () => {
+        if (!fs.existsSync(EXTENSIONS_PATH)) return [];
+        const exts = await fsp.readdir(EXTENSIONS_PATH, { withFileTypes: true });
+        const extDirs = exts.filter(d => d.isDirectory()).map(d => d.name);
 
-        skillMap.set(slug, {
-          slug,
-          name: frontmatter.name || slug,
-          summary: frontmatter.summary || frontmatter.description || null,
-          description: frontmatter.description || null,
-          tags: Array.isArray(frontmatter.tags) ? frontmatter.tags : (meta?.tags || []),
-          version: meta?.version || frontmatter.version || null,
-          hasAssets,
-          hasApiKey: slug in skillEntries,
-          source,
-        });
-      }
+        // Scan first extension only to limit I/O
+        if (extDirs.length > 0) {
+          const skillsPath = path.join(EXTENSIONS_PATH, extDirs[0], 'skills');
+          return await scanSkillDirAsync(skillsPath, 'extension', skillEntries);
+        }
+        return [];
+      })(),
+
+      // 3) Workspace skills (user's own — highest priority)
+      scanSkillDirAsync(SKILLS_PATH, 'workspace', skillEntries)
+    ]);
+
+    // Merge skills with workspace taking priority
+    for (const skill of sandboxSkills) {
+      if (!skillMap.has(skill.slug)) skillMap.set(skill.slug, skill);
     }
-
-    // 1) Sandbox skills (OpenClaw built-in library)
-    if (fs.existsSync(SANDBOXES_PATH)) {
-      const sandboxes = fs.readdirSync(SANDBOXES_PATH, { withFileTypes: true })
-        .filter(d => d.isDirectory() && d.name.startsWith('agent-main'));
-      for (const sb of sandboxes) {
-        scanSkillDir(path.join(SANDBOXES_PATH, sb.name, 'skills'), 'sandbox');
-      }
+    for (const skill of extensionSkills) {
+      if (!skillMap.has(skill.slug)) skillMap.set(skill.slug, skill);
     }
-
-    // 2) Extension skills
-    if (fs.existsSync(EXTENSIONS_PATH)) {
-      const exts = fs.readdirSync(EXTENSIONS_PATH, { withFileTypes: true })
-        .filter(d => d.isDirectory());
-      for (const ext of exts) {
-        scanSkillDir(path.join(EXTENSIONS_PATH, ext.name, 'skills'), 'extension');
-      }
+    for (const skill of workspaceSkills) {
+      skillMap.set(skill.slug, skill); // Workspace overwrites all
     }
-
-    // 3) Workspace skills (user's own — highest priority, overwrites above)
-    scanSkillDir(SKILLS_PATH, 'workspace');
 
     const skills = Array.from(skillMap.values());
     skills.sort((a, b) => a.name.localeCompare(b.name));
@@ -164,7 +236,13 @@ router.get('/system/capabilities', (req, res) => {
       }
     }
 
-    res.json({ channels, plugins, skills, models });
+    const result = { channels, plugins, skills, models };
+
+    // Update cache
+    capabilitiesCache = result;
+    cacheTimestamp = now;
+
+    res.json(result);
   } catch (err) {
     log.error('Error loading capabilities', { error: err.message });
     res.status(500).json({ error: 'Failed to load capabilities' });

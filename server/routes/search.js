@@ -1,13 +1,15 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { BASE_PATH } from '../utils.js';
+import { BASE_PATH, validateDepartmentId } from '../utils.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('Search');
 const router = express.Router();
 
 const DEPARTMENTS_PATH = path.join(BASE_PATH, 'departments');
+const VALID_SCOPES = new Set(['memory', 'daily', 'bulletin', 'chat']);
+const MAX_QUERY_LENGTH = 500;
 
 /**
  * GET /search?q=keyword&scope=memory,daily,bulletin&deptId=engineering&limit=50
@@ -18,11 +20,21 @@ router.get('/search', (req, res) => {
     if (!q) {
       return res.status(400).json({ error: 'q parameter is required' });
     }
+    if (q.length > MAX_QUERY_LENGTH) {
+      return res.status(400).json({ error: `Query too long (max ${MAX_QUERY_LENGTH} chars)` });
+    }
 
     const scopeStr = req.query.scope || 'memory,daily,bulletin,chat';
-    const scopes = scopeStr.split(',').map(s => s.trim());
+    const scopes = scopeStr.split(',').map(s => s.trim()).filter(s => VALID_SCOPES.has(s));
+    if (scopes.length === 0) {
+      return res.status(400).json({ error: `Invalid scope. Allowed: ${[...VALID_SCOPES].join(', ')}` });
+    }
     const filterDept = req.query.deptId || null;
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+    if (filterDept && !validateDepartmentId(filterDept)) {
+      return res.status(400).json({ error: 'Invalid deptId format' });
+    }
+    const parsedLimit = parseInt(req.query.limit || '50', 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(1, parsedLimit), 200) : 50;
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
 
     const results = [];

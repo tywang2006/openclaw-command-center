@@ -72,6 +72,7 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showBroadcastModal, setShowBroadcastModal] = useState(false)
   const [broadcastInput, setBroadcastInput] = useState('')
   const [broadcastSending, setBroadcastSending] = useState(false)
@@ -79,10 +80,22 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
   const { t } = useLocale()
 
   const fetchMetrics = useCallback(async () => {
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 10000)
+
     try {
-      const res = await authedFetch('/api/metrics')
+      const res = await authedFetch('/api/metrics', { signal: abortController.signal })
+      clearTimeout(timeoutId)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
       const raw = await res.json()
-      if (!raw.success) return
+      if (!raw.success) {
+        throw new Error('API returned success: false')
+      }
+
       const depts = Object.entries(raw.departments || {}).map(([id, d]: [string, any]) => ({
         id,
         messages: d.messageCount || 0,
@@ -111,15 +124,32 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         .slice(-14)
       setDailyData(daily)
     } catch (err) {
+      clearTimeout(timeoutId)
       console.error('Failed to fetch metrics:', err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(t('common.timeout'))
+      }
+      throw err
     }
-  }, [])
+  }, [t])
 
   const fetchGatewayStats = useCallback(async () => {
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 10000)
+
     try {
-      const res = await authedFetch('/api/gateway/stats')
+      const res = await authedFetch('/api/gateway/stats', { signal: abortController.signal })
+      clearTimeout(timeoutId)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
       const raw = await res.json()
-      if (!raw.success) return
+      if (!raw.success) {
+        throw new Error('API returned success: false')
+      }
+
       const gw = raw.gateway || {}
       setGatewayStats({
         connected: gw.connected ?? false,
@@ -130,49 +160,122 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         reconnects: gw.reconnectCount ?? 0,
       })
     } catch (err) {
+      clearTimeout(timeoutId)
       console.error('Failed to fetch gateway stats:', err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(t('common.timeout'))
+      }
+      throw err
     }
-  }, [])
+  }, [t])
 
   const fetchPermissions = useCallback(async () => {
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 10000)
+
     try {
-      const res = await authedFetch('/api/metrics/permissions')
+      const res = await authedFetch('/api/metrics/permissions', { signal: abortController.signal })
+      clearTimeout(timeoutId)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+
       const raw = await res.json()
-      if (!raw.success || !raw.permissions) return
+      if (!raw.success || !raw.permissions) {
+        throw new Error('API returned success: false or missing permissions')
+      }
+
       setPermissions(raw.permissions)
     } catch (err) {
+      clearTimeout(timeoutId)
       console.error('Failed to fetch permissions:', err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(t('common.timeout'))
+      }
+      throw err
     }
-  }, [])
+  }, [t])
 
   const fetchRecentAudit = useCallback(async () => {
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 10000)
+
     try {
-      const res = await authedFetch('/api/audit?limit=5')
-      const raw = await res.json()
-      if (raw.entries) {
-        setRecentAudit(raw.entries)
+      const res = await authedFetch('/api/audit?limit=5', { signal: abortController.signal })
+      clearTimeout(timeoutId)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
       }
+
+      const raw = await res.json()
+      if (!raw.entries) {
+        throw new Error('API response missing entries')
+      }
+
+      setRecentAudit(raw.entries)
     } catch (err) {
+      clearTimeout(timeoutId)
       console.error('Failed to fetch audit:', err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(t('common.timeout'))
+      }
+      throw err
     }
-  }, [])
+  }, [t])
 
   const fetchSessions = useCallback(async () => {
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 10000)
+
     try {
-      const res = await authedFetch('/api/system/sessions')
-      const raw = await res.json()
-      if (raw.sessions) {
-        setSessions(raw.sessions.slice(0, 5))
+      const res = await authedFetch('/api/system/sessions', { signal: abortController.signal })
+      clearTimeout(timeoutId)
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
       }
+
+      const raw = await res.json()
+      if (!raw.sessions) {
+        throw new Error('API response missing sessions')
+      }
+
+      setSessions(raw.sessions.slice(0, 5))
     } catch (err) {
-      // sessions endpoint may not exist, ignore
+      clearTimeout(timeoutId)
+      console.error('Failed to fetch sessions:', err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(t('common.timeout'))
+      }
+      throw err
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
-    Promise.all([fetchMetrics(), fetchGatewayStats(), fetchPermissions(), fetchRecentAudit(), fetchSessions()])
-      .then(() => setLoading(false))
-  }, [fetchMetrics, fetchGatewayStats, fetchPermissions, fetchRecentAudit, fetchSessions])
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        await Promise.all([
+          fetchMetrics(),
+          fetchGatewayStats(),
+          fetchPermissions(),
+          fetchRecentAudit(),
+          fetchSessions()
+        ])
+      } catch (err) {
+        console.error('Dashboard data loading failed:', err)
+        setError(err instanceof Error ? err.message : t('common.networkError'))
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [fetchMetrics, fetchGatewayStats, fetchPermissions, fetchRecentAudit, fetchSessions, t])
 
   useVisibilityInterval(fetchMetrics, 10000, [fetchMetrics])
   useVisibilityInterval(fetchGatewayStats, 10000, [fetchGatewayStats])
@@ -253,14 +356,16 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
 
   // Mini charts — memoized to avoid full DOM rebuild on every render
   const workloadChart = useMemo(() => {
-    if (!metrics?.departments.length) return null
+    if (!metrics?.departments.length) {
+      return <div className="ops-dash-preview-empty">{t('ops.dash.noData')}</div>
+    }
     const maxMsgs = Math.max(...metrics.departments.map(d => d.messages), 1)
     return (
       <div className="ops-dash-workload-bars">
         {metrics.departments.map(d => {
           const dept = departments.find(dp => dp.id === d.id)
           if (!dept) return null
-          const pct = (d.messages / maxMsgs) * 100
+          const pct = maxMsgs > 0 ? (d.messages / maxMsgs) * 100 : 0
           return (
             <div key={d.id} className="ops-dash-workload-row">
               <span className="ops-dash-workload-label">{dept.name}</span>
@@ -273,15 +378,17 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         })}
       </div>
     )
-  }, [metrics?.departments, departments])
+  }, [metrics?.departments, departments, t])
 
   const throughputChart = useMemo(() => {
-    if (!dailyData.length) return null
+    if (!dailyData.length) {
+      return <div className="ops-dash-preview-empty">{t('ops.dash.noData')}</div>
+    }
     const maxMsg = Math.max(...dailyData.map(d => d.messages), 1)
     const denom = Math.max(dailyData.length - 1, 1)
     const points = dailyData.map((d, i) => {
       const x = (i / denom) * 280 + 10
-      const y = 80 - (d.messages / maxMsg) * 60
+      const y = maxMsg > 0 ? 80 - (d.messages / maxMsg) * 60 : 80
       return `${x},${y}`
     }).join(' ')
     return (
@@ -289,15 +396,47 @@ export default function DashboardTab({ departments, onSwitchTab, onNavigateModul
         <polyline points={points} fill="none" stroke="#00d4aa" strokeWidth="2" />
         {dailyData.map((d, i) => {
           const x = (i / denom) * 280 + 10
-          const y = 80 - (d.messages / maxMsg) * 60
+          const y = maxMsg > 0 ? 80 - (d.messages / maxMsg) * 60 : 80
           return <circle key={d.date} cx={x} cy={y} r="2.5" fill="#00d4aa"><title>{d.date}: {d.messages}</title></circle>
         })}
       </svg>
     )
-  }, [dailyData])
+  }, [dailyData, t])
 
   if (loading) {
     return <div className="ops-dash-container"><div className="ops-dash-loading">{t('common.loading')}</div></div>
+  }
+
+  if (error) {
+    return (
+      <div className="ops-dash-container">
+        <div className="ops-dash-error">
+          <div className="ops-dash-error-icon">⚠</div>
+          <div className="ops-dash-error-title">{t('common.error')}</div>
+          <div className="ops-dash-error-message">{error}</div>
+          <button
+            className="ops-dash-error-retry"
+            onClick={() => {
+              setLoading(true)
+              setError(null)
+              Promise.all([
+                fetchMetrics(),
+                fetchGatewayStats(),
+                fetchPermissions(),
+                fetchRecentAudit(),
+                fetchSessions()
+              ]).catch(err => {
+                setError(err instanceof Error ? err.message : t('common.networkError'))
+              }).finally(() => {
+                setLoading(false)
+              })
+            }}
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -6,6 +6,7 @@ import { withFileLock } from '../file-lock.js';
 import { getGateway } from '../gateway.js';
 import { recordAudit } from './audit.js';
 import { createLogger } from '../logger.js';
+import { isPrivateProviderUrl } from '../ssrf-guard.js';
 
 const log = createLogger('SystemConfig');
 const router = express.Router();
@@ -301,6 +302,9 @@ router.put('/system/config/models', async (req, res) => {
         if (updates.baseUrl !== undefined) {
           const err = validateConfigString(updates.baseUrl, `providers.${id}.baseUrl`, 1024);
           if (err) return res.status(400).json({ error: err });
+          if (isPrivateProviderUrl(updates.baseUrl)) {
+            return res.status(400).json({ error: `Provider "${id}" baseUrl must use HTTPS and cannot target private/internal networks` });
+          }
           config.models.providers[id].baseUrl = updates.baseUrl;
         }
       }
@@ -334,6 +338,9 @@ router.post('/system/config/models/provider', async (req, res) => {
     }
     if (!model || !model.id) {
       return res.status(400).json({ error: 'model with id is required' });
+    }
+    if (isPrivateProviderUrl(baseUrl)) {
+      return res.status(400).json({ error: 'Provider baseUrl must use HTTPS and cannot target private/internal networks' });
     }
 
     if (!config.models) config.models = {};

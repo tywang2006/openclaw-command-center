@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
-import { createReadStream } from 'fs';
+import { createReadStream, statfsSync } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { DATA_DIR } from '../utils.js';
@@ -53,8 +53,21 @@ const MAGIC_BYTES = {
 };
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MIN_FREE_SPACE = 100 * 1024 * 1024; // 100 MB minimum free disk space
 
 // ── Helpers ──────────────────────────────────────────────────
+
+/** Check if disk has sufficient free space */
+function checkDiskSpace(directoryPath) {
+  try {
+    const stats = statfsSync(directoryPath);
+    const freeSpace = stats.bavail * stats.bsize;
+    return freeSpace >= MIN_FREE_SPACE;
+  } catch (err) {
+    log.warn('Failed to check disk space', { error: err.message });
+    return true; // Fail open - allow upload if check fails
+  }
+}
 
 /** Sanitise a user-supplied filename to prevent traversal / special chars */
 function sanitizeFilename(name) {
@@ -141,6 +154,10 @@ async function processQueue() {
           job.result = parsed;
         } else {
           job.error = parsed.error || 'Processing failed';
+          // Clean up file on processing failure
+          await fs.unlink(job.filePath).catch((unlinkErr) => {
+            log.warn('Failed to delete file after processing failure', { jobId, error: unlinkErr.message });
+          });
         }
       } else {
         // Text-based files
@@ -153,6 +170,10 @@ async function processQueue() {
       job.status = 'error';
       job.error = err.message;
       log.error( 'Job failed', { jobId, file: job.originalName, error: err.message });
+      // Clean up file on error
+      await fs.unlink(job.filePath).catch((unlinkErr) => {
+        log.warn('Failed to delete file after job error', { jobId, error: unlinkErr.message });
+      });
     }
   }
 
@@ -173,10 +194,17 @@ setInterval(() => {
 const storage = multer.diskStorage({
   destination: async (_req, _file, cb) => {
     await ensureDirs();
+
+    // Check disk space before accepting upload
+    if (!checkDiskSpace(UPLOADS_DIR)) {
+      return cb(new Error('Insufficient disk space (less than 100MB free)'));
+    }
+
     cb(null, UPLOADS_DIR);
   },
   filename: (_req, file, cb) => {
-    const uniquePrefix = Date.now() + '-' + crypto.randomBytes(6).toString('hex');
+    // Use timestamp + UUID for guaranteed uniqueness
+    const uniquePrefix = Date.now() + '-' + crypto.randomUUID();
     const safeName = sanitizeFilename(file.originalname);
     cb(null, `${uniquePrefix}-${safeName}`);
   },
@@ -206,7 +234,11 @@ function handleMulterError(err, _req, res, next) {
     return res.status(400).json({ error: 'Upload error: ' + err.code });
   }
   if (err) {
-    return res.status(400).json({ error: 'File upload failed' });
+    // Check for disk space error
+    if (err.message && err.message.includes('Insufficient disk space')) {
+      return res.status(507).json({ error: err.message });
+    }
+    return res.status(400).json({ error: err.message || 'File upload failed' });
   }
   next();
 }
@@ -250,24 +282,35 @@ router.post('/files/upload', upload.single('file'), handleMulterError, async (re
     };
 
     // Extract text/content based on file type
-    if (['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) {
-      const scriptPath = path.join(__dirname, '../../skills/document-processing/doc-process.py');
-      const { stdout } = await execFileAsync(
-        'python3', [scriptPath, filePath],
-        { timeout: 60_000 },
-      );
-      const processResult = JSON.parse(stdout);
-      if (processResult.success) {
-        result.extracted = processResult;
+    try {
+      if (['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) {
+        const scriptPath = path.join(__dirname, '../../skills/document-processing/doc-process.py');
+        const { stdout } = await execFileAsync(
+          'python3', [scriptPath, filePath],
+          { timeout: 60_000 },
+        );
+        const processResult = JSON.parse(stdout);
+        if (processResult.success) {
+          result.extracted = processResult;
+          result.processed = true;
+        } else {
+          // Processing failed - clean up file
+          await fs.unlink(filePath).catch(() => {});
+          return res.status(500).json({ error: processResult.error || 'Document processing failed' });
+        }
+      } else {
+        const content = await fs.readFile(filePath, 'utf8');
+        result.extracted = { text: content };
         result.processed = true;
       }
-    } else {
-      const content = await fs.readFile(filePath, 'utf8');
-      result.extracted = { text: content };
-      result.processed = true;
-    }
 
-    res.json(result);
+      res.json(result);
+    } catch (procErr) {
+      // Processing failed - clean up file
+      await fs.unlink(filePath).catch(() => {});
+      log.error( 'File processing error', { file: originalName, error: procErr.message });
+      throw procErr; // Re-throw to outer catch
+    }
   } catch (err) {
     log.error( 'Upload processing error', { error: err.message });
     res.status(500).json({ error: 'File processing failed' });
@@ -332,7 +375,11 @@ router.get('/files/download/:filename', async (req, res) => {
       return res.status(400).json({ error: 'Invalid filename' });
     }
 
-    const filePath = path.join(OUTPUTS_DIR, filename);
+    const filePath = path.resolve(path.join(OUTPUTS_DIR, filename));
+    const resolvedOutputs = path.resolve(OUTPUTS_DIR);
+    if (!filePath.startsWith(resolvedOutputs + path.sep) && filePath !== resolvedOutputs) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
 
     let stat;
     try {
@@ -426,7 +473,12 @@ router.delete('/files/:filename', async (req, res) => {
       return res.status(400).json({ error: 'Invalid filename' });
     }
 
-    const filePath = path.join(UPLOADS_DIR, filename);
+    const filePath = path.resolve(path.join(UPLOADS_DIR, filename));
+    const resolvedUploads = path.resolve(UPLOADS_DIR);
+    if (!filePath.startsWith(resolvedUploads + path.sep) && filePath !== resolvedUploads) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
     try {
       await fs.access(filePath);
     } catch {
@@ -454,6 +506,9 @@ router.post('/files/convert', async (req, res) => {
     }
 
     // Validate filename — must be a plain name, no path components
+    if (typeof filename !== 'string' || typeof targetFormat !== 'string') {
+      return res.status(400).json({ error: 'filename and targetFormat must be strings' });
+    }
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\') || filename.includes('\0')) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
@@ -463,7 +518,11 @@ router.post('/files/convert', async (req, res) => {
       return res.status(400).json({ error: `Target format must be one of: ${allowedTargets.join(', ')}` });
     }
 
-    const filePath = path.join(UPLOADS_DIR, filename);
+    const filePath = path.resolve(path.join(UPLOADS_DIR, filename));
+    const resolvedUploads = path.resolve(UPLOADS_DIR);
+    if (!filePath.startsWith(resolvedUploads + path.sep)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
     try {
       await fs.access(filePath);
     } catch {

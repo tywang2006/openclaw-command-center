@@ -4,7 +4,7 @@ import type { SubAgent } from './ChatPanel'
 import { DeptIcon } from './Icons'
 import { useLocale } from '../i18n/index'
 import { useToast } from './Toast'
-import { authedFetch } from '../utils/api'
+import { authedFetch, extractErrorMessage } from '../utils/api'
 
 interface ChatToolbarProps {
   selectedDeptId: string | null
@@ -95,6 +95,11 @@ export default function ChatToolbar({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ format }),
       })
+      if (!res.ok) {
+        const errorMsg = await extractErrorMessage(res, t('export.failed'))
+        showToast(errorMsg)
+        return
+      }
       const blob = await res.blob()
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
@@ -102,11 +107,14 @@ export default function ChatToolbar({
       a.download = `chat-export-${selectedDeptId}-${new Date().toISOString().split('T')[0]}.${ext}`
       a.click()
       URL.revokeObjectURL(a.href)
-    } catch {
-      showToast(t('export.failed'))
+      showToast(`导出${format.toUpperCase()}成功`, 'success')
+    } catch (err) {
+      const errorMsg = await extractErrorMessage(err, t('export.failed'))
+      showToast(errorMsg)
+    } finally {
+      setExporting(false)
+      setShowExportMenu(false)
     }
-    setExporting(false)
-    setShowExportMenu(false)
   }
 
   const handleExportEmail = async () => {
@@ -124,17 +132,25 @@ export default function ChatToolbar({
           }),
         }),
       })
+      if (!res.ok) {
+        const errorMsg = await extractErrorMessage(res, t('export.failed'))
+        showToast(errorMsg)
+        return
+      }
       const data = await res.json()
       if (data.success) {
-        showToast(t('export.sent'))
+        showToast(t('export.sent'), 'success')
       } else {
-        showToast(t('export.failed'))
+        const errorMsg = await extractErrorMessage(data.error || res, t('export.failed'))
+        showToast(errorMsg)
       }
-    } catch {
-      showToast(t('export.failed'))
+    } catch (err) {
+      const errorMsg = await extractErrorMessage(err, t('export.failed'))
+      showToast(errorMsg)
+    } finally {
+      setExporting(false)
+      setShowExportMenu(false)
     }
-    setExporting(false)
-    setShowExportMenu(false)
   }
 
   const handleExportDrive = async () => {
@@ -148,17 +164,25 @@ export default function ChatToolbar({
           filename: `chat-export-${selectedDeptId}-${new Date().toISOString().split('T')[0]}.md`,
         }),
       })
+      if (!res.ok) {
+        const errorMsg = await extractErrorMessage(res, t('drive.failed', { error: '' }))
+        showToast(errorMsg)
+        return
+      }
       const data = await res.json()
       if (data.success) {
-        showToast(t('drive.saved'))
+        showToast(t('drive.saved'), 'success')
       } else {
-        showToast(t('drive.failed', { error: data.error || '' }))
+        const errorMsg = await extractErrorMessage(data.error || res, t('drive.failed', { error: '' }))
+        showToast(errorMsg)
       }
-    } catch {
-      showToast(t('drive.failed', { error: t('common.networkError') }))
+    } catch (err) {
+      const errorMsg = await extractErrorMessage(err, t('drive.failed', { error: '' }))
+      showToast(errorMsg)
+    } finally {
+      setExporting(false)
+      setShowExportMenu(false)
     }
-    setExporting(false)
-    setShowExportMenu(false)
   }
 
   return (

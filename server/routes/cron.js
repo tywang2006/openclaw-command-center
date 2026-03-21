@@ -21,6 +21,7 @@ const _runningJobs = new Set();
 const VALID_SCHEDULE_KINDS = ['every', 'cron'];
 const MAX_NAME_LENGTH = 100;
 const MAX_MESSAGE_LENGTH = 5000;
+const DEFAULT_EXECUTION_TIMEOUT_MS = 30000; // 30 seconds default timeout for job execution
 
 /**
  * Helper: Read cron jobs file
@@ -59,6 +60,91 @@ function findJobById(jobs, id) {
 }
 
 /**
+ * Helper: Validate cron expression format
+ * Standard cron: "minute hour day month weekday"
+ * Each field can be: number, asterisk, range (1-5), list (1,3,5), or step (star/5)
+ *
+ * TODO: Add timezone support for cron expressions. Currently all cron times
+ * are interpreted in the server's local timezone. Consider adding a timezone
+ * field to the schedule object to support execution in different timezones.
+ */
+function validateCronExpression(expr) {
+  const parts = expr.trim().split(/\s+/);
+
+  if (parts.length !== 5) {
+    return { valid: false, error: 'Cron expression must have 5 fields: minute hour day month weekday' };
+  }
+
+  const fieldRanges = [
+    { name: 'minute', min: 0, max: 59 },
+    { name: 'hour', min: 0, max: 23 },
+    { name: 'day', min: 1, max: 31 },
+    { name: 'month', min: 1, max: 12 },
+    { name: 'weekday', min: 0, max: 7 } // 0 and 7 both represent Sunday
+  ];
+
+  for (let i = 0; i < 5; i++) {
+    const field = parts[i];
+    const range = fieldRanges[i];
+
+    // Wildcard is always valid
+    if (field === '*') continue;
+
+    // Step values like */5
+    if (field.includes('/')) {
+      const [base, step] = field.split('/');
+      if (base !== '*' && !/^\d+$/.test(base)) {
+        return { valid: false, error: `Invalid ${range.name} step base: ${base}` };
+      }
+      if (!/^\d+$/.test(step) || parseInt(step) <= 0) {
+        return { valid: false, error: `Invalid ${range.name} step value: ${step}` };
+      }
+      continue;
+    }
+
+    // Range like 1-5
+    if (field.includes('-')) {
+      const [start, end] = field.split('-');
+      if (!/^\d+$/.test(start) || !/^\d+$/.test(end)) {
+        return { valid: false, error: `Invalid ${range.name} range: ${field}` };
+      }
+      const startNum = parseInt(start);
+      const endNum = parseInt(end);
+      if (startNum < range.min || endNum > range.max || startNum >= endNum) {
+        return { valid: false, error: `${range.name} range ${field} out of bounds (${range.min}-${range.max})` };
+      }
+      continue;
+    }
+
+    // List like 1,3,5
+    if (field.includes(',')) {
+      const values = field.split(',');
+      for (const val of values) {
+        if (!/^\d+$/.test(val)) {
+          return { valid: false, error: `Invalid ${range.name} list value: ${val}` };
+        }
+        const num = parseInt(val);
+        if (num < range.min || num > range.max) {
+          return { valid: false, error: `${range.name} value ${num} out of bounds (${range.min}-${range.max})` };
+        }
+      }
+      continue;
+    }
+
+    // Single number
+    if (!/^\d+$/.test(field)) {
+      return { valid: false, error: `Invalid ${range.name} value: ${field}` };
+    }
+    const num = parseInt(field);
+    if (num < range.min || num > range.max) {
+      return { valid: false, error: `${range.name} value ${num} out of bounds (${range.min}-${range.max})` };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
  * Helper: Validate schedule object
  */
 function validateSchedule(schedule) {
@@ -82,6 +168,12 @@ function validateSchedule(schedule) {
   if (schedule.kind === 'cron') {
     if (!schedule.expr || typeof schedule.expr !== 'string') {
       return { valid: false, error: 'expr (cron expression) is required for kind=cron' };
+    }
+
+    // Validate cron expression format
+    const cronValidation = validateCronExpression(schedule.expr);
+    if (!cronValidation.valid) {
+      return cronValidation;
     }
   }
 
@@ -143,6 +235,23 @@ router.post('/jobs', async (req, res) => {
       const scheduleValidation = validateSchedule(schedule);
       if (!scheduleValidation.valid) {
         return res.status(400).json({ error: scheduleValidation.error });
+      }
+
+      // Validate optional numeric parameters
+      if (timeoutSeconds !== undefined) {
+        const ts = Number(timeoutSeconds);
+        if (!Number.isFinite(ts) || ts < 1 || ts > 3600 || Math.floor(ts) !== ts) {
+          return res.status(400).json({ error: 'timeoutSeconds must be an integer between 1 and 3600' });
+        }
+      }
+      if (model !== undefined && (typeof model !== 'string' || model.length > 256)) {
+        return res.status(400).json({ error: 'model must be a string of 256 chars or less' });
+      }
+      if (deptId !== undefined && typeof deptId === 'string' && deptId.length > 50) {
+        return res.status(400).json({ error: 'deptId must be 50 chars or less' });
+      }
+      if (subAgentId !== undefined && typeof subAgentId === 'string' && subAgentId.length > 60) {
+        return res.status(400).json({ error: 'subAgentId must be 60 chars or less' });
       }
 
       // Read existing jobs
@@ -278,11 +387,18 @@ router.put('/jobs/:id', async (req, res) => {
       }
 
       if (updates.model !== undefined) {
+        if (typeof updates.model !== 'string' || updates.model.length > 256) {
+          return res.status(400).json({ error: 'model must be a string of 256 chars or less' });
+        }
         job.payload.model = updates.model;
       }
 
       if (updates.timeoutSeconds !== undefined) {
-        job.payload.timeoutSeconds = updates.timeoutSeconds;
+        const ts = Number(updates.timeoutSeconds);
+        if (!Number.isFinite(ts) || ts < 1 || ts > 3600 || Math.floor(ts) !== ts) {
+          return res.status(400).json({ error: 'timeoutSeconds must be an integer between 1 and 3600' });
+        }
+        job.payload.timeoutSeconds = ts;
       }
 
       // Update timestamp
@@ -463,7 +579,16 @@ router.post('/jobs/:id/run', async (req, res) => {
     let gatewayError;
 
     try {
-      result = await gateway.sendAgentMessage(sessionKey, message);
+      // Add timeout protection to job execution
+      const timeoutMs = (job.payload.timeoutSeconds || DEFAULT_EXECUTION_TIMEOUT_MS / 1000) * 1000;
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Job execution timeout after ${timeoutMs}ms`)), timeoutMs);
+      });
+
+      result = await Promise.race([
+        gateway.sendAgentMessage(sessionKey, message),
+        timeoutPromise
+      ]);
     } catch (err) {
       gatewayError = err;
     }

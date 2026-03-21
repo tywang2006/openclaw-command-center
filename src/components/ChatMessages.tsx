@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, memo } from 'react'
 import type { Department, Activity } from '../hooks/useAgentState'
 import { DeptIcon } from './Icons'
 import { useLocale } from '../i18n/index'
@@ -13,7 +13,112 @@ interface ChatMessagesProps {
   onImageClick: (src: string) => void
 }
 
-export default function ChatMessages({
+// Memoized message item to prevent re-rendering entire list on every message
+interface ChatMessageItemProps {
+  msg: Activity
+  index: number
+  departments: Department[]
+  selectedDeptId: string | null
+  formatTime: (ts: number) => string
+  cleanMessageText: (text: string) => string
+  highlightMentions: (text: string) => ReactElement[]
+  getFileIcon: (filename: string, size?: number) => React.ReactElement
+  formatFileSize: (bytes: number) => string
+  onImageClick: (src: string) => void
+  locale: string
+  t: (key: string) => string
+}
+
+const ChatMessageItem = memo(function ChatMessageItem({
+  msg,
+  index,
+  departments,
+  formatTime,
+  cleanMessageText,
+  highlightMentions,
+  getFileIcon,
+  formatFileSize,
+  onImageClick,
+  t,
+}: ChatMessageItemProps) {
+  return (
+    <div key={`${msg.role}-${msg.timestamp}-${index}`} className={`chat-msg ${msg.role} chat-msg-touch`}>
+      <div className="chat-msg-meta">
+        {msg.role === 'user' ? (
+          <>
+            <span className="chat-msg-sender you">
+              {msg.fromName || t('chat.message.you')}
+            </span>
+            {msg.source && msg.source !== 'app' && (
+              <span className={`chat-msg-source ${msg.source}`}>
+                {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <DeptIcon deptId={msg.deptId} size={12} />
+            <span className="chat-msg-sender bot">
+              {departments.find(d => d.id === msg.deptId)?.name || msg.deptId}
+            </span>
+            {msg.source && msg.source !== 'app' && (
+              <span className={`chat-msg-source ${msg.source}`}>
+                {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
+              </span>
+            )}
+          </>
+        )}
+        <span className="chat-msg-time">{formatTime(msg.timestamp)}</span>
+      </div>
+      <div className="chat-msg-text">{highlightMentions(cleanMessageText(msg.text))}</div>
+      {msg.images && msg.images.length > 0 && (
+        <div className="chat-msg-images">
+          {msg.images.map((imgSrc, j) => (
+            <img
+              key={j}
+              src={imgSrc}
+              className="chat-msg-img"
+              alt=""
+              onClick={() => onImageClick(imgSrc)}
+            />
+          ))}
+        </div>
+      )}
+      {msg.attachments && msg.attachments.length > 0 && (
+        <div className="chat-msg-attachments">
+          {msg.attachments.map((att, j) => (
+            <a key={j} href={att.url} download={att.name} className="chat-attachment">
+              <div className="attachment-icon-wrapper">
+                {getFileIcon(att.name, 16)}
+              </div>
+              <div className="attachment-info">
+                <span className="attachment-name">{att.name}</span>
+                <span className="attachment-size">{formatFileSize(att.size)}</span>
+              </div>
+              <svg className="attachment-download" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 2v9M4 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}, (prev, next) => {
+  // Custom comparison: only re-render if message content actually changed
+  return (
+    prev.msg.text === next.msg.text &&
+    prev.msg.timestamp === next.msg.timestamp &&
+    prev.msg.role === next.msg.role &&
+    prev.msg.deptId === next.msg.deptId &&
+    prev.msg.images?.length === next.msg.images?.length &&
+    prev.msg.attachments?.length === next.msg.attachments?.length &&
+    prev.locale === next.locale
+  )
+})
+
+function ChatMessages({
   deptActivities,
   departments,
   selectedDeptId,
@@ -27,21 +132,6 @@ export default function ChatMessages({
   const [isRefreshing, setIsRefreshing] = useState(false)
   const pullStartY = useRef<number | null>(null)
   const PULL_THRESHOLD = 60
-
-  // Per-message detail toggle for power users
-  const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set())
-
-  const toggleMessageDetails = (index: number) => {
-    setExpandedMessages(prev => {
-      const next = new Set(prev)
-      if (next.has(index)) {
-        next.delete(index)
-      } else {
-        next.add(index)
-      }
-      return next
-    })
-  }
 
   // Smart auto-scroll: only scroll if user is near bottom
   useEffect(() => {
@@ -94,21 +184,22 @@ export default function ChatMessages({
     pullStartY.current = null
   }, [pullDistance, selectedDeptId, isRefreshing])
 
-  const formatTime = (ts: number) => {
+  // Memoize helper functions to prevent re-creating on every render
+  const formatTime = useCallback((ts: number) => {
     return new Date(ts).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', {
       hour: '2-digit', minute: '2-digit', hour12: false
     })
-  }
+  }, [locale])
 
-  const cleanMessageText = (text: string): string => {
+  const cleanMessageText = useCallback((text: string): string => {
     if (!text) return text
     return text
       .replace(/<department_context>[\s\S]*?<\/department_context>\s*/g, '')
       .replace(/<subagent_context>[\s\S]*?<\/subagent_context>\s*/g, '')
       .trim()
-  }
+  }, [])
 
-  const highlightMentions = (text: string): ReactElement[] => {
+  const highlightMentions = useCallback((text: string): ReactElement[] => {
     const parts: ReactElement[] = [];
     const mentionPattern = /@([\w\u4e00-\u9fff]+)/g;
     let lastIndex = 0;
@@ -134,9 +225,9 @@ export default function ChatMessages({
     }
 
     return parts.length > 0 ? parts : [<span key="text">{text}</span>];
-  }
+  }, [])
 
-  const getFileIcon = (filename: string, size: number = 16) => {
+  const getFileIcon = useCallback((filename: string, size: number = 16) => {
     const ext = filename.split('.').pop()?.toLowerCase() || ''
     const colors: Record<string, string> = {
       pdf: '#ff4444', docx: '#4488ff', xlsx: '#22aa44', pptx: '#ff8800',
@@ -151,13 +242,13 @@ export default function ChatMessages({
         <text x="8" y="12" textAnchor="middle" fill={color} fontSize="4" fontWeight="700" fontFamily="var(--font-mono)">{label}</text>
       </svg>
     )
-  }
+  }, [])
 
-  const formatFileSize = (bytes: number): string => {
+  const formatFileSize = useCallback((bytes: number): string => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  }
+  }, [])
 
   const dept = departments.find(d => d.id === selectedDeptId)
 
@@ -199,68 +290,21 @@ export default function ChatMessages({
         </div>
       ) : (
         deptActivities.map((msg, i) => (
-          <div key={`${msg.role}-${msg.timestamp}-${i}`} className={`chat-msg ${msg.role} chat-msg-touch`}>
-            <div className="chat-msg-meta">
-              {msg.role === 'user' ? (
-                <>
-                  <span className="chat-msg-sender you">
-                    {msg.fromName || t('chat.message.you')}
-                  </span>
-                  {msg.source && msg.source !== 'app' && (
-                    <span className={`chat-msg-source ${msg.source}`}>
-                      {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <DeptIcon deptId={msg.deptId} size={12} />
-                  <span className="chat-msg-sender bot">
-                    {departments.find(d => d.id === msg.deptId)?.name || msg.deptId}
-                  </span>
-                  {msg.source && msg.source !== 'app' && (
-                    <span className={`chat-msg-source ${msg.source}`}>
-                      {msg.source === 'telegram' ? t('chat.source.telegram') : msg.source === 'gateway' ? t('chat.source.gateway') : msg.source}
-                    </span>
-                  )}
-                </>
-              )}
-              <span className="chat-msg-time">{formatTime(msg.timestamp)}</span>
-            </div>
-            <div className="chat-msg-text">{highlightMentions(cleanMessageText(msg.text))}</div>
-            {msg.images && msg.images.length > 0 && (
-              <div className="chat-msg-images">
-                {msg.images.map((imgSrc, j) => (
-                  <img
-                    key={j}
-                    src={imgSrc}
-                    className="chat-msg-img"
-                    alt=""
-                    onClick={() => onImageClick(imgSrc)}
-                  />
-                ))}
-              </div>
-            )}
-            {msg.attachments && msg.attachments.length > 0 && (
-              <div className="chat-msg-attachments">
-                {msg.attachments.map((att, j) => (
-                  <a key={j} href={att.url} download={att.name} className="chat-attachment">
-                    <div className="attachment-icon-wrapper">
-                      {getFileIcon(att.name, 16)}
-                    </div>
-                    <div className="attachment-info">
-                      <span className="attachment-name">{att.name}</span>
-                      <span className="attachment-size">{formatFileSize(att.size)}</span>
-                    </div>
-                    <svg className="attachment-download" width="14" height="14" viewBox="0 0 16 16" fill="none">
-                      <path d="M8 2v9M4 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M2 13h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
+          <ChatMessageItem
+            key={`${msg.role}-${msg.timestamp}-${i}`}
+            msg={msg}
+            index={i}
+            departments={departments}
+            selectedDeptId={selectedDeptId}
+            formatTime={formatTime}
+            cleanMessageText={cleanMessageText}
+            highlightMentions={highlightMentions}
+            getFileIcon={getFileIcon}
+            formatFileSize={formatFileSize}
+            onImageClick={onImageClick}
+            locale={locale}
+            t={t}
+          />
         ))
       )}
       {sending && (() => {
@@ -286,3 +330,5 @@ export default function ChatMessages({
     </div>
   )
 }
+
+export default memo(ChatMessages)

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Department } from '../hooks/useAgentState'
 import { authedFetch } from '../utils/api'
+import { useLocale } from '../i18n/index'
 import './CommandPalette.css'
 
 interface CommandAction {
@@ -32,6 +33,7 @@ interface CommandPaletteProps {
 
 export default function CommandPalette({ open, onClose, departments, onSelectDept, onSwitchTab, onOpenMeeting }: CommandPaletteProps) {
   const navigate = useNavigate()
+  const { t } = useLocale()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -39,6 +41,7 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const searchTimeoutRef = useRef<number | null>(null)
+  const paletteRef = useRef<HTMLDivElement>(null)
 
   // Build command list
   const commands = useMemo<CommandAction[]>(() => {
@@ -48,51 +51,53 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
     for (const dept of departments) {
       cmds.push({
         id: `dept:${dept.id}`,
-        category: '部门',
+        category: t('cmd.palette.category.dept'),
         label: dept.name,
-        description: `切换到${dept.name}`,
+        description: t('cmd.palette.dept.switch', { name: dept.name }),
         action: () => { onSelectDept(dept.id); onClose() },
       })
     }
 
     // Tab navigation (office tabs)
     const tabs = [
-      { id: 'chat', label: '对话', desc: '打开对话面板' },
-      { id: 'bulletin', label: '公告板', desc: '查看公告' },
-      { id: 'memory', label: '记忆', desc: '查看部门记忆' },
-      { id: 'activity', label: '活动', desc: '查看活动日志' },
-      { id: 'requests', label: '请求', desc: '查看请求列表' },
-      { id: 'meeting', label: '会议', desc: '跨部门会议室' },
-      { id: 'integrations', label: '能力', desc: '系统能力面板' },
-      { id: 'skills', label: '技能', desc: '查看技能列表' },
-      { id: 'guide', label: '指南', desc: '查看使用指南' },
+      { id: 'chat', labelKey: 'app.tab.chat' },
+      { id: 'bulletin', labelKey: 'app.tab.bulletin' },
+      { id: 'memory', labelKey: 'app.tab.memory' },
+      { id: 'activity', labelKey: 'app.tab.activity' },
+      { id: 'requests', labelKey: 'app.tab.requests' },
+      { id: 'meeting', labelKey: 'app.tab.meeting' },
+      { id: 'integrations', labelKey: 'app.tab.integrations' },
+      { id: 'skills', labelKey: 'app.tab.skills' },
+      { id: 'guide', labelKey: 'app.tab.guide' },
     ]
     for (const tab of tabs) {
+      const label = t(tab.labelKey)
       cmds.push({
         id: `tab:${tab.id}`,
-        category: '导航',
-        label: tab.label,
-        description: tab.desc,
+        category: t('cmd.palette.category.nav'),
+        label: label,
+        description: label,
         action: () => { onSwitchTab(tab.id); onClose() },
       })
     }
 
     // Ops console navigation
     const opsModules = [
-      { id: 'dashboard', label: '仪表盘', desc: '运维控制台 - 仪表盘' },
-      { id: 'system', label: '系统设置', desc: '运维控制台 - 系统' },
-      { id: 'cron', label: '定时任务', desc: '运维控制台 - 定时' },
-      { id: 'agents', label: '代理管理', desc: '运维控制台 - 代理' },
-      { id: 'gateways', label: '网关监控', desc: '运维控制台 - 网关' },
-      { id: 'activity', label: '活动日志', desc: '运维控制台 - 活动' },
-      { id: 'approvals', label: '权限审计', desc: '运维控制台 - 审计' },
+      { id: 'dashboard', labelKey: 'ops.module.dashboard' },
+      { id: 'system', labelKey: 'ops.module.system' },
+      { id: 'cron', labelKey: 'ops.module.cron' },
+      { id: 'agents', labelKey: 'ops.module.agents' },
+      { id: 'gateways', labelKey: 'ops.module.gateways' },
+      { id: 'activity', labelKey: 'ops.module.activity' },
+      { id: 'approvals', labelKey: 'ops.module.approvals' },
     ]
     for (const mod of opsModules) {
+      const label = t(mod.labelKey)
       cmds.push({
         id: `ops:${mod.id}`,
-        category: '控制台',
-        label: mod.label,
-        description: mod.desc,
+        category: t('cmd.palette.category.ops'),
+        label: label,
+        description: label,
         action: () => { navigate(`/ops/${mod.id}`); onClose() },
       })
     }
@@ -101,15 +106,15 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
     if (onOpenMeeting) {
       cmds.push({
         id: 'action:meeting',
-        category: '操作',
-        label: '发起会议',
-        description: '跨部门多人会议',
+        category: t('cmd.palette.category.action'),
+        label: t('cmd.palette.action.meeting'),
+        description: t('cmd.palette.action.meeting.desc'),
         action: () => { onOpenMeeting(); onClose() },
       })
     }
 
     return cmds
-  }, [departments, onSelectDept, onSwitchTab, onOpenMeeting, onClose])
+  }, [departments, onSelectDept, onSwitchTab, onOpenMeeting, onClose, navigate, t])
 
   // Debounced search
   useEffect(() => {
@@ -161,10 +166,10 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
     return searchResults.flatMap((result, idx) => {
       const getCategoryBadge = () => {
         switch (result.type) {
-          case 'memory': return '记忆'
-          case 'daily': return '日志'
-          case 'chat': return '对话'
-          case 'bulletin': return '公告'
+          case 'memory': return t('cmd.palette.search.memory')
+          case 'daily': return t('cmd.palette.search.daily')
+          case 'chat': return t('cmd.palette.search.chat')
+          case 'bulletin': return t('cmd.palette.search.bulletin')
           default: return result.type
         }
       }
@@ -191,9 +196,35 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
         }
       }))
     })
-  }, [searchResults, onSelectDept, onSwitchTab, onClose])
+  }, [searchResults, onSelectDept, onSwitchTab, onClose, t])
 
-  // Reset on open
+  // Focus trap for Tab navigation
+  const handleTabKey = useCallback((e: KeyboardEvent) => {
+    if (e.key !== 'Tab') return
+
+    const palette = paletteRef.current
+    if (!palette) return
+
+    const focusableElements = palette.querySelectorAll('input, [role="option"]')
+    const firstElement = focusableElements[0] as HTMLElement
+    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement
+
+    if (e.shiftKey) {
+      // Shift+Tab: if on first element, focus last
+      if (document.activeElement === firstElement) {
+        e.preventDefault()
+        lastElement?.focus()
+      }
+    } else {
+      // Tab: if on last element, focus first
+      if (document.activeElement === lastElement) {
+        e.preventDefault()
+        firstElement?.focus()
+      }
+    }
+  }, [])
+
+  // Reset on open and attach focus trap
   useEffect(() => {
     if (open) {
       setQuery('')
@@ -201,8 +232,14 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
       setSearchResults([])
       setSearchLoading(false)
       setTimeout(() => inputRef.current?.focus(), 50)
+
+      // Attach focus trap listener
+      document.addEventListener('keydown', handleTabKey)
+      return () => {
+        document.removeEventListener('keydown', handleTabKey)
+      }
     }
-  }, [open])
+  }, [open, handleTabKey])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -236,9 +273,16 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
 
   return (
     <div className="cmd-palette-overlay" onClick={onClose}>
-      <div className="cmd-palette" onClick={e => e.stopPropagation()}>
+      <div
+        className="cmd-palette"
+        onClick={e => e.stopPropagation()}
+        ref={paletteRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cmd-palette-label"
+      >
         <div className="cmd-palette-input-row">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="cmd-palette-search-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="cmd-palette-search-icon" aria-hidden="true">
             <circle cx="6.5" cy="6.5" r="5" stroke="#666" strokeWidth="1.5" />
             <path d="M10.5 10.5L14 14" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -248,23 +292,36 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="搜索命令、部门..."
+            placeholder={t('cmd.palette.placeholder')}
+            aria-label={t('cmd.palette.placeholder')}
+            id="cmd-palette-label"
+            aria-controls="cmd-palette-results"
+            aria-activedescendant={`cmd-option-${selectedIndex}`}
           />
-          <kbd className="cmd-palette-kbd">ESC</kbd>
+          <kbd className="cmd-palette-kbd" aria-hidden="true">ESC</kbd>
         </div>
-        <div className="cmd-palette-list" ref={listRef}>
+        <div
+          className="cmd-palette-list"
+          ref={listRef}
+          role="listbox"
+          id="cmd-palette-results"
+        >
           {searchLoading && (
-            <div className="cmd-search-loading">搜索中...</div>
+            <div className="cmd-search-loading">{t('cmd.palette.loading')}</div>
           )}
           {!searchLoading && filtered.length === 0 && searchCommands.length === 0 && (
-            <div className="cmd-palette-empty">无匹配结果</div>
+            <div className="cmd-palette-empty">{t('cmd.palette.empty')}</div>
           )}
           {!searchLoading && filtered.map((cmd, i) => (
             <div
               key={cmd.id}
+              id={`cmd-option-${i}`}
               className={`cmd-palette-item ${i === selectedIndex ? 'selected' : ''}`}
               onClick={() => cmd.action()}
               onMouseEnter={() => setSelectedIndex(i)}
+              role="option"
+              aria-selected={i === selectedIndex}
+              tabIndex={-1}
             >
               <span className="cmd-palette-category">{cmd.category}</span>
               <span className="cmd-palette-label">{cmd.label}</span>
@@ -278,11 +335,15 @@ export default function CommandPalette({ open, onClose, departments, onSelectDep
                 return (
                   <div
                     key={cmd.id}
+                    id={`cmd-option-${idx}`}
                     className={`cmd-palette-item cmd-search-result ${idx === selectedIndex ? 'selected' : ''}`}
                     onClick={() => cmd.action()}
                     onMouseEnter={() => setSelectedIndex(idx)}
+                    role="option"
+                    aria-selected={idx === selectedIndex}
+                    tabIndex={-1}
                   >
-                    <span className={`cmd-search-badge ${cmd.category === '记忆' ? 'memory' : cmd.category === '日志' ? 'daily' : cmd.category === '对话' ? 'chat' : 'bulletin'}`}>{cmd.category}</span>
+                    <span className={`cmd-search-badge ${cmd.category === t('cmd.palette.search.memory') ? 'memory' : cmd.category === t('cmd.palette.search.daily') ? 'daily' : cmd.category === t('cmd.palette.search.chat') ? 'chat' : 'bulletin'}`}>{cmd.category}</span>
                     <span className="cmd-palette-label">{cmd.label}</span>
                     <span className="cmd-palette-desc">{cmd.description}</span>
                   </div>

@@ -4,6 +4,7 @@ import path from 'path';
 import { parseJsonlLine, readFromOffset } from './parsers/jsonl.js';
 import { BASE_PATH, readJsonFile, readTextFile } from './utils.js';
 import { createLogger } from './logger.js';
+import { safeBroadcast } from './broadcast.js';
 
 const log = createLogger('Watcher');
 
@@ -14,19 +15,8 @@ const fileOffsets = new Map();
  * Broadcast message to all connected WebSocket clients
  */
 function broadcast(wss, event, data) {
-  const message = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
-
-  wss.clients.forEach(client => {
-    if (client.readyState === 1 && client._authenticated) { // WebSocket.OPEN + authenticated
-      try {
-        client.send(message);
-      } catch (error) {
-        log.error('Error broadcasting to client', { error: error.message });
-      }
-    }
-  });
-
-  log.info('Broadcast', { event, dataKeys: Object.keys(data).join(', ') });
+  const result = safeBroadcast(wss, { event, data, timestamp: new Date().toISOString() });
+  log.info('Broadcast', { event, dataKeys: Object.keys(data).join(', '), sent: result.sent, skipped: result.skipped });
 }
 
 /**

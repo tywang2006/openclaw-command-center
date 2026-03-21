@@ -50,7 +50,9 @@ export default function ChatPanel({
   const { t } = useLocale()
   const messagesRef = useRef<HTMLDivElement>(null)
 
-  // Chat history from OpenClaw Gateway (loaded per department)
+  // Chat history from OpenClaw Gateway (loaded per department, max 10 cached depts)
+  const MAX_CACHED_DEPTS = 10
+  const MAX_HISTORY_PER_DEPT = 100
   const [historyByDept, setHistoryByDept] = useState<Record<string, Activity[]>>({})
   const loadedDeptsRef = useRef<Set<string>>(new Set())
 
@@ -89,14 +91,26 @@ export default function ChatPanel({
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data.messages)) {
-          const msgs: Activity[] = data.messages.map((msg: { role: string; text: string; timestamp: string | null }) => ({
+          const msgs: Activity[] = data.messages.slice(-MAX_HISTORY_PER_DEPT).map((msg: { role: string; text: string; timestamp: string | null }) => ({
             deptId: selectedDeptId,
             role: (msg.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
             text: msg.text,
             timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : 0,
             source: 'history',
           }))
-          setHistoryByDept(prev => ({ ...prev, [selectedDeptId!]: msgs }))
+          setHistoryByDept(prev => {
+            const next = { ...prev, [selectedDeptId!]: msgs }
+            // Evict oldest cached depts if over limit
+            const keys = Object.keys(next)
+            if (keys.length > MAX_CACHED_DEPTS) {
+              const toEvict = keys.filter(k => k !== selectedDeptId).slice(0, keys.length - MAX_CACHED_DEPTS)
+              for (const k of toEvict) {
+                delete next[k]
+                loadedDeptsRef.current.delete(k)
+              }
+            }
+            return next
+          })
         }
       })
       .catch(() => {

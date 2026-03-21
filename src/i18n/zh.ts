@@ -304,6 +304,13 @@ export const zh: Record<string, string> = {
   // RequestsTab.tsx
   'requests.empty.title': '暂无跨部门请求',
   'requests.badge.pending': 'pending',
+  'requests.action.approve': '批准',
+  'requests.action.deny': '拒绝',
+  'requests.action.approving': '批准中...',
+  'requests.action.denying': '拒绝中...',
+  'requests.action.approved': '已批准',
+  'requests.action.denied': '已拒绝',
+  'requests.action.failed': '操作失败',
 
   // StatusBar.tsx - no strings to translate
 
@@ -382,6 +389,7 @@ export const zh: Record<string, string> = {
   'replay.events': '{count} 个事件',
   'replay.duration': '{seconds}秒',
   'replay.stop.playback': '停止',
+  'replay.limit.warning': '已达到事件上限 ({limit} 条),事件可能被截断',
 
   // Capabilities Dashboard (IntegrationsTab)
   'app.tab.integrations': '集成',
@@ -400,6 +408,7 @@ export const zh: Record<string, string> = {
   'system.gateway.config': '连接设置',
   'system.gateway.saved': '已保存 — 重启服务器生效',
   'system.gateway.test': '测试连接',
+  'system.gateway.edit.note': '注意：出于安全考虑，Gateway URL 和 Token 必须通过服务器上的 openclaw.json 文件编辑。',
   'system.edit': '编辑',
   'system.channels': '通道',
   'system.running': '运行中',
@@ -487,7 +496,7 @@ export const zh: Record<string, string> = {
   'sys.password.new': '新密码',
   'sys.password.confirm': '确认密码',
   'sys.password.mismatch': '两次密码不一致',
-  'sys.password.tooShort': '密码至少 6 个字符',
+  'sys.password.tooShort': '密码至少 8 个字符',
   'sys.password.wrong': '当前密码错误',
   'sys.password.success': '密码已修改，正在退出登录...',
   'sys.password.failed': '修改密码失败',
@@ -559,6 +568,8 @@ export const zh: Record<string, string> = {
   'common.close': '关闭',
   'common.confirm': '确认',
   'common.send': '发送',
+  'common.retry': '重试',
+  'common.timeout': '请求超时',
 
   // 集成配置
   'integ.section.title': '服务配置',
@@ -868,7 +879,7 @@ export const zh: Record<string, string> = {
   'login.error.network': '网络错误',
   'login.error.failed': '登录失败',
   'login.error.mismatch': '两次密码不一致',
-  'login.error.short': '密码至少6位',
+  'login.error.short': '密码至少8位',
   'login.setup.title': '设置登录密码',
   'login.setup.password': '输入密码',
   'login.setup.confirm': '确认密码',
@@ -921,6 +932,8 @@ export const zh: Record<string, string> = {
   'system.shutdown.title': '服务器控制',
   'system.shutdown.btn': '关闭服务器',
   'system.shutdown.confirm': '确定关闭指挥中心服务器？可以双击应用图标重新启动。',
+  'system.shutdown.password.required': '需要输入密码才能关闭服务器',
+  'system.shutdown.password.placeholder': '输入密码确认',
   'system.shutdown.done': '服务器已关闭。双击应用图标重新启动。',
 
   // OpenClaw Config
@@ -942,6 +955,23 @@ export const zh: Record<string, string> = {
   'system.config.bottoken.placeholder': '输入 Bot Token...',
   'system.config.nokey': '未配置',
   'system.config.configured': '已配置',
+
+  // Password change
+  'system.password.title': '修改密码',
+  'system.password.current': '当前密码',
+  'system.password.current.placeholder': '输入当前密码',
+  'system.password.new': '新密码',
+  'system.password.new.placeholder': '输入新密码 (至少8字符)',
+  'system.password.confirm': '确认新密码',
+  'system.password.confirm.placeholder': '再次输入新密码',
+  'system.password.change': '修改密码',
+  'system.password.changing': '修改中...',
+  'system.password.changed': '密码修改成功，请重新登录',
+  'system.password.mismatch': '两次输入的密码不一致',
+  'system.password.tooshort': '密码长度至少8字符',
+  'system.password.required': '请填写所有密码字段',
+  'system.password.incorrect': '当前密码错误',
+  'system.password.failed': '密码修改失败',
 
   // F1: Meeting Minutes Export
   'meeting.export.title': '会议纪要已导出',
@@ -1054,6 +1084,7 @@ export const zh: Record<string, string> = {
   'ops.dash.preview.sessions': '活跃会话',
   'ops.dash.preview.activity': '最近活动',
   'ops.dash.viewAll': '查看全部',
+  'ops.dash.noData': '暂无数据',
 
   // Ops Agents
   'ops.agents.title': '代理管理',
@@ -1161,4 +1192,20 @@ export const zh: Record<string, string> = {
   'ops.activity.stats.top': '最频繁',
   'ops.activity.loading': '加载中...',
   'ops.activity.exporting': '导出中...',
+
+  // CommandPalette
+  'cmd.palette.placeholder': '搜索命令、部门...',
+  'cmd.palette.loading': '搜索中...',
+  'cmd.palette.empty': '无匹配结果',
+  'cmd.palette.category.dept': '部门',
+  'cmd.palette.category.nav': '导航',
+  'cmd.palette.category.ops': '控制台',
+  'cmd.palette.category.action': '操作',
+  'cmd.palette.dept.switch': '切换到{name}',
+  'cmd.palette.action.meeting': '发起会议',
+  'cmd.palette.action.meeting.desc': '跨部门多人会议',
+  'cmd.palette.search.memory': '记忆',
+  'cmd.palette.search.daily': '日志',
+  'cmd.palette.search.chat': '对话',
+  'cmd.palette.search.bulletin': '公告',
 }

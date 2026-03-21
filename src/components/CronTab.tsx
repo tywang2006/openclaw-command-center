@@ -3,7 +3,7 @@ import type { Department } from '../hooks/useAgentState';
 import { DeptIcon } from './Icons';
 import { useToast } from './Toast';
 import { useLocale } from '../i18n/index';
-import { authedFetch } from '../utils/api';
+import { authedFetch, extractErrorMessage } from '../utils/api';
 import { useVisibilityInterval } from '../hooks/useVisibilityInterval';
 import './CronTab.css';
 
@@ -94,13 +94,16 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
     try {
       const response = await authedFetch('/api/cron/jobs');
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.load.failed'));
+        showToast(errorMsg);
+        return;
       }
       const data = await response.json();
       setJobs(data.jobs || []);
       // ok
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.load.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.load.failed'));
+      showToast(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -149,7 +152,9 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.create.failed'));
+        showToast(errorMsg);
+        return;
       }
 
       await fetchJobs();
@@ -164,8 +169,10 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         message: '',
         timeoutSeconds: 120,
       });
+      showToast('定时任务创建成功', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.create.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.create.failed'));
+      showToast(errorMsg);
     }
   };
 
@@ -176,12 +183,16 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.toggle.failed'));
+        showToast(errorMsg);
+        return;
       }
 
       await fetchJobs();
+      showToast(job.enabled ? '定时任务已禁用' : '定时任务已启用', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.toggle.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.toggle.failed'));
+      showToast(errorMsg);
     }
   };
 
@@ -192,13 +203,17 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.delete.failed'));
+        showToast(errorMsg);
+        return;
       }
 
       await fetchJobs();
       setDeleteConfirmId(null);
+      showToast('定时任务已删除', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.delete.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.delete.failed'));
+      showToast(errorMsg);
     }
   };
 
@@ -219,14 +234,18 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.update.failed'));
+        showToast(errorMsg);
+        return;
       }
 
       await fetchJobs();
       setEditingJobId(null);
       setEditMessage('');
+      showToast('定时任务已更新', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.update.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.update.failed'));
+      showToast(errorMsg);
     }
   };
 
@@ -237,12 +256,15 @@ const CronTab: React.FC<CronTabProps> = ({ departments, selectedDeptId }) => {
         method: 'POST',
       });
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || `HTTP ${response.status}`);
+        const errorMsg = await extractErrorMessage(response, t('cron.run.failed'));
+        showToast(errorMsg);
+        return;
       }
       await fetchJobs();
+      showToast('定时任务执行成功', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t('cron.run.failed'));
+      const errorMsg = await extractErrorMessage(err, t('cron.run.failed'));
+      showToast(errorMsg);
     } finally {
       setRunningJobId(null);
     }

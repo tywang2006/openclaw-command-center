@@ -304,6 +304,13 @@ export const en: Record<string, string> = {
   // RequestsTab.tsx
   'requests.empty.title': 'No cross-department requests',
   'requests.badge.pending': 'pending',
+  'requests.action.approve': 'Approve',
+  'requests.action.deny': 'Deny',
+  'requests.action.approving': 'Approving...',
+  'requests.action.denying': 'Denying...',
+  'requests.action.approved': 'Approved',
+  'requests.action.denied': 'Denied',
+  'requests.action.failed': 'Action failed',
 
   // StatusBar.tsx - no strings to translate
 
@@ -382,6 +389,7 @@ export const en: Record<string, string> = {
   'replay.events': '{count} events',
   'replay.duration': '{seconds}s',
   'replay.stop.playback': 'Stop',
+  'replay.limit.warning': 'Event limit reached ({limit}), events may be truncated',
 
   // Capabilities Dashboard (IntegrationsTab)
   'app.tab.integrations': 'Integ',
@@ -400,6 +408,7 @@ export const en: Record<string, string> = {
   'system.gateway.config': 'Connection Settings',
   'system.gateway.saved': 'Saved — restart server to apply',
   'system.gateway.test': 'Test Connection',
+  'system.gateway.edit.note': 'Note: Gateway URL and token must be edited via openclaw.json file on the server for security.',
   'system.edit': 'Edit',
   'system.channels': 'Channels',
   'system.running': 'Running',
@@ -487,7 +496,7 @@ export const en: Record<string, string> = {
   'sys.password.new': 'New Password',
   'sys.password.confirm': 'Confirm Password',
   'sys.password.mismatch': 'Passwords do not match',
-  'sys.password.tooShort': 'Password must be at least 6 characters',
+  'sys.password.tooShort': 'Password must be at least 8 characters',
   'sys.password.wrong': 'Current password is incorrect',
   'sys.password.success': 'Password changed. Logging out...',
   'sys.password.failed': 'Failed to change password',
@@ -559,6 +568,8 @@ export const en: Record<string, string> = {
   'common.close': 'Close',
   'common.confirm': 'Confirm',
   'common.send': 'Send',
+  'common.retry': 'Retry',
+  'common.timeout': 'Request timeout',
 
   // Integration Config
   'integ.section.title': 'Services',
@@ -868,7 +879,7 @@ export const en: Record<string, string> = {
   'login.error.network': 'Network error',
   'login.error.failed': 'Login failed',
   'login.error.mismatch': 'Passwords do not match',
-  'login.error.short': 'Password must be at least 6 characters',
+  'login.error.short': 'Password must be at least 8 characters',
   'login.setup.title': 'Create your password',
   'login.setup.password': 'New password',
   'login.setup.confirm': 'Confirm password',
@@ -921,6 +932,8 @@ export const en: Record<string, string> = {
   'system.shutdown.title': 'Server Control',
   'system.shutdown.btn': 'Shut Down Server',
   'system.shutdown.confirm': 'Shut down the Command Center server? You can restart by double-clicking the app.',
+  'system.shutdown.password.required': 'Password required for shutdown',
+  'system.shutdown.password.placeholder': 'Enter password to confirm',
   'system.shutdown.done': 'Server has been shut down. Double-click the app to restart.',
 
   // OpenClaw Config
@@ -942,6 +955,23 @@ export const en: Record<string, string> = {
   'system.config.bottoken.placeholder': 'Enter Bot Token...',
   'system.config.nokey': 'Not configured',
   'system.config.configured': 'Configured',
+
+  // Password change
+  'system.password.title': 'Change Password',
+  'system.password.current': 'Current Password',
+  'system.password.current.placeholder': 'Enter current password',
+  'system.password.new': 'New Password',
+  'system.password.new.placeholder': 'Enter new password (min 8 chars)',
+  'system.password.confirm': 'Confirm New Password',
+  'system.password.confirm.placeholder': 'Re-enter new password',
+  'system.password.change': 'Change Password',
+  'system.password.changing': 'Changing...',
+  'system.password.changed': 'Password changed successfully, please login again',
+  'system.password.mismatch': 'Passwords do not match',
+  'system.password.tooshort': 'Password must be at least 8 characters',
+  'system.password.required': 'All password fields are required',
+  'system.password.incorrect': 'Current password is incorrect',
+  'system.password.failed': 'Failed to change password',
 
   // F1: Meeting Minutes Export
   'meeting.export.title': 'Meeting Minutes Exported',
@@ -1054,6 +1084,7 @@ export const en: Record<string, string> = {
   'ops.dash.preview.sessions': 'Active Sessions',
   'ops.dash.preview.activity': 'Recent Activity',
   'ops.dash.viewAll': 'View All',
+  'ops.dash.noData': 'No data',
 
   // Ops Agents
   'ops.agents.title': 'Agent Management',
@@ -1161,4 +1192,20 @@ export const en: Record<string, string> = {
   'ops.activity.stats.top': 'Most Frequent',
   'ops.activity.loading': 'Loading...',
   'ops.activity.exporting': 'Exporting...',
+
+  // CommandPalette
+  'cmd.palette.placeholder': 'Search commands, departments...',
+  'cmd.palette.loading': 'Searching...',
+  'cmd.palette.empty': 'No results',
+  'cmd.palette.category.dept': 'Department',
+  'cmd.palette.category.nav': 'Navigation',
+  'cmd.palette.category.ops': 'Console',
+  'cmd.palette.category.action': 'Actions',
+  'cmd.palette.dept.switch': 'Switch to {name}',
+  'cmd.palette.action.meeting': 'Start Meeting',
+  'cmd.palette.action.meeting.desc': 'Cross-department meeting',
+  'cmd.palette.search.memory': 'Memory',
+  'cmd.palette.search.daily': 'Daily',
+  'cmd.palette.search.chat': 'Chat',
+  'cmd.palette.search.bulletin': 'Bulletin',
 }

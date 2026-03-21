@@ -43,6 +43,85 @@
   --warning: #ffaa33;
   --success: #00cc88;
 
+  /* Spacing scale (px values as token names) */
+  --sp-1: 1px;
+  --sp-2: 2px;
+  --sp-4: 4px;
+  --sp-6: 6px;
+  --sp-8: 8px;
+  --sp-10: 10px;
+  --sp-12: 12px;
+  --sp-14: 14px;
+  --sp-16: 16px;
+  --sp-20: 20px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+  --sp-40: 40px;
+  --sp-48: 48px;
+
+  /* Font size scale */
+  --fs-2xs: 9px;
+  --fs-xs: 10px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --fs-3xl: 32px;
+  --fs-4xl: 40px;
+  --fs-display: 48px;
+
+  /* Opacity scale */
+  --o-dim: 0.04;
+  --o-subtle: 0.08;
+  --o-medium: 0.15;
+  --o-strong: 0.30;
+  --o-heavy: 0.50;
+
+  /* Alpha colors: {color}-a{level} = rgba(base, opacity) */
+  /* a4=0.04, a8=0.08, a15=0.15, a30=0.30, a50=0.50 */
+  --accent-a4: rgba(0, 200, 200, 0.04);
+  --accent-a8: rgba(0, 200, 200, 0.08);
+  --accent-a15: rgba(0, 200, 200, 0.15);
+  --accent-a30: rgba(0, 200, 200, 0.30);
+  --accent-a50: rgba(0, 200, 200, 0.50);
+  --accent2-a4: rgba(168, 85, 247, 0.04);
+  --accent2-a8: rgba(168, 85, 247, 0.08);
+  --accent2-a15: rgba(168, 85, 247, 0.15);
+  --accent2-a30: rgba(168, 85, 247, 0.30);
+  --accent2-a50: rgba(168, 85, 247, 0.50);
+  --success-a4: rgba(34, 197, 94, 0.04);
+  --success-a8: rgba(34, 197, 94, 0.08);
+  --success-a15: rgba(34, 197, 94, 0.15);
+  --success-a30: rgba(34, 197, 94, 0.30);
+  --success-a50: rgba(34, 197, 94, 0.50);
+  --warning-a4: rgba(234, 179, 8, 0.04);
+  --warning-a8: rgba(234, 179, 8, 0.08);
+  --warning-a15: rgba(234, 179, 8, 0.15);
+  --warning-a30: rgba(234, 179, 8, 0.30);
+  --warning-a50: rgba(234, 179, 8, 0.50);
+  --danger-a4: rgba(239, 68, 68, 0.04);
+  --danger-a8: rgba(239, 68, 68, 0.08);
+  --danger-a15: rgba(239, 68, 68, 0.15);
+  --danger-a30: rgba(239, 68, 68, 0.30);
+  --danger-a50: rgba(239, 68, 68, 0.50);
+  --neutral-a4: rgba(0, 0, 0, 0.04);
+  --neutral-a8: rgba(0, 0, 0, 0.08);
+  --neutral-a15: rgba(0, 0, 0, 0.15);
+  --neutral-a30: rgba(0, 0, 0, 0.30);
+  --neutral-a50: rgba(0, 0, 0, 0.50);
+  --white-a4: rgba(255, 255, 255, 0.04);
+  --white-a8: rgba(255, 255, 255, 0.08);
+  --white-a15: rgba(255, 255, 255, 0.15);
+  --white-a30: rgba(255, 255, 255, 0.30);
+  --white-a50: rgba(255, 255, 255, 0.50);
+  --gray-a4: rgba(148, 163, 184, 0.04);
+  --gray-a8: rgba(148, 163, 184, 0.08);
+  --gray-a15: rgba(148, 163, 184, 0.15);
+  --gray-a30: rgba(148, 163, 184, 0.30);
+  --gray-a50: rgba(148, 163, 184, 0.50);
+
   /* Pixel Shadows (hard offset, no blur) */
   --shadow-panel: 3px 3px 0 rgba(0, 0, 0, 0.5);
   --shadow-card: 2px 2px 0 rgba(0, 0, 0, 0.4);
@@ -426,4 +505,22 @@ textarea {
   * {
     min-width: 0;
   }
+}
+
+/* ============================================
+   WCAG 2.1 Focus Indicators
+   ============================================ */
+
+/* Global focus-visible styles for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+/* Form elements get zero offset for tighter fit */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 0;
 }

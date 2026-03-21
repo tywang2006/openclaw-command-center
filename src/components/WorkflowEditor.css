@@ -874,14 +874,36 @@
 }
 
 @media (max-width: 768px) {
+  /* Overlay and Modal - Full width on mobile */
   .workflow-overlay {
-    padding: 12px;
+    padding: 0;
+    align-items: stretch;
   }
 
   .workflow-modal {
-    max-height: 95vh;
+    max-height: 100vh;
+    max-width: 100%;
+    height: 100%;
+    border: none;
   }
 
+  /* Header - Ensure touch targets */
+  .workflow-header {
+    padding: 12px 16px;
+    min-height: 56px;
+  }
+
+  .workflow-header h2 {
+    font-size: 16px;
+  }
+
+  .workflow-close {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+
+  /* Body - Stack layout vertically */
   .workflow-body {
     grid-template-columns: 1fr;
   }
@@ -890,52 +912,231 @@
     border-right: none;
     border-bottom: 2px solid var(--border-color);
     max-height: 40vh;
-    min-height: 150px;
+    min-height: 180px;
   }
 
-  .workflow-close {
-    width: 44px;
-    height: 44px;
+  /* Create button - Touch target */
+  .workflow-create-btn {
+    margin: 12px;
+    padding: 12px 16px;
+    min-height: 44px;
+    font-size: 14px;
   }
 
+  /* Workflow items - Better spacing */
+  .workflow-items {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .workflow-item {
+    padding: 12px 14px;
+  }
+
+  .workflow-item-name {
+    font-size: 14px;
+  }
+
+  /* Action buttons - Touch targets */
   .workflow-btn-run,
   .workflow-btn-edit,
   .workflow-btn-delete {
+    padding: 10px 12px;
+    min-height: 44px;
+    font-size: 12px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .workflow-result-header {
-    flex-wrap: wrap;
+  /* Editor section - Better padding */
+  .workflow-editor {
+    padding: 16px;
+  }
+
+  /* All inputs - Prevent iOS zoom */
+  .workflow-input,
+  .workflow-select,
+  .workflow-textarea {
+    font-size: 16px;
+    padding: 12px;
+    min-height: 44px;
+  }
+
+  .workflow-textarea {
+    min-height: 88px;
+  }
+
+  /* Templates */
+  .workflow-templates {
+    padding: 12px;
+  }
+
+  .workflow-template-item {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  .template-name {
+    font-size: 14px;
+  }
+
+  .template-desc {
+    font-size: 12px;
+  }
+
+  /* Form header - Stack vertically */
+  .workflow-form-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  /* View toggle - Touch targets */
+  .view-toggle-btn {
+    padding: 10px 14px;
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  /* Steps */
+  .workflow-steps {
+    gap: 14px;
+  }
+
+  .workflow-step {
+    padding: 14px;
   }
 
   .workflow-step-row {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .workflow-step-field label {
+    font-size: 12px;
+  }
+
+  /* Add step button - Touch target */
+  .workflow-btn-add-step {
+    padding: 12px 16px;
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  /* Remove button - Touch target */
+  .workflow-btn-remove {
+    padding: 10px 14px;
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  /* Form actions - Touch targets */
+  .workflow-btn-save,
+  .workflow-btn-cancel {
+    padding: 14px 20px;
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  /* Conditional inputs */
+  .condition-row .workflow-select,
+  .condition-row .workflow-input {
+    font-size: 16px;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  /* Results */
+  .workflow-result-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .workflow-result-reply,
+  .workflow-result-error {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  .workflow-btn-close-results {
+    padding: 14px 20px;
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  /* Pipeline view */
+  .workflow-pipeline {
+    padding: 12px;
+  }
+
+  .pipeline-step {
+    max-width: 100%;
+    padding: 14px;
+  }
+
+  .pipeline-step-dept {
+    font-size: 14px;
+  }
+
+  .pipeline-step-message {
+    font-size: 12px;
+    max-height: 80px;
+  }
+
+  .pipeline-arrow-split {
+    gap: 20px;
+    max-width: 100%;
   }
 }
 
 @media (max-width: 480px) {
+  /* Further reduce padding on small screens */
   .workflow-overlay {
-    padding: 8px;
+    padding: 0;
   }
 
+  .workflow-header {
+    padding: 10px 12px;
+  }
+
+  .workflow-header h2 {
+    font-size: 15px;
+  }
+
+  .workflow-editor {
+    padding: 12px;
+  }
+
+  /* Workflow list - More compact */
+  .workflow-list {
+    max-height: 35vh;
+  }
+
+  .workflow-create-btn {
+    margin: 10px;
+  }
+
+  .workflow-items {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  /* Steps - Full width */
   .workflow-step-row {
     grid-template-columns: 1fr;
   }
 
   .pipeline-step {
-    max-width: 100%;
-    padding: 10px;
+    padding: 12px;
   }
 
   .pipeline-arrow-split {
     gap: 16px;
-    max-width: 100%;
   }
 
+  /* Form actions - Stack vertically */
   .workflow-form-actions {
     flex-direction: column;
+    gap: 12px;
   }
 
   .workflow-btn-save,
@@ -943,34 +1144,76 @@
     width: 100%;
   }
 
-  .workflow-btn-remove {
-    padding: 8px 12px;
-    min-height: 44px;
-  }
-
+  /* Condition rows - Stack vertically */
   .condition-row {
     flex-direction: column;
     align-items: stretch;
+    gap: 10px;
   }
 
   .condition-row label {
     min-width: unset;
   }
 
-  .workflow-form-header {
-    flex-direction: column;
-    align-items: stretch;
+  /* Templates - Larger tap targets */
+  .workflow-template-item {
+    padding: 14px 12px;
+  }
+
+  /* Status message - Better readability */
+  .workflow-status-msg {
+    padding: 12px 16px;
+    font-size: 13px;
   }
 }
 
 @media (max-width: 360px) {
+  /* Very small screens - Maximize space */
+  .workflow-header {
+    padding: 8px 12px;
+  }
+
+  .workflow-header h2 {
+    font-size: 14px;
+  }
+
+  .workflow-editor {
+    padding: 10px;
+  }
+
+  /* Item actions - Stack vertically */
   .workflow-item-actions {
     flex-direction: column;
+    gap: 8px;
   }
 
   .workflow-btn-run,
   .workflow-btn-edit,
   .workflow-btn-delete {
     width: 100%;
+  }
+
+  /* Templates */
+  .workflow-templates {
+    padding: 10px;
+  }
+
+  /* Steps - Compact */
+  .workflow-step {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .workflow-steps {
+    gap: 12px;
+  }
+
+  /* Pipeline - Compact */
+  .workflow-pipeline {
+    padding: 10px;
+  }
+
+  .pipeline-step {
+    padding: 10px;
   }
 }
