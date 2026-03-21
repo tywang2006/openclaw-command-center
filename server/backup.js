@@ -317,7 +317,13 @@ export function listBackups() {
  */
 export function restoreFromBackup(backupFilename, targetPath) {
   try {
-    const backupPath = path.join(BACKUP_DIR, backupFilename);
+    const backupPath = path.resolve(BACKUP_DIR, backupFilename);
+
+    // Defense-in-depth: ensure resolved path stays within BACKUP_DIR
+    if (!backupPath.startsWith(BACKUP_DIR + path.sep) && backupPath !== BACKUP_DIR) {
+      log.warn('Path traversal attempt in restoreFromBackup', { backupFilename });
+      return { success: false, error: 'Invalid backup filename' };
+    }
 
     if (!fs.existsSync(backupPath)) {
       return { success: false, error: 'Backup file not found' };
