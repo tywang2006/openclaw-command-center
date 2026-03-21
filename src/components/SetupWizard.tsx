@@ -102,6 +102,12 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
         const data = await res.json().catch(() => ({ error: 'Install failed' }))
         setError(data.error || 'Install failed')
         setInstalling(false)
+      } else {
+        // POST returns after all steps complete — use as fallback if WS is unavailable
+        setDone(true)
+        setInstalling(false)
+        setCurrentStep('complete')
+        setTimeout(() => onComplete(), 2000)
       }
     } catch (err) {
       setError('Network error — is the server running?')
