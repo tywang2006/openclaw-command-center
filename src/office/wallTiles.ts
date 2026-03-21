@@ -1,7 +1,7 @@
 /**
  * Wall tile auto-tiling: sprite storage and bitmask-based piece selection.
  *
- * Stores 16 wall sprites (one per 4-bit bitmask) loaded from walls.png.
+ * Stores 16 wall sprites (one per 4-bit bitmask).
  * At render time, each wall tile's 4 cardinal neighbors are checked to build
  * a bitmask, and the corresponding sprite is drawn directly.
  * No changes to the layout model — auto-tiling is purely visual.

@@ -1,6 +1,6 @@
 {
   "name": "openclaw-command-center",
-  "version": "1.7.4",
+  "version": "1.8.0",
   "description": "超哥办公室 — OpenClaw AI 多部门指挥中心：像素办公室、会议室(跨部门顺序讨论+协商投票+行动项)、信任评分、子代理(sessions_spawn委派)、实时流式响应、定时任务、工作流、公告板、记忆系统、仪表盘、Gmail/Drive/Sheets集成、语音输入、Webhook、PWA、移动端适配、命令面板(Cmd+K)、中英双语 | Pixel-art virtual office with multi-agent chat, meeting room (sequential discussion + negotiation voting + action items), trust scores, sub-agents (sessions_spawn delegation), real-time streaming, cron scheduler, workflows, bulletin board, memory system, dashboard & metrics, Gmail/Drive/Sheets integration, voice input, webhooks, PWA, mobile responsive, command palette, i18n (zh/en)",
   "type": "module",
   "main": "server/index.js",

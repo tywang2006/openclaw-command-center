@@ -545,6 +545,30 @@ command-center/
 
 ## Changelog / 更新日志
 
+### [1.8.0] - 2026-03-21
+
+**Added / 新增**
+- **WCAG accessibility overhaul / WCAG 无障碍改造**: 41 files — focus-visible outlines, dialog roles, keyboard nav (Escape), aria-labels, heading hierarchy, skip-to-content, ARIA live regions. 41个文件全面无障碍改造
+- **Structured logging / 结构化日志**: Server-side structured logging with consistent format. 服务端结构化日志
+- **API route decomposition / API 路由拆分**: `api.js` → modular route files under `server/routes/`. API路由模块化拆分
+
+**Fixed / 修复**
+- 50-agent test-fix loop: security, performance, memory leaks across server and client. 50代理测试修复循环
+- `--text-muted` contrast ratio improved to WCAG AA (4.5:1). 文本对比度达标WCAG AA
+- WebSocket message logging sanitized to prevent token leakage. WS日志脱敏防止令牌泄漏
+- Workflow run results persistence, delay validation alignment. 工作流运行结果持久化
+- MemoryTab search corrected to `/api/search` endpoint. 记忆搜索接口修正
+- Watcher ignores `node_modules/dist/.git`, cleans stale file offsets. 文件监控优化
+- Rate limiting on `/api/search`. 搜索接口限速
+- Audit log permissions secured, sensitive data reduced. 审计日志权限加固
+- Path traversal defense on `restoreFromBackup`. 备份恢复路径穿越防护
+- SetupWizard POST success as WS fallback. 安装向导POST回退
+- Gateway log spam suppressed, SPA sendFile errors fixed. 网关日志精简
+
+**Removed / 移除**
+- Unused PNG sprites (`char_0–5.png`, `walls.png`) — engine uses procedural sprites. 移除未使用PNG精灵
+- Dead PNG-loading code path in `spriteData.ts`. 移除PNG加载死代码
+
 ### [1.7.4] - 2026-03-20
 
 **Security / 安全**

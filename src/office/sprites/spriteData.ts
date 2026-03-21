@@ -983,29 +983,6 @@ export const CHARACTER_TEMPLATES = {
   ],
 } as const
 
-// ════════════════════════════════════════════════════════════════
-// Loaded character sprites (from PNG assets)
-// ════════════════════════════════════════════════════════════════
-
-interface LoadedCharacterData {
-  down: SpriteData[]
-  up: SpriteData[]
-  right: SpriteData[]
-}
-
-let loadedCharacters: LoadedCharacterData[] | null = null
-
-/** Set pre-colored character sprites loaded from PNG assets. Call this when characterSpritesLoaded message arrives. */
-export function setCharacterTemplates(data: LoadedCharacterData[]): void {
-  loadedCharacters = data
-  // Clear cache so sprites are rebuilt from loaded data
-  spriteCache.clear()
-}
-
-/** Flip a SpriteData horizontally (for generating left sprites from right) */
-function flipSpriteHorizontal(sprite: SpriteData): SpriteData {
-  return sprite.map((row) => [...row].reverse())
-}
 
 // ════════════════════════════════════════════════════════════════
 // Sprite resolution + caching
@@ -1054,62 +1031,29 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
   const cached = spriteCache.get(cacheKey)
   if (cached) return cached
 
-  let sprites: CharacterSprites
+  const pal = CHARACTER_PALETTES[paletteIndex % CHARACTER_PALETTES.length]
+  const r = (t: TemplateCell[][]) => resolveTemplate(t, pal)
+  const rf = (t: TemplateCell[][]) => resolveTemplate(flipHorizontal(t), pal)
 
-  if (loadedCharacters) {
-    // Use pre-colored character sprites directly (no palette swapping)
-    const char = loadedCharacters[paletteIndex % loadedCharacters.length]
-    const d = char.down
-    const u = char.up
-    const rt = char.right
-    const flip = flipSpriteHorizontal
-
-    sprites = {
-      walk: {
-        [Dir.DOWN]: [d[0], d[1], d[2], d[1]],
-        [Dir.UP]: [u[0], u[1], u[2], u[1]],
-        [Dir.RIGHT]: [rt[0], rt[1], rt[2], rt[1]],
-        [Dir.LEFT]: [flip(rt[0]), flip(rt[1]), flip(rt[2]), flip(rt[1])],
-      },
-      typing: {
-        [Dir.DOWN]: [d[3], d[4]],
-        [Dir.UP]: [u[3], u[4]],
-        [Dir.RIGHT]: [rt[3], rt[4]],
-        [Dir.LEFT]: [flip(rt[3]), flip(rt[4])],
-      },
-      reading: {
-        [Dir.DOWN]: [d[5], d[6]],
-        [Dir.UP]: [u[5], u[6]],
-        [Dir.RIGHT]: [rt[5], rt[6]],
-        [Dir.LEFT]: [flip(rt[5]), flip(rt[6])],
-      },
-    }
-  } else {
-    // Fallback: use hardcoded templates with palette swapping
-    const pal = CHARACTER_PALETTES[paletteIndex % CHARACTER_PALETTES.length]
-    const r = (t: TemplateCell[][]) => resolveTemplate(t, pal)
-    const rf = (t: TemplateCell[][]) => resolveTemplate(flipHorizontal(t), pal)
-
-    sprites = {
-      walk: {
-        [Dir.DOWN]: [r(CHAR_WALK_DOWN_1), r(CHAR_WALK_DOWN_2), r(CHAR_WALK_DOWN_3), r(CHAR_WALK_DOWN_2)],
-        [Dir.UP]: [r(CHAR_WALK_UP_1), r(CHAR_WALK_UP_2), r(CHAR_WALK_UP_3), r(CHAR_WALK_UP_2)],
-        [Dir.RIGHT]: [r(CHAR_WALK_RIGHT_1), r(CHAR_WALK_RIGHT_2), r(CHAR_WALK_RIGHT_3), r(CHAR_WALK_RIGHT_2)],
-        [Dir.LEFT]: [rf(CHAR_WALK_RIGHT_1), rf(CHAR_WALK_RIGHT_2), rf(CHAR_WALK_RIGHT_3), rf(CHAR_WALK_RIGHT_2)],
-      },
-      typing: {
-        [Dir.DOWN]: [r(CHAR_DOWN_TYPE_1), r(CHAR_DOWN_TYPE_2)],
-        [Dir.UP]: [r(CHAR_UP_TYPE_1), r(CHAR_UP_TYPE_2)],
-        [Dir.RIGHT]: [r(CHAR_RIGHT_TYPE_1), r(CHAR_RIGHT_TYPE_2)],
-        [Dir.LEFT]: [rf(CHAR_RIGHT_TYPE_1), rf(CHAR_RIGHT_TYPE_2)],
-      },
-      reading: {
-        [Dir.DOWN]: [r(CHAR_DOWN_READ_1), r(CHAR_DOWN_READ_2)],
-        [Dir.UP]: [r(CHAR_UP_READ_1), r(CHAR_UP_READ_2)],
-        [Dir.RIGHT]: [r(CHAR_RIGHT_READ_1), r(CHAR_RIGHT_READ_2)],
-        [Dir.LEFT]: [rf(CHAR_RIGHT_READ_1), rf(CHAR_RIGHT_READ_2)],
-      },
-    }
+  let sprites: CharacterSprites = {
+    walk: {
+      [Dir.DOWN]: [r(CHAR_WALK_DOWN_1), r(CHAR_WALK_DOWN_2), r(CHAR_WALK_DOWN_3), r(CHAR_WALK_DOWN_2)],
+      [Dir.UP]: [r(CHAR_WALK_UP_1), r(CHAR_WALK_UP_2), r(CHAR_WALK_UP_3), r(CHAR_WALK_UP_2)],
+      [Dir.RIGHT]: [r(CHAR_WALK_RIGHT_1), r(CHAR_WALK_RIGHT_2), r(CHAR_WALK_RIGHT_3), r(CHAR_WALK_RIGHT_2)],
+      [Dir.LEFT]: [rf(CHAR_WALK_RIGHT_1), rf(CHAR_WALK_RIGHT_2), rf(CHAR_WALK_RIGHT_3), rf(CHAR_WALK_RIGHT_2)],
+    },
+    typing: {
+      [Dir.DOWN]: [r(CHAR_DOWN_TYPE_1), r(CHAR_DOWN_TYPE_2)],
+      [Dir.UP]: [r(CHAR_UP_TYPE_1), r(CHAR_UP_TYPE_2)],
+      [Dir.RIGHT]: [r(CHAR_RIGHT_TYPE_1), r(CHAR_RIGHT_TYPE_2)],
+      [Dir.LEFT]: [rf(CHAR_RIGHT_TYPE_1), rf(CHAR_RIGHT_TYPE_2)],
+    },
+    reading: {
+      [Dir.DOWN]: [r(CHAR_DOWN_READ_1), r(CHAR_DOWN_READ_2)],
+      [Dir.UP]: [r(CHAR_UP_READ_1), r(CHAR_UP_READ_2)],
+      [Dir.RIGHT]: [r(CHAR_RIGHT_READ_1), r(CHAR_RIGHT_READ_2)],
+      [Dir.LEFT]: [rf(CHAR_RIGHT_READ_1), rf(CHAR_RIGHT_READ_2)],
+    },
   }
 
   // Apply hue shift if non-zero

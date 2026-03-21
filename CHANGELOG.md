@@ -2,6 +2,31 @@
 
 All notable changes to **openclaw-command-center** will be documented in this file.
 
+## [1.8.0] - 2026-03-21
+
+### Added
+- **WCAG accessibility overhaul**: Comprehensive improvements across 41 files — focus-visible outlines, dialog `role`/`aria-modal`, keyboard navigation (Escape to close), `aria-label` on icon buttons, heading hierarchy (`h1`→`h2`→`h3`), skip-to-content link, ARIA live regions for streaming responses, form label associations
+- **Structured logging**: Server-side structured logging with consistent format and levels
+- **API route decomposition**: Monolithic `api.js` split into modular route files under `server/routes/`
+
+### Fixed
+- **50-agent test-fix loop**: Security hardening, performance optimizations, memory leak fixes across server and client
+- **WCAG contrast**: `--text-muted` contrast ratio improved to meet WCAG AA (4.5:1)
+- **WebSocket token leakage**: Sanitize WS message logging to prevent auth token exposure
+- **Workflow persistence**: Workflow run results now persist correctly; delay validation aligned with execution
+- **MemoryTab search**: Corrected to use `/api/search` endpoint
+- **Watcher performance**: File watcher ignores `node_modules`/`dist`/`.git`, cleans up stale file offsets
+- **Search rate limiting**: Added rate limiting to `/api/search` endpoint
+- **Audit log security**: Secure audit log file permissions, reduce sensitive data in logs
+- **Backup path traversal**: Defense-in-depth path traversal protection on `restoreFromBackup`
+- **SetupWizard**: Handles POST success as WebSocket fallback
+- **Gateway log spam**: Suppress verbose gateway logs, fix SPA `sendFile` errors, clean shutdown
+- **CSS cleanup**: Error handling hardening, dead CSS removal
+
+### Removed
+- Unused PNG character sprites (`char_0–5.png`) and `walls.png` — engine uses procedural sprites
+- Dead PNG-loading code path in `spriteData.ts`
+
 ## [1.6.3] - 2026-03-18
 
 ### Improved
