@@ -231,6 +231,7 @@ app.use('/api/drive/upload', heavyLimiter);
 app.use('/api/drive/backup', heavyLimiter);
 app.use('/api/meetings/:id/message', heavyLimiter);
 app.use('/api/meetings/:id/negotiate', heavyLimiter);
+app.use('/api/search', heavyLimiter);
 
 // Strict rate limiting for admin/credential endpoints (5 req/min)
 const adminLimiter = rateLimit({
