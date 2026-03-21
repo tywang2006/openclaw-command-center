@@ -146,7 +146,7 @@ export default function MemoryTab({ selectedDeptId, memories, departments }: Mem
     setSearching(true)
     setSearchDone(false)
     try {
-      const res = await authedFetch(`/api/memory/search?q=${encodeURIComponent(searchQuery.trim())}`)
+      const res = await authedFetch(`/api/search?q=${encodeURIComponent(searchQuery.trim())}&scope=memory`)
       const data = await res.json()
       setSearchResults(data.results || [])
     } catch {
