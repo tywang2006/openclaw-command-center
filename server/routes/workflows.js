@@ -167,8 +167,8 @@ router.post('/', async (req, res) => {
       }
       if (s.delayMs !== undefined) {
         const delay = parseInt(s.delayMs);
-        if (!Number.isFinite(delay) || delay < 0 || delay > 300000) {
-          return res.status(400).json({ error: `Step ${i + 1}: delayMs must be 0-300000` });
+        if (!Number.isFinite(delay) || delay < 0 || delay > 60000) {
+          return res.status(400).json({ error: `Step ${i + 1}: delayMs must be 0-60000` });
         }
       }
     }
@@ -375,7 +375,7 @@ router.post('/:id/run', async (req, res) => {
 
     // Re-acquire lock to write results
     await withFileLock(WORKFLOWS_FILE, async () => {
-      const data = readWorkflows();
+      const data = await readWorkflows();
       const current = data.workflows.find(w => w.id === wf.id);
       if (current) {
         current.lastRunAtMs = Date.now();
