@@ -451,7 +451,12 @@ wss.on('connection', (ws, req) => {
         try {
           const s = message.toString();
           if (s.length > 1000) return;
-          log.info('WebSocket message received', { clientIp, message: s.substring(0, 100) });
+          try {
+            const parsed = JSON.parse(s);
+            log.info('WebSocket message received', { clientIp, type: parsed.type, length: s.length });
+          } catch {
+            log.info('WebSocket message received', { clientIp, length: s.length });
+          }
         } catch (error) {
           log.error('Error processing WebSocket message', { clientIp, error: error.message });
         }
